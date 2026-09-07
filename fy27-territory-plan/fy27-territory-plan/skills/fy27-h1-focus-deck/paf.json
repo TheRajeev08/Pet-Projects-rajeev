@@ -1,0 +1,915 @@
+{
+ "source": "github/product-adoption-frameworks knowledge/key-actions",
+ "note": "Baked at build time so deck generation needs no network or GitHub auth.",
+ "plays": {
+  "Innovate": {
+   "focus": "Agentic engineering with GitHub Copilot",
+   "land": [
+    {
+     "id": "define-measurable-goals",
+     "title": "Define Measurable Goals",
+     "summary": "Defining measurable goals ensures success can be tracked, celebrated, and continuously improved. Clear metrics keep teams focused on the outcomes that matter most and provide tangible proof of progress.",
+     "resources": [
+      {
+       "name": "Define Success",
+       "type": "self-service",
+       "provider": "GitHub Product Guide",
+       "url": "https://learn.github.com/product-guides/github-copilot/get-started/define-success"
+      },
+      {
+       "name": "Designing for Engineering System Success",
+       "type": "self-service",
+       "provider": "GitHub Well-Architected",
+       "url": "https://learn.github.com/well-architected/library/productivity/design-principles/#design-for-engineering-system-success"
+      },
+      {
+       "name": "GitHub Engineering System Success Playbook",
+       "type": "self-service",
+       "provider": "GitHub Resources",
+       "url": "https://github.com/resources/insights/engineering-system-success-playbook"
+      },
+      {
+       "name": "GitHub strategic planning (L200)",
+       "type": "paid-offering",
+       "provider": "GitHub Expert Services",
+       "url": "https://github.seismic.com/Link/Content/DC87h4fXPPXBbG4BJfTjGdjVmGdG"
+      }
+     ]
+    },
+    {
+     "id": "define-rollout-plan",
+     "title": "Define Rollout Plan",
+     "summary": "A well-structured rollout plan defines who will be onboarded when, outlines enablement milestones, and maps the path from pilot to full adoption. It keeps momentum high while minimizing risk through phased, intentional execution.",
+     "resources": [
+      {
+       "name": "Create a Rollout Plan",
+       "type": "self-service",
+       "provider": "GitHub Product Guide",
+       "url": "https://learn.github.com/product-guides/github-copilot/get-started/create-a-rollout-plan"
+      },
+      {
+       "name": "Developer Feedback Survey Template",
+       "type": "self-service",
+       "provider": "GitHub Resources",
+       "url": "https://downloads.ctfassets.net/wfutmusr1t3h/66acuCKYqXme0aukY8Rn3x/a8c682946b0176db5860544ad85fffe7/2024-04-23-GitHub-CCI-LP-Copilot-Impact-Survey-NT-V003.pdf"
+      },
+      {
+       "name": "Driving Copilot Adoption at your Company",
+       "type": "self-service",
+       "provider": "GitHub Docs",
+       "url": "https://docs.github.com/enterprise-cloud@latest/copilot/rolling-out-github-copilot-at-scale/enabling-developers/driving-copilot-adoption-in-your-company"
+      },
+      {
+       "name": "Taking GitHub Copilot to the Stars",
+       "type": "self-service",
+       "provider": "GitHub Resources",
+       "url": "https://assets.ctfassets.net/wfutmusr1t3h/DpEPYA1qYkdzDRTi7n99K/65d7fd0bb26bd39c693de3ac13b52659/GitHub-Taking-Copilot-to-the-stars_2024.pdf"
+      }
+     ]
+    },
+    {
+     "id": "conduct-initial-setup",
+     "title": "Conduct Initial Setup",
+     "summary": "Completing the initial setup ensures your technical foundations are in place\u2014configurations, permissions, and integrations\u2014so users can start with a smooth, reliable experience. It eliminates early blockers and sets the stage for successful adoption.",
+     "resources": [
+      {
+       "name": "Conduct Initial Setup",
+       "type": "self-service",
+       "provider": "GitHub Product Guide",
+       "url": "https://learn.github.com/product-guides/github-copilot/get-started/conduct-initial-setup"
+      },
+      {
+       "name": "Configuring GitHub Copilot",
+       "type": "self-service",
+       "provider": "GitHub Docs",
+       "url": "https://docs.github.com/enterprise-cloud@latest/copilot/configuring-github-copilot"
+      },
+      {
+       "name": "Configuring network settings for GitHub Copilot",
+       "type": "self-service",
+       "provider": "GitHub Docs",
+       "url": "https://docs.github.com/enterprise-cloud@latest/copilot/configuring-github-copilot/configuring-network-settings-for-github-copilot"
+      },
+      {
+       "name": "Enforcing policies for GitHub Copilot in your enterprise",
+       "type": "self-service",
+       "provider": "GitHub Docs",
+       "url": "https://docs.github.com/enterprise-cloud@latest/admin/policies/enforcing-policies-for-your-enterprise/enforcing-policies-for-github-copilot-in-your-enterprise"
+      }
+     ]
+    },
+    {
+     "id": "kick-off-champions-program",
+     "title": "Kick off Champions Program",
+     "summary": "Starting your Champions Program empowers passionate early adopters to become advocates, educators, and role models within your organization. By equipping them with resources and recognition, you create momentum for sustained adoption and cultural change.",
+     "resources": [
+      {
+       "name": "GitHub Discussions Enhancement with Category Forms",
+       "type": "self-service",
+       "provider": "GitHub Blog",
+       "url": "https://github.blog/2023-01-09-github-discussions-just-got-better-with-category-forms/"
+      },
+      {
+       "name": "How to communicate like a GitHub engineer: our principles, practices, and tools",
+       "type": "self-service",
+       "provider": "GitHub Blog",
+       "url": "https://github.blog/2023-10-04-how-to-communicate-like-a-github-engineer-our-principles-practices-and-tools/"
+      },
+      {
+       "name": "Initiate your GitHub Copilot Champions Program",
+       "type": "self-service",
+       "provider": "GitHub Product Guide",
+       "url": "https://learn.github.com/product-guides/github-copilot/get-started/initiate-your-github-copilot-champion-program"
+      },
+      {
+       "name": "Champion's Program Guidance",
+       "type": "guided-engagement",
+       "provider": "GitHub Customer Outcomes",
+       "url": "https://github.seismic.com/Link/Content/DCbT969jRP7pRGTPHRF73MRWWf6G"
+      }
+     ]
+    },
+    {
+     "id": "define-copilot-budget-plan",
+     "title": "Define a Copilot Budget Plan",
+     "summary": "With GitHub Copilot's move to usage-based billing, managing costs requires more than setting a single fixed budget. Apply layered controls that balance developer flexibility with enterprise cost predictability. All Copilot for Business or Enterprise licenses draw from a shared enterprise-wide pool, ...",
+     "resources": [
+      {
+       "name": "Managing AI Credits",
+       "type": "self-service",
+       "provider": "GitHub Well-Architected",
+       "url": "https://learn.github.com/well-architected/library/governance/recommendations/managing-ai-credits/"
+      },
+      {
+       "name": "Prepare for usage-based billing",
+       "type": "self-service",
+       "provider": "GitHub Docs",
+       "url": "https://docs.github.com/copilot/how-tos/manage-and-track-spending/prepare-for-usage-based-billing"
+      },
+      {
+       "name": "Prepare for your move to usage-based billing",
+       "type": "self-service",
+       "provider": "GitHub Docs",
+       "url": "https://docs.github.com/copilot/how-tos/manage-and-track-spending/prepare-for-your-move-to-usage-based-billing"
+      },
+      {
+       "name": "Preventing Overspending with Budgets and Alerts",
+       "type": "self-service",
+       "provider": "GitHub Docs",
+       "url": "https://docs.github.com/enterprise-cloud@latest/billing/how-tos/set-up-budgets"
+      }
+     ]
+    }
+   ],
+   "expand": [
+    {
+     "id": "launch-day",
+     "title": "Launch Day",
+     "summary": "Launch Day is the kickoff of your GitHub Copilot rollout. It's meant to generate excitement, establish the 'why,' and ensure users are ready to dive in. It should include a mix of communication (email/slack), enablement (live demos), and access support (how to get started).",
+     "resources": [
+      {
+       "name": "Launch Day Guide",
+       "type": "self-service",
+       "provider": "GitHub Product Guide",
+       "url": "https://learn.github.com/product-guides/github-copilot/accelerate-usage/host-a-github-copilot-launch-day"
+      },
+      {
+       "name": "GitHub Copilot for Business Adoption at Scale",
+       "type": "paid-offering",
+       "provider": "GitHub Expert Services",
+       "url": "https://github.seismic.com/Link/Content/DC87h4fXPPXBbG4BJfTjGdjVmGdG"
+      }
+     ]
+    },
+    {
+     "id": "understand-prompting",
+     "title": "Understand Prompting",
+     "summary": "Mastering prompting in GitHub Copilot helps you give the AI the right context to deliver accurate, relevant, and useful outputs. Clear, intentional prompts turn Copilot from a helpful assistant into a powerful coding partner.",
+     "resources": [
+      {
+       "name": "Copilot Cookbook",
+       "type": "self-service",
+       "provider": "GitHub Docs",
+       "url": "https://docs.github.com/enterprise-cloud@latest/copilot/copilot-chat-cookbook"
+      },
+      {
+       "name": "How to write better prompts for GitHub Copilot",
+       "type": "self-service",
+       "provider": "GitHub Blog",
+       "url": "https://github.blog/2023-06-20-how-to-write-better-prompts-for-github-copilot/"
+      },
+      {
+       "name": "Improve agent quality and token optimization",
+       "type": "self-service",
+       "provider": "GitHub Product Guide",
+       "url": "https://learn.github.com/product-guides/github-copilot/accelerate-usage/improve-agent-quality-and-token-optimization"
+      },
+      {
+       "name": "GitHub Copilot for Business Adoption at Scale",
+       "type": "paid-offering",
+       "provider": "GitHub Expert Services",
+       "url": "https://github.seismic.com/Link/Content/DC87h4fXPPXBbG4BJfTjGdjVmGdG"
+      }
+     ]
+    },
+    {
+     "id": "run-adoption-events",
+     "title": "Run adoption events",
+     "summary": "Driving engagement is about more than turning on Copilot\u2014it's about turning curiosity into consistent usage. This stage is your opportunity to spark energy, showcase impact, and build community around how developers are using GitHub Copilot in their real workflows. Whether through a hackathon, show-...",
+     "resources": [
+      {
+       "name": "Copilot Hackathon Community Playbook",
+       "type": "self-service",
+       "provider": "GitHub Community",
+       "url": "https://github.com/orgs/community/discussions/190379"
+      },
+      {
+       "name": "Drive engagement with events",
+       "type": "self-service",
+       "provider": "GitHub Product Guide",
+       "url": "https://learn.github.com/product-guides/github-copilot/accelerate-usage/drive-engagement-with-events"
+      },
+      {
+       "name": "GitHub Copilot Workshop Example",
+       "type": "self-service",
+       "provider": "GitHub Community",
+       "url": "https://github.github.com/workshops/copilot-for-dev"
+      },
+      {
+       "name": "Integrate Workflows",
+       "type": "self-service",
+       "provider": "GitHub Product Guide",
+       "url": "https://learn.github.com/product-guides/github-copilot/accelerate-usage/integrate-workflows"
+      }
+     ]
+    },
+    {
+     "id": "build-and-monitor-success-metrics",
+     "title": "Build and monitor success metrics",
+     "summary": "Monitoring success metrics ensures your Copilot rollout stays aligned to your goals. With your KPIs already defined, this step focuses on tracking trends, surfacing insights, and sharing visibility across teams. It helps you spot what's working, where to improve, and how to maintain momentum toward ...",
+     "resources": [
+      {
+       "name": "Build and monitor success metrics",
+       "type": "self-service",
+       "provider": "GitHub Product Guide",
+       "url": "https://learn.github.com/product-guides/github-copilot/accelerate-usage/build-and-monitor-success-metrics"
+      },
+      {
+       "name": "Copilot Metrics Viewer (Power BI)",
+       "type": "self-service",
+       "provider": "Microsoft",
+       "url": "https://appsource.microsoft.com/product/power-bi/github.github-copilot-metrics?tab=overview"
+      },
+      {
+       "name": "GitHub Copilot Metrics Viewer",
+       "type": "self-service",
+       "provider": "GitHub Community",
+       "url": "https://github.com/github-copilot-resources/copilot-metrics-viewer"
+      },
+      {
+       "name": "Reference: GitHub Copilot REST API Documentation",
+       "type": "self-service",
+       "provider": "GitHub Docs",
+       "url": "https://docs.github.com/enterprise-cloud@latest/rest/copilot"
+      }
+     ]
+    },
+    {
+     "id": "automate-simple-tasks-with-copilot-agents",
+     "title": "Automate Simple Tasks with Copilot Agents",
+     "summary": "This value play is for customers who are overloaded with large backlogs of \u201cquick win\u201d tasks and struggle to optimize developer bandwidth.",
+     "resources": [
+      {
+       "name": "5 ways to integrate Copilot Cloud Agent into your workflow",
+       "type": "self-service",
+       "provider": "GitHub Blog",
+       "url": "https://github.blog/ai-and-ml/github-copilot/5-ways-to-integrate-github-copilot-coding-agent-into-your-workflow/"
+      },
+      {
+       "name": "Assigning and completing issues with GitHub Copilot",
+       "type": "self-service",
+       "provider": "GitHub Blog",
+       "url": "https://github.blog/ai-and-ml/github-copilot/assigning-and-completing-issues-with-coding-agent-in-github-copilot/"
+      },
+      {
+       "name": "Automate Simple Tasks with GitHub Copilot Agents",
+       "type": "self-service",
+       "provider": "GitHub Product Guide",
+       "url": "https://learn.github.com/product-guides/github-copilot/succeed-long-term/automate-simple-tasks"
+      },
+      {
+       "name": "Automate Simple User Stories with Copilot Agents",
+       "type": "self-service",
+       "provider": "GitHub Community",
+       "url": "https://github.com/orgs/community/discussions/176329"
+      }
+     ]
+    },
+    {
+     "id": "accelerate-pull-request-velocity-quality-with-copilot-code-review",
+     "title": "Accelerate Pull Request Velocity & Quality with Copilot Code Review",
+     "summary": "This value play is for customers who are struggling with speed, quality, and developer capacity.",
+     "resources": [
+      {
+       "name": "Accelerate PR Velocity with Code Review",
+       "type": "self-service",
+       "provider": "GitHub Community",
+       "url": "https://github.com/orgs/community/discussions/176328"
+      },
+      {
+       "name": "Accelerate PR Velocity with Copilot Code Review",
+       "type": "self-service",
+       "provider": "GitHub Product Guide",
+       "url": "https://learn.github.com/product-guides/github-copilot/succeed-long-term/accelerate-pr-velocity"
+      },
+      {
+       "name": "Concept: About GitHub Copilot code review",
+       "type": "self-service",
+       "provider": "GitHub Docs",
+       "url": "https://docs.github.com/enterprise-cloud@latest/copilot/concepts/code-review"
+      },
+      {
+       "name": "Copilot Autofix for code scanning",
+       "type": "self-service",
+       "provider": "GitHub Docs",
+       "url": "https://docs.github.com/enterprise-cloud@latest/code-security/code-scanning/managing-code-scanning-alerts/responsible-use-autofix-code-scanning"
+      }
+     ]
+    }
+   ]
+  },
+  "Trust": {
+   "focus": "Securing the software supply chain with GitHub Advanced Security",
+   "land": [
+    {
+     "id": "run-the-code-security-risk-assessment",
+     "title": "Run the Code Security Risk Assessment",
+     "summary": "Run the free Code Security Risk Assessment to scan up to 20 repositories for existing vulnerabilities before committing to a full rollout. The assessment requires no Code Security license, produces a severity breakdown and Copilot Autofix availability summary, and provides the data needed to build a...",
+     "resources": [
+      {
+       "name": "Ask Copilot in security assessments now available",
+       "type": "self-service",
+       "provider": "GitHub Blog",
+       "url": "https://github.blog/changelog/2026-04-09-ask-copilot-in-security-assessments-now-available"
+      },
+      {
+       "name": "Code security risk assessment",
+       "type": "self-service",
+       "provider": "GitHub Docs",
+       "url": "https://docs.github.com/enterprise-cloud@latest/code-security/concepts/code-scanning/code-security-risk-assessment"
+      }
+     ]
+    },
+    {
+     "id": "ghas-orientation",
+     "title": "GHAS Orientation",
+     "summary": "Get started with GitHub Advanced Security by attending a security bootcamp and determining your adoption strategy. Free, public GHAS bootcamps are offered through the Microsoft CloudEvents Portal. For private training, paid bootcamps are available through GitHub Expert Services. Develop a plan for e...",
+     "resources": [
+      {
+       "name": "Code Security Community Discussions",
+       "type": "self-service",
+       "provider": "GitHub Community",
+       "url": "https://github.com/orgs/community/discussions/categories/code-security"
+      },
+      {
+       "name": "CodeQL Supported Languages",
+       "type": "self-service",
+       "provider": "GitHub Docs",
+       "url": "https://docs.github.com/enterprise-cloud@latest/code-security/code-scanning/introduction-to-code-scanning/about-code-scanning-with-codeql#supported-languages-and-frameworks"
+      },
+      {
+       "name": "Find out more about your Codebase's languages and package ecosystems",
+       "type": "self-service",
+       "provider": "GitHub Product Guide",
+       "url": "https://learn.github.com/product-guides/github-advanced-security-general/get-started/find-out-more-about-your-codebases-languages-and-package-ecosystems"
+      },
+      {
+       "name": "GHAS License Management",
+       "type": "self-service",
+       "provider": "GitHub Docs",
+       "url": "https://docs.github.com/enterprise-cloud@latest/billing/managing-billing-for-github-advanced-security/managing-your-github-advanced-security-licensing"
+      }
+     ]
+    },
+    {
+     "id": "determine-an-adoption-strategy",
+     "title": "Determine an Adoption Strategy",
+     "summary": "Develop a plan for enabling Code Security by using risk assessment data, codebase size and complexity, and business priorities to determine where to start. Use Code Security Risk Assessment results to identify which repositories have the most critical findings and the highest Autofix availability. S...",
+     "resources": [
+      {
+       "name": "Code Security Community Discussions",
+       "type": "self-service",
+       "provider": "GitHub Community",
+       "url": "https://github.com/orgs/community/discussions/categories/code-security"
+      },
+      {
+       "name": "CodeQL Supported Languages",
+       "type": "self-service",
+       "provider": "GitHub Docs",
+       "url": "https://docs.github.com/enterprise-cloud@latest/code-security/code-scanning/introduction-to-code-scanning/about-code-scanning-with-codeql#supported-languages-and-frameworks"
+      },
+      {
+       "name": "GHAS License Management",
+       "type": "self-service",
+       "provider": "GitHub Docs",
+       "url": "https://docs.github.com/enterprise-cloud@latest/billing/managing-billing-for-github-advanced-security/managing-your-github-advanced-security-licensing"
+      },
+      {
+       "name": "Identify Repositories for Code Security",
+       "type": "self-service",
+       "provider": "GitHub Product Guide",
+       "url": "https://learn.github.com/product-guides/github-advanced-security-code-security/get-started/identify-repositories-for-code-security"
+      }
+     ]
+    },
+    {
+     "id": "define-a-code-scanning-default-configuration",
+     "title": "Define a Code Scanning Default Configuration",
+     "summary": "Ensure that repositories are consistently protected against vulnerabilities by establishing a baseline Code Scanning configuration.",
+     "resources": [
+      {
+       "name": "Code Security Default Setup",
+       "type": "self-service",
+       "provider": "GitHub Docs",
+       "url": "https://docs.github.com/enterprise-cloud@latest/code-security/code-scanning/enabling-code-scanning/configuring-default-setup-for-code-scanning"
+      },
+      {
+       "name": "Define your Code Security Policy",
+       "type": "self-service",
+       "provider": "GitHub Product Guide",
+       "url": "https://learn.github.com/product-guides/github-advanced-security-code-security/get-started/define-your-code-security-policy"
+      },
+      {
+       "name": "Run a Code Scanning Fundamentals Session",
+       "type": "self-service",
+       "provider": "GitHub Product Guide",
+       "url": "https://learn.github.com/product-guides/github-advanced-security-code-security/get-started/run-a-code-scanning-fundamentals-session"
+      },
+      {
+       "name": "GHAS Code Scanning - Default Setup Playbook",
+       "type": "guided-engagement",
+       "provider": "GitHub Customer Outcomes",
+       "url": "https://github.com/github/customer-success-engagement/blob/main/Playbooks/GitHub-Advanced-Security-(GHAS)-Code-Scanning-Playbook.md#default-setup"
+      }
+     ]
+    },
+    {
+     "id": "rollout-default-scanning-on-identified-reposorganizations",
+     "title": "Rollout Default Scanning on Identified Repos/Organizations",
+     "summary": "Use Security Configurations to enable Code Scanning on the identified repositories and monitor the developer lifecycle to look for opportunities for fine-tuning.",
+     "resources": [
+      {
+       "name": "Applying a Custom Security Configuration",
+       "type": "self-service",
+       "provider": "GitHub Docs",
+       "url": "https://docs.github.com/enterprise-cloud@latest/code-security/securing-your-organization/meeting-your-specific-security-needs-with-custom-security-configurations/applying-a-custom-security-configuration"
+      },
+      {
+       "name": "Creating a custom security configuration",
+       "type": "self-service",
+       "provider": "GitHub Docs",
+       "url": "https://docs.github.com/enterprise-cloud@latest/code-security/securing-your-organization/enabling-security-features-in-your-organization/creating-a-custom-security-configuration"
+      },
+      {
+       "name": "Enable Developers on Code Security",
+       "type": "self-service",
+       "provider": "GitHub Product Guide",
+       "url": "https://learn.github.com/product-guides/github-advanced-security-code-security/get-started/enable-developers-on-code-security"
+      },
+      {
+       "name": "GHAS CodeQL Series Part 1: Setting Up Organization-Wide Code Scanning",
+       "type": "self-service",
+       "provider": "GitHub Community",
+       "url": "https://github.com/orgs/community/discussions/177178"
+      }
+     ]
+    },
+    {
+     "id": "review-alerts",
+     "title": "Review Alerts",
+     "summary": "Now that CodeQL is enabled for some repositories, evaluate generated alerts. Many alerts will include Copilot Autofix suggestions \u2014 look for the \"Generate fix\" button to get AI-suggested remediation. Incorporate Autofix into your alert review workflow from day one rather than treating every alert as...",
+     "resources": [
+      {
+       "name": "Code Security Community Discussions",
+       "type": "self-service",
+       "provider": "GitHub Community",
+       "url": "https://github.com/orgs/community/discussions/categories/code-security"
+      },
+      {
+       "name": "Code scanning: Batch apply security alert suggestions on pull requests",
+       "type": "self-service",
+       "provider": "GitHub Blog",
+       "url": "https://github.blog/changelog/2026-04-07-code-scanning-batch-apply-security-alert-suggestions-on-pull-requests/"
+      },
+      {
+       "name": "Managing code scanning alerts",
+       "type": "self-service",
+       "provider": "GitHub Docs",
+       "url": "https://docs.github.com/enterprise-cloud@latest/code-security/code-scanning/managing-code-scanning-alerts"
+      },
+      {
+       "name": "Review Code Security Results",
+       "type": "self-service",
+       "provider": "GitHub Product Guide",
+       "url": "https://learn.github.com/product-guides/github-advanced-security-code-security/get-started/review-code-security-results"
+      }
+     ]
+    }
+   ],
+   "expand": [
+    {
+     "id": "implement-pr-required-checks",
+     "title": "Implement PR Required Checks",
+     "summary": "Now that CodeQL Default Setup has been turned on for the first set of repositories and you've evaluated the existing alerts, you should make CodeQL a required part of your Pull Request workflow.",
+     "resources": [
+      {
+       "name": "Implement Pull Request Required Checks",
+       "type": "self-service",
+       "provider": "GitHub Product Guide",
+       "url": "https://learn.github.com/product-guides/github-advanced-security-code-security/accelerate-usage/implement-pull-request-required-checks"
+      }
+     ]
+    },
+    {
+     "id": "launch-security-campaigns-to-remediate-security-debt",
+     "title": "Launch security campaigns to remediate security debt at scale",
+     "summary": "Once you have code scanning or secret scanning enabled and alerts accumulating, use security campaigns to organize remediation. A security manager selects a set of alerts by severity, rule, or repository and creates a campaign with a target timeframe. For code scanning campaigns, Copilot Autofix can...",
+     "resources": [
+      {
+       "name": "About security campaigns",
+       "type": "self-service",
+       "provider": "GitHub Docs",
+       "url": "https://docs.github.com/enterprise-cloud@latest/code-security/securing-your-organization/fixing-security-alerts-at-scale/about-security-campaigns"
+      },
+      {
+       "name": "Accelerate remediation with security campaigns and assignable alerts for code scanning and secret scanning",
+       "type": "self-service",
+       "provider": "GitHub Blog",
+       "url": "https://github.blog/changelog/2025-09-23-accelerate-remediation-with-security-campaigns-and-assignable-alerts-for-code-scanning-and-secret-scanning/"
+      },
+      {
+       "name": "Creating and managing security campaigns",
+       "type": "self-service",
+       "provider": "GitHub Docs",
+       "url": "https://docs.github.com/enterprise-cloud@latest/code-security/securing-your-organization/fixing-security-alerts-at-scale/creating-managing-security-campaigns"
+      },
+      {
+       "name": "Security campaigns are now generally available",
+       "type": "self-service",
+       "provider": "GitHub Blog",
+       "url": "https://github.blog/changelog/2025-04-07-security-campaigns-are-now-generally-available-to-help-address-security-debt-at-scale/"
+      }
+     ]
+    },
+    {
+     "id": "enable-codeql-advanced-setup",
+     "title": "Enable CodeQL Advanced Setup",
+     "summary": "Experiment with CodeQL Advanced Setup for your different build systems that are not compatible with default configurations. Test Advanced Setup with a small group of repositories, define a rollout plan, and then enable CodeQL at scale across your enterprise.",
+     "resources": [
+      {
+       "name": "Build, test and run custom scripts to configure Advanced Setup at scale automatically",
+       "type": "self-service",
+       "provider": "GitHub Product Guide",
+       "url": "https://learn.github.com/product-guides/github-advanced-security-code-security/accelerate-usage/build-test-and-run-custom-scripts-to-configure-advanced-setup-at-scale-automatically"
+      },
+      {
+       "name": "Configuring advanced setup for code scanning",
+       "type": "self-service",
+       "provider": "GitHub Docs",
+       "url": "https://docs.github.com/enterprise-cloud@latest/code-security/code-scanning/creating-an-advanced-setup-for-code-scanning/configuring-advanced-setup-for-code-scanning"
+      },
+      {
+       "name": "Define your approach for rolling out Code Scanning with Advanced Setup",
+       "type": "self-service",
+       "provider": "GitHub Product Guide",
+       "url": "https://learn.github.com/product-guides/github-advanced-security-code-security/accelerate-usage/define-your-approach-for-rolling-out-code-scanning-with-advanced-setup"
+      },
+      {
+       "name": "Identify Repository Patterns for Advanced Setup scaled rollout",
+       "type": "self-service",
+       "provider": "GitHub Product Guide",
+       "url": "https://learn.github.com/product-guides/github-advanced-security-code-security/accelerate-usage/identify-repository-patterns-for-advanced-setup-scaled-rollout"
+      }
+     ]
+    },
+    {
+     "id": "create-a-secret-protection-configuration-and-apply-it-to-repositories",
+     "title": "Create a Secret Protection Configuration and apply it to Repositories",
+     "summary": "Create or modify a security configuration to define your Secret Protection policy.",
+     "resources": [
+      {
+       "name": "Define your Secret Protection policy",
+       "type": "self-service",
+       "provider": "GitHub Product Guide",
+       "url": "https://learn.github.com/product-guides/github-advanced-security-secret-protection/get-started/define-your-secret-protection-policy"
+      },
+      {
+       "name": "Enable Developers on Secret Protection",
+       "type": "self-service",
+       "provider": "GitHub Product Guide",
+       "url": "https://learn.github.com/product-guides/github-advanced-security-secret-protection/get-started/enable-developers-on-secret-protection"
+      },
+      {
+       "name": "Rollout Secret Protection on selected Repositories",
+       "type": "self-service",
+       "provider": "GitHub Product Guide",
+       "url": "https://learn.github.com/product-guides/github-advanced-security-secret-protection/get-started/rollout-secret-protection-on-selected-repositories"
+      },
+      {
+       "name": "Security Configurations",
+       "type": "self-service",
+       "provider": "GitHub Docs",
+       "url": "https://docs.github.com/enterprise-cloud@latest/code-security/securing-your-organization/introduction-to-securing-your-organization-at-scale/about-enabling-security-features-at-scale#about-security-configurations"
+      }
+     ]
+    }
+   ]
+  },
+  "Scale": {
+   "focus": "Platform consolidation onto GitHub Enterprise and Actions",
+   "land": [
+    {
+     "id": "define-enterprise-success-metrics-and-goals",
+     "title": "Define Enterprise Success Metrics & Goals",
+     "summary": "Establish clear, measurable objectives for your GitHub Enterprise adoption before you begin. Use the GitHub Engineering System Success Playbook (ESSP) to identify relevant performance indicators, capture baselines from audit logs and repository insights, and define target outcomes. This upfront inve...",
+     "resources": [
+      {
+       "name": "Design GitHub Enterprise platform ROI and check the initial metrics",
+       "type": "self-service",
+       "provider": "GitHub Product Guide",
+       "url": "https://learn.github.com/product-guides/github-enterprise/get-started/design-github-enterprise-platform-roi-and-check-the-initial-metrics"
+      },
+      {
+       "name": "GitHub Engineering System Success Playbook",
+       "type": "self-service",
+       "provider": "GitHub Resources",
+       "url": "https://github.com/resources/insights/engineering-system-success-playbook"
+      },
+      {
+       "name": "Capability adoption assessment",
+       "type": "paid-offering",
+       "provider": "GitHub Expert Services",
+       "url": "https://github.seismic.com/Link/Content/DC87h4fXPPXBbG4BJfTjGdjVmGdG"
+      },
+      {
+       "name": "GitHub Enterprise Product Guide Kick Off Deck",
+       "type": "guided-engagement",
+       "provider": "Presentation Deck",
+       "url": "https://microsoft.sharepoint.com/:p:/t/GitHubCSPracticesOfferings/IQCyPiv4GMg-SaTtYA9821q6AeiQcj_QjwRMSs5BPM-EgoE?e=ELRfzC"
+      }
+     ]
+    },
+    {
+     "id": "enterprise-account-setup",
+     "title": "Enterprise Account Setup",
+     "summary": "Complete your enterprise account configuration to establish centralized governance. Create your enterprise account, configure baseline policies for repository management, connect billing and support channels. This action covers the core platform setup; see Configure Identity & Access Management for ...",
+     "resources": [
+      {
+       "name": "About enterprise security",
+       "type": "self-service",
+       "provider": "GitHub Docs",
+       "url": "https://docs.github.com/enterprise-cloud@latest/code-security"
+      },
+      {
+       "name": "About the New Billing Platform",
+       "type": "self-service",
+       "provider": "GitHub Docs",
+       "url": "https://docs.github.com/enterprise-cloud@latest/billing/get-started/introduction-to-billing"
+      },
+      {
+       "name": "Adding organizations to your enterprise",
+       "type": "self-service",
+       "provider": "GitHub Docs",
+       "url": "https://docs.github.com/enterprise-cloud@latest/admin/managing-accounts-and-repositories/managing-organizations-in-your-enterprise/adding-organizations-to-your-enterprise#creating-an-organization-in-your-enterprise-account"
+      },
+      {
+       "name": "Audit log streaming",
+       "type": "self-service",
+       "provider": "GitHub Docs",
+       "url": "https://docs.github.com/enterprise-cloud@latest/admin/monitoring-activity-in-your-enterprise/reviewing-audit-logs-for-your-enterprise/streaming-the-audit-log-for-your-enterprise"
+      }
+     ]
+    },
+    {
+     "id": "configure-identity-and-access-management",
+     "title": "Configure Identity & Access Management",
+     "summary": "Configure authentication and user provisioning for your enterprise based on your compliance and security requirements. Integrate with your identity provider, establish SAML SSO or SCIM provisioning workflows, and define access policies. Getting authentication right early ensures seamless user onboar...",
+     "resources": [
+      {
+       "name": "About Enterprise Managed Users",
+       "type": "self-service",
+       "provider": "GitHub Docs",
+       "url": "https://docs.github.com/enterprise-cloud@latest/admin/concepts/identity-and-access-management/enterprise-managed-users"
+      },
+      {
+       "name": "About SAML for enterprise IAM",
+       "type": "self-service",
+       "provider": "GitHub Docs",
+       "url": "https://docs.github.com/enterprise-cloud@latest/admin/managing-iam/understanding-iam-for-enterprises/about-saml-for-enterprise-iam"
+      },
+      {
+       "name": "About authentication for your enterprise",
+       "type": "self-service",
+       "provider": "GitHub Docs",
+       "url": "https://docs.github.com/enterprise-cloud@latest/admin/concepts/identity-and-access-management/identity-and-access-management-fundamentals"
+      },
+      {
+       "name": "About identity and access management with SAML single sign-on",
+       "type": "self-service",
+       "provider": "GitHub Docs",
+       "url": "https://docs.github.com/enterprise-cloud@latest/organizations/managing-saml-single-sign-on-for-your-organization/about-identity-and-access-management-with-saml-single-sign-on"
+      }
+     ]
+    },
+    {
+     "id": "design-organization-and-team-structure",
+     "title": "Design Organization & Team Structure",
+     "summary": "Design your organizational hierarchy and team structure to balance autonomy with governance. Define organization boundaries based on access patterns and billing needs, create teams that reflect your development topology, and assign roles that enable collaboration while maintaining security. A well-d...",
+     "resources": [
+      {
+       "name": "Assigning roles to teams and users",
+       "type": "self-service",
+       "provider": "GitHub Docs",
+       "url": "https://docs.github.com/enterprise-cloud@latest/admin/managing-accounts-and-repositories/managing-roles-in-your-enterprise/assign-roles"
+      },
+      {
+       "name": "Best practices for Enterprises",
+       "type": "self-service",
+       "provider": "GitHub Docs",
+       "url": "https://docs.github.com/enterprise-cloud@latest/admin/concepts/enterprise-best-practices/organize-work"
+      },
+      {
+       "name": "Best practices for Organizations",
+       "type": "self-service",
+       "provider": "GitHub Docs",
+       "url": "https://docs.github.com/enterprise-cloud@latest/organizations/collaborating-with-groups-in-organizations/best-practices-for-organizations"
+      },
+      {
+       "name": "Creating enterprise teams",
+       "type": "self-service",
+       "provider": "GitHub Docs",
+       "url": "https://docs.github.com/enterprise-cloud@latest/admin/managing-accounts-and-repositories/managing-users-in-your-enterprise/create-enterprise-teams"
+      }
+     ]
+    },
+    {
+     "id": "plan-and-execute-initial-migration",
+     "title": "Plan and Execute Initial Migration",
+     "summary": "Successfully move your first teams and projects to GitHub, validating your migration approach and building organizational confidence. Select the appropriate migration path based on your source system and run dry-run migrations to surface issues before production cutover. These early migrations estab...",
+     "resources": [
+      {
+       "name": "About Enterprise Live Migrations (ELM)",
+       "type": "self-service",
+       "provider": "GitHub Docs",
+       "url": "https://docs.github.com/enterprise-cloud@latest/migrations/elm/about-live-migrations"
+      },
+      {
+       "name": "Dry run migration guide",
+       "type": "self-service",
+       "provider": "GitHub Docs",
+       "url": "https://docs.github.com/enterprise-cloud@latest/migrations/overview/planning-your-migration-to-github#performing-a-dry-run-migration-for-every-repository"
+      },
+      {
+       "name": "GitHub Enterprise Importer",
+       "type": "self-service",
+       "provider": "GitHub Docs",
+       "url": "https://docs.github.com/enterprise-cloud@latest/migrations/using-github-enterprise-importer"
+      },
+      {
+       "name": "GitHub Well-Architected: Migrations",
+       "type": "self-service",
+       "provider": "GitHub Well-Architected",
+       "url": "https://learn.github.com/well-architected/library/scenarios/migrations/"
+      }
+     ]
+    }
+   ],
+   "expand": [
+    {
+     "id": "accelerate-scaled-migrations-to-github",
+     "title": "Accelerate Scaled Migrations to GitHub",
+     "summary": "Drive the migration of additional teams and workloads to GitHub by removing blockers and increasing migration velocity, using the supported migration paths available for your source and destination (GitHub Enterprise Cloud on GitHub.com or GitHub Enterprise Cloud with data residency on GHE.com). Sta...",
+     "resources": [
+      {
+       "name": "About Enterprise Live Migrations (ELM)",
+       "type": "self-service",
+       "provider": "GitHub Docs",
+       "url": "https://docs.github.com/enterprise-cloud@latest/migrations/elm/about-live-migrations"
+      },
+      {
+       "name": "Accelerate migrations to GitHub",
+       "type": "self-service",
+       "provider": "GitHub Product Guide",
+       "url": "https://learn.github.com/product-guides/github-enterprise/accelerate-usage/accelerate-migrations-to-github"
+      },
+      {
+       "name": "Dry run migration guide",
+       "type": "self-service",
+       "provider": "GitHub Docs",
+       "url": "https://docs.github.com/enterprise-cloud@latest/migrations/overview/planning-your-migration-to-github#performing-a-dry-run-migration-for-every-repository"
+      },
+      {
+       "name": "Enterprise Live Migrations (ELM) for Azure DevOps",
+       "type": "self-service",
+       "provider": "Microsoft",
+       "url": "https://learn.microsoft.com/azure/devops/repos/enterprise-live-migrations/overview?view=azure-devops"
+      }
+     ]
+    },
+    {
+     "id": "migrate-existing-cicd-systems-to-github-actions",
+     "title": "Migrate Existing CI/CD Systems to GitHub Actions",
+     "summary": "Running multiple CI/CD systems increases operational complexity, raises maintenance overhead, and fragments developer workflows.",
+     "resources": [
+      {
+       "name": "Get Started: Understanding GitHub Actions",
+       "type": "self-service",
+       "provider": "GitHub Docs",
+       "url": "https://docs.github.com/enterprise-cloud@latest/actions/get-started/understand-github-actions"
+      },
+      {
+       "name": "GitHub Actions migration agents",
+       "type": "self-service",
+       "provider": "GitHub Product",
+       "url": "https://github.com/github/actions-migrations-via-copilot"
+      },
+      {
+       "name": "How To: Migrating to GitHub Actions",
+       "type": "self-service",
+       "provider": "GitHub Docs",
+       "url": "https://docs.github.com/enterprise-cloud@latest/actions/tutorials/migrate-to-github-actions"
+      },
+      {
+       "name": "How To: Monitor Workflows",
+       "type": "self-service",
+       "provider": "GitHub Docs",
+       "url": "https://docs.github.com/enterprise-cloud@latest/actions/how-tos/monitor-workflows"
+      }
+     ]
+    },
+    {
+     "id": "implement-scaled-governance",
+     "title": "Implement Scaled Governance",
+     "summary": "Establish scalable governance that balances security requirements with developer productivity. Use repository rulesets and custom properties to enforce consistent policies across your organization without manual configuration of each repository. Automate repository provisioning with templates that i...",
+     "resources": [
+      {
+       "name": "About Custom Repository Roles",
+       "type": "self-service",
+       "provider": "GitHub Docs",
+       "url": "https://docs.github.com/enterprise-cloud@latest/organizations/managing-user-access-to-your-organizations-repositories/managing-repository-roles/about-custom-repository-roles"
+      },
+      {
+       "name": "Building blocks for scaled governance",
+       "type": "self-service",
+       "provider": "GitHub Product Guide",
+       "url": "https://learn.github.com/product-guides/github-enterprise/accelerate-usage/building-blocks-for-scaled-governance"
+      },
+      {
+       "name": "Checklist for Governance",
+       "type": "self-service",
+       "provider": "GitHub Well-Architected",
+       "url": "https://learn.github.com/well-architected/library/governance/checklist/"
+      },
+      {
+       "name": "Enterprise Repository Policies",
+       "type": "self-service",
+       "provider": "GitHub Docs",
+       "url": "https://docs.github.com/enterprise-cloud@latest/organizations/managing-organization-settings/governing-how-people-use-repositories-in-your-organization"
+      }
+     ]
+    },
+    {
+     "id": "define-github-actions-runner-strategy",
+     "title": "Define GitHub Actions Runner Strategy",
+     "summary": "Runner architecture decisions directly affect cost, performance, security, resilience, and compliance for enterprise automation workloads.",
+     "resources": [
+      {
+       "name": "Accessing Private Networks from GitHub Actions Runners",
+       "type": "self-service",
+       "provider": "GitHub Well-Architected",
+       "url": "https://learn.github.com/well-architected/library/architecture/recommendations/hosted-runner-private-networking/"
+      },
+      {
+       "name": "Concept: Actions Runner Controller",
+       "type": "self-service",
+       "provider": "GitHub Docs",
+       "url": "https://docs.github.com/enterprise-cloud@latest/actions/concepts/runners/actions-runner-controller"
+      },
+      {
+       "name": "Concept: Azure private networking for GitHub-hosted runners",
+       "type": "self-service",
+       "provider": "GitHub Docs",
+       "url": "https://docs.github.com/enterprise-cloud@latest/admin/configuring-settings/configuring-private-networking-for-hosted-compute-products/about-azure-private-networking-for-github-hosted-runners-in-your-enterprise"
+      },
+      {
+       "name": "Concept: Billing and Usage for GitHub Actions",
+       "type": "self-service",
+       "provider": "GitHub Docs",
+       "url": "https://docs.github.com/enterprise-cloud@latest/actions/concepts/billing-and-usage"
+      }
+     ]
+    }
+   ]
+  }
+ }
+}

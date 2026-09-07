@@ -1,0 +1,38 @@
+{
+  "name": "fy27-territory-plan",
+  "description": "Run a complete FY27 GitHub territory build from a SuperDash export end to end: accounts classified into the Innovate, Trust and Scale revenue plays, enriched live from Salesforce and Gong on the invoking teammate's own credentials, sized against live licensing, ranked into an H1 focus set and a GHCP sprint priority queue, and rendered as an interactive app, an Excel workbook, a 13-slide leadership deck scored against the teammate's quota, and a 21-slide evidence pack - then verified as shippable before hand-off.",
+  "version": "1.14.0",
+  "author": {
+    "name": "Rajeev Ranjan",
+    "email": "TheRajeev08@users.noreply.github.com"
+  },
+  "license": "MIT",
+  "keywords": [
+    "territory-plan",
+    "book-of-business",
+    "superdash",
+    "innovate",
+    "trust",
+    "scale",
+    "salesforce",
+    "gong",
+    "copilot",
+    "ghas",
+    "presentation",
+    "h1-focus",
+    "territory-planning",
+    "quota",
+    "coverage",
+    "leadership-deck",
+    "end-to-end",
+    "sprint-plan",
+    "ghcp"
+  ],
+  "category": "planning",
+  "skills": [
+    "./skills/fy27-h1-run",
+    "./skills/fy27-territory-plan",
+    "./skills/fy27-crm-enrichment",
+    "./skills/fy27-h1-focus-deck"
+  ]
+}

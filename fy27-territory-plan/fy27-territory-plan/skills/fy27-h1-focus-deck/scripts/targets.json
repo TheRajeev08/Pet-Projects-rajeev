@@ -1,0 +1,77 @@
+{
+  "_comment": "Targets and run rate ship blank. Fill in your own quota per bucket and quarter, and your month-to-date consumption run rate per product, then re-run targets.py and exec_deck.py. A null target renders TBD on the deck rather than inventing a denominator.",
+  "fiscalYear": "FY27",
+  "half": "H1",
+  "territory": "",
+  "_territoryNote": "Your geo/territory, printed on the title slide. Leave blank to omit it.",
+  "focusQuarter": "Q1",
+  "_focusQuarterNote": "The deck is presented against Q1. H1 figures are still computed and shown alongside, because pipeline dated in Q2 supports the half even though it does nothing for the current quarter's number.",
+  "basis": "net-new",
+  "_basisNote": "Targets are net-new / expansion ACV. Renewals are tracked separately and are not counted towards attainment.",
+  "runRate": {
+    "_note": "Bucket 2 is consumption and therefore recurring: last full month's revenue repeats unless something churns. `monthsInQuarter` is how many months a quarter carries it for. Q1 is held flat at the measured base - it is measured now, so no growth is claimed for the quarter already under way. Q2 applies `growthPerQuarter` once. Seat landings (including any seller-asserted Bucket 2 pipeline) are the growth; they are never added on top of the carry, because that would count the same consumption twice.",
+    "month": 1,
+    "monthsInQuarter": 3,
+    "growthPerQuarter": 0,
+    "_growthNote": "An assumption, not a measurement. Stated on the deck beside the measured base so it can be challenged as a rate rather than as a total.",
+    "products": {
+      "Copilot": null,
+      "Actions": null,
+      "GHAzDO": null
+    }
+  },
+  "buckets": {
+    "Bucket 1": {
+      "label": "Bucket 1 - GHE + GHAS",
+      "products": [
+        "GHE",
+        "GHAS"
+      ],
+      "targets": {
+        "GHE": {
+          "Q1": null,
+          "Q2": null
+        },
+        "GHAS": {
+          "Q1": null,
+          "Q2": null
+        }
+      },
+      "attained": {
+        "Q1": 0,
+        "Q2": 0
+      }
+    },
+    "Bucket 2": {
+      "label": "Bucket 2 - Consumption",
+      "products": [
+        "Copilot",
+        "AIU",
+        "Actions",
+        "Codespaces",
+        "Code Quality",
+        "GHAzDO"
+      ],
+      "recurring": true,
+      "_recurringNote": "Coverage for this bucket counts the run-rate carry, not just booked attainment. Treating one month of consumption as 'attained' and the rest as a hole to sell overstates the gap by the two months of revenue that simply recur.",
+      "targets": {
+        "Copilot": {
+          "Q1": null,
+          "Q2": null
+        },
+        "Actions": {
+          "Q1": null,
+          "Q2": null
+        },
+        "GHAzDO": {
+          "Q1": null,
+          "Q2": null
+        }
+      },
+      "attained": {
+        "Q1": 0,
+        "Q2": 0
+      }
+    }
+  }
+}
