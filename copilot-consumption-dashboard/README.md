@@ -17,7 +17,7 @@ A daily-refreshed, **local-only** dashboard of the Salesforce accounts you own t
 | **Not yet consuming** | Owned accounts with no Copilot signal, ranked by GHE seats and ARR. These are whitespace. |
 | **Data notes** | Definitions, per-source freshness and row counts, and caveats. |
 
-**Consuming** means any Copilot active users, seats assigned, or usage-based-billing (UBB) spend in the last 90 days. **Scope** is accounts where you are the Salesforce Account Owner.
+**Consuming** means any Copilot active users, seats assigned, or usage-based-billing (UBB) spend in the last 90 days, or Copilot billed last month. Accounts billed with no usage telemetry are flagged *usage not linked*, which usually means their usage is attributed to another account or enterprise. **Scope** is accounts where you are the Salesforce Account Owner.
 
 ## How it works
 

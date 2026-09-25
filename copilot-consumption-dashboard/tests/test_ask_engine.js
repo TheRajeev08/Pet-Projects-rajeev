@@ -29,6 +29,7 @@ const D = {
     acct({ name: "Gammaray Systems", active_7d: 0, active_28d: 12, assigned: 15, utilization: 0.8, gross_7d: 0, wow_a7: -9, wow_gross: -50,
       health: 0.5, health_cat: "Yellow", health_prev: "Yellow", active_last_week: true, inactive_this_week: true, a7: [0, 9], gross: [0, 50] }),
     acct({ name: "Deltoid Nonuser", consuming: false }),
+    acct({ name: "Epsilon Private Limited", usage_unlinked: true, signals: ["Copilot billed"], copilot_billed_lcm: 1200, copilot_billed_ltm: 9000 }),
   ],
   changes: [
     { kind: "active_users", severity: "bad", id: "GammaraySystems", account: "Gammaray Systems", text: "Weekly active users 9 → 0" },
@@ -41,13 +42,14 @@ let n = 0;
 function t(q, check) { const r = e.ask(q); try { check(r); n++; } catch (err) { console.error("FAIL:", q, "\n ", r.type, r.interpreted, r.answer); throw err; } }
 
 t("which accounts are not active this week?", r => assert.deepStrictEqual(names(r), ["Betamax Ltd", "Gammaray Systems"]));
+t("accounts using copilot cli with usage not linked", r => assert.deepStrictEqual(names(r), []));
 t("accounts that stopped this week", r => assert.deepStrictEqual(names(r), ["Gammaray Systems"]));
 t("which accounts have red health", r => assert.deepStrictEqual(names(r), ["Betamax Ltd"]));
 t("health worsened", r => assert.deepStrictEqual(names(r), ["Betamax Ltd"]));
 t("which accounts use copilot cli", r => assert.deepStrictEqual(names(r), ["Alphaworks Corp"]));
-t("accounts not using copilot cli", r => assert.deepStrictEqual(names(r), ["Betamax Ltd", "Gammaray Systems"]));
+t("accounts not using copilot cli", r => assert.deepStrictEqual(names(r), ["Betamax Ltd", "Epsilon Private Limited", "Gammaray Systems"]));
 t("accounts using claude models", r => assert.deepStrictEqual(names(r), ["Alphaworks Corp"]));
-t("accounts not using claude", r => assert.deepStrictEqual(names(r), ["Betamax Ltd", "Gammaray Systems"]));
+t("accounts not using claude", r => assert.deepStrictEqual(names(r), ["Betamax Ltd", "Epsilon Private Limited", "Gammaray Systems"]));
 t("accounts with more than 50 active users", r => assert.deepStrictEqual(names(r), ["Alphaworks Corp"]));
 t("accounts with fewer than 5 users and red health", r => assert.deepStrictEqual(names(r), ["Betamax Ltd"]));
 t("accounts with between 10 and 50 assigned seats", r => assert.deepStrictEqual(names(r), ["Betamax Ltd", "Gammaray Systems"]));
@@ -64,6 +66,8 @@ t("is betamax active this week?", r => assert.match(r.answer, /^No/));
 t("what changed this week", r => { assert.strictEqual(r.type, "changes"); assert.strictEqual(r.rows.length, 2); });
 t("negative changes", r => assert.strictEqual(r.rows.length, 1));
 t("accounts in northland with more than 50 users", r => assert.deepStrictEqual(names(r), ["Alphaworks Corp"]));
+t("accounts with usage not linked", r => assert.deepStrictEqual(names(r), ["Epsilon Private Limited"]));
+t("epsilon limited", r => assert.match(r.answer, /billed \$1,200/));
 t("help", r => assert.strictEqual(r.type, "help"));
 t("gibberish blah", r => { assert.strictEqual(r.ok, false); assert.ok(r.suggestions.length > 0); });
 

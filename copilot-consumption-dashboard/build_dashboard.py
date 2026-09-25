@@ -274,7 +274,12 @@ def derive(a):
         signals.append("seats assigned")
     if any_pos(a["gross"]):
         signals.append("UBB spend")
+    if (a.get("copilot_billed_lcm") or 0) > 0:
+        signals.append("Copilot billed")
     a["signals"] = signals
+    # Billed for Copilot but no usage telemetry under this Salesforce ID: usage is likely
+    # attributed to another account (e.g. the enterprise/org is linked elsewhere).
+    a["usage_unlinked"] = signals == ["Copilot billed"]
     a["consuming"] = bool(signals)
     # 13-week trend of active users: last 4 weeks avg vs weeks 4-7 avg
     def avg(xs):
@@ -419,8 +424,9 @@ def previous_snapshot(day):
 
 
 DEFINITIONS = {
-    "consuming": "Any Copilot active users, seats assigned, or UBB spend in the last 90 days",
+    "consuming": "Any Copilot active users, seats assigned, or UBB spend in the last 90 days, or Copilot billed last month",
     "active_this_week": "Active users > 0 or UBB gross spend > 0 in the latest 7 days",
+    "usage_unlinked": "Billed for Copilot last month but no usage telemetry under this Salesforce account (usage likely attributed to another account); excluded from inactive_this_week since activity is unknown",
     "active_last_week": "Same as active_this_week, for the 7 days before that",
     "inactive_this_week": "Consuming (90d) but not active this week",
     "trend_4w": "Avg weekly active users, last 4 weeks vs the 4 weeks before",
@@ -443,7 +449,7 @@ def add_flags(model):
             return v is not None and v > 0
         a["active_this_week"] = pos("a7", 0) or pos("gross", 0)
         a["active_last_week"] = pos("a7", 1) or pos("gross", 1)
-        a["inactive_this_week"] = a["consuming"] and not a["active_this_week"]
+        a["inactive_this_week"] = a["consuming"] and not a["active_this_week"] and not a.get("usage_unlinked")
         t = a.get("trend_4w")
         a["declining"] = t is not None and t <= -0.1
         a["growing"] = t is not None and t >= 0.1

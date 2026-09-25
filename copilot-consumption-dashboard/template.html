@@ -134,7 +134,7 @@
     <div class="toolbar">
       <input type="search" id="acct-q" placeholder="Search account, country, segment, model…">
       <select id="acct-health"><option value="">All health</option><option>Green</option><option>Yellow</option><option>Red</option><option value="n/a">No health score</option></select>
-      <select id="acct-sig"><option value="">All signals</option><option value="active users">Has active users</option><option value="seats assigned">Has assigned seats</option><option value="UBB spend">Has UBB spend</option></select>
+      <select id="acct-sig"><option value="">All signals</option><option value="active users">Has active users</option><option value="seats assigned">Has assigned seats</option><option value="UBB spend">Has UBB spend</option><option value="Copilot billed">Copilot billed last month</option></select>
       <label class="small"><input type="checkbox" id="acct-all"> include non-consuming</label>
       <button id="acct-csv">Export CSV</button>
     </div>
@@ -308,7 +308,7 @@ const D = /*__DATA__*/null;
 
   // ---------- accounts table
   const COLS = [
-    { k: "name", t: "Account", cls: "l", r: a => `<div class="name" title="${esc(a.name)}">${esc(a.name)}</div><div class="muted small">${esc([a.segment, a.country].filter(Boolean).join(" · "))}</div>` },
+    { k: "name", t: "Account", cls: "l", r: a => `<div class="name" title="${esc(a.name)}">${esc(a.name)}</div><div class="muted small">${esc([a.segment, a.country].filter(Boolean).join(" · "))}${a.usage_unlinked ? ' <span class="chip warn" title="Billed for Copilot, but no usage telemetry under this Salesforce account">usage not linked</span>' : ""}</div>` },
     { k: "health", t: "Health", cls: "l", r: a => `<span class="dot ${a.health_cat || "na"}"></span>${a.health_cat ? esc(a.health_cat) + ` <span class="muted small">${fmt(a.health, 2)}</span>` : '<span class="muted">—</span>'}`, csv: a => a.health_cat },
     { k: "active_7d", t: "Active 7d", r: a => fmt(a.active_7d) + delta(a.wow_a7) },
     { k: "active_28d", t: "Active 28d", r: a => fmt(a.active_28d) + delta(a.wow_a28) },
@@ -329,10 +329,11 @@ const D = /*__DATA__*/null;
     { k: "signals", t: "Signals", cls: "l", r: a => (a.signals || []).map(s => `<span class="chip">${esc(s)}</span>`).join(" "), csv: a => (a.signals || []).join("; "), nosort: true },
   ];
   let sortKey = "active_28d", sortAsc = false;
+  const normQ = s => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
   function acctRows() {
-    const q = $("#acct-q").value.toLowerCase(), h = $("#acct-health").value, sig = $("#acct-sig").value, all = $("#acct-all").checked;
+    const words = normQ($("#acct-q").value).split(" ").filter(Boolean), h = $("#acct-health").value, sig = $("#acct-sig").value, all = $("#acct-all").checked;
     return A.filter(a => (all || a.consuming)
-      && (!q || [a.name, a.country, a.segment, a.region, a.industry, a.top_surface, a.top_model].some(v => (v || "").toLowerCase().includes(q)))
+      && (!words.length || (hay => words.every(w => hay.includes(w)))(normQ([a.name, a.country, a.segment, a.region, a.industry, a.top_surface, a.top_model, a.parent].join(" ")) + " " + normQ(a.name).replace(/ /g, "")))
       && (!h || (h === "n/a" ? !a.health_cat : a.health_cat === h))
       && (!sig || (a.signals || []).includes(sig)))
       .sort((x, y) => {
@@ -404,7 +405,7 @@ const D = /*__DATA__*/null;
     const src = D.sources || {}, asof = D.asof || {};
     const NAMES = { "01": "Salesforce owned accounts", "02": "c360 account entity (ARR, billing, owner)", "03": "c360 seat & engagement snapshot", "04": "Copilot IDE telemetry (acceptance, editors)", "05": "c360 MAU retention", "06": "Copilot health score (daily)", "07": "UBB burn rate (spend, AI units, pools)", "08": "UBB by integration / surface", "09": "Monthly product ARR & seats", "10": "Health risk factors", "11": "UBB by model" };
     const items = [
-      `<b>Consuming</b> = any of: Copilot active users, seats assigned, or UBB spend within the last 90 days. Scope = accounts where you are the Salesforce Account Owner.`,
+      `<b>Consuming</b> = any of: Copilot active users, seats assigned, or UBB spend within the last 90 days, or Copilot billed last month. Accounts that are billed but have no usage telemetry are marked <i>usage not linked</i>: their usage is likely recorded under another account or enterprise. Scope = accounts where you are the Salesforce Account Owner.`,
       `<b>Week over week</b> compares the latest 7 days with the 7 days before (from daily facts), so it works from the first run. Ownership changes compare with the saved snapshot closest to 7 days earlier.`,
       `<b>UBB dollars are usage-side</b> (list value of consumption), not invoiced revenue. Billable = usage beyond included pools. "Projected billable" is the warehouse month-end projection; "run-rate" = MTD gross ÷ days elapsed × days in month.`,
       `<b>c360 sources are experimental</b> (account entity, seats/engagement, MAU retention) and may lag or be revised.`,
@@ -469,7 +470,8 @@ const D = /*__DATA__*/null;
     blocks.push(`<h3>Risk factors (users)</h3>${risk.length ? `<table class="small"><tbody>${risk.map(([k, v]) => `<tr><td class="l">${esc(RISK_LABEL[k] || k)}</td><td>${fmt(v)}</td></tr>`).join("")}</tbody></table>` : '<div class="empty">No risk breakdown.</div>'}` +
       `<h3 style="margin-top:14px">Editors (28d active)</h3>${eds.length ? `<table class="small"><tbody>${eds.map(([k, v]) => `<tr><td class="l">${esc(k)}</td><td>${fmt(v)}</td></tr>`).join("")}</tbody></table>` : '<div class="empty">No editor telemetry.</div>'}`);
     const acctChanges = (D.changes || []).filter(c => c.id === a.id);
-    $("#dlg-body").innerHTML = (acctChanges.length ? `<div class="panel" style="margin-bottom:12px"><h3>This week</h3>${acctChanges.map(c => `<div style="margin:4px 0"><span class="chip ${esc(c.severity)}">${esc(KIND_LABEL[c.kind] || c.kind)}</span> ${esc(c.text)}</div>`).join("")}</div>` : "") +
+    const unlinked = a.usage_unlinked ? `<div class="panel" style="margin-bottom:12px"><span class="chip warn">Usage not linked</span> Billed ${money(a.copilot_billed_lcm)} for Copilot last month (${money(a.copilot_billed_ltm)} over 12 months), but no active-user, seat or UBB telemetry is attributed to this Salesforce account. The usage is probably recorded under another account or enterprise.</div>` : "";
+    $("#dlg-body").innerHTML = unlinked + (acctChanges.length ? `<div class="panel" style="margin-bottom:12px"><h3>This week</h3>${acctChanges.map(c => `<div style="margin:4px 0"><span class="chip ${esc(c.severity)}">${esc(KIND_LABEL[c.kind] || c.kind)}</span> ${esc(c.text)}</div>`).join("")}</div>` : "") +
       `<div class="panel" style="margin-bottom:12px"><div class="facts">${facts}</div></div><div class="grid2">${blocks.map(b => `<div class="panel">${b}</div>`).join("")}</div>`;
     dlg.showModal(); dlg.scrollTop = 0;
   }

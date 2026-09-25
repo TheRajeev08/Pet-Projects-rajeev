@@ -126,11 +126,13 @@ function AskEngine(D) {
       const get = metricGetter(mt, lastWeek ? 1 : 0);
       const fv = x => (mt.f === "money" ? "$" + x.toLocaleString() : mt.f === "pct" ? Math.round(x * 100) + "%" : x.toLocaleString());
       let test, txt;
+      // missing counts mean 0; missing ratios (utilization, health) are unknown
+      const lo = mt.f === "pct" || mt.f === "num2" || mt.f === "pctSigned" ? a => (isNum(get(a)) ? get(a) : NaN) : a => n0(get(a));
       if (c.op === "between") { test = a => isNum(get(a)) && get(a) >= v && get(a) <= v2; txt = `between ${fv(v)} and ${fv(v2)}`; }
       else if (/more|greater|over|above|exceed|^>$/.test(c.op)) { test = a => isNum(get(a)) && get(a) > v; txt = `more than ${fv(v)}`; }
       else if (/at least|>=/.test(c.op)) { test = a => isNum(get(a)) && get(a) >= v; txt = `at least ${fv(v)}`; }
-      else if (/at most|<=/.test(c.op)) { test = a => n0(get(a)) <= v; txt = `at most ${fv(v)}`; }
-      else { test = a => n0(get(a)) < v; txt = `less than ${fv(v)}`; }
+      else if (/at most|<=/.test(c.op)) { test = a => lo(a) <= v; txt = `at most ${fv(v)}`; }
+      else { test = a => lo(a) < v; txt = `less than ${fv(v)}`; }
       out.filters.push({ id: "cmp", l: label(`have ${txt} ${mt.label}`, `has ${txt} ${mt.label}`), test, cols: [mt.k] });
       if (!out.metrics.includes(mt)) out.metrics.push(mt);
       if (!out.metric) out.metric = mt;
@@ -155,6 +157,7 @@ function AskEngine(D) {
       if (lastWeek) out.filters.push({ id: "active_last", l: label("were active last week", "was active last week"), test: a => a.active_last_week, cols: ["active_7d"] });
       else out.filters.push({ id: "active", l: label("are active this week", "is active this week"), test: a => a.active_this_week, cols: ["active_7d", "gross_7d"] });
     }
+    if (/usage not linked|unlinked|billed (but|with) no usage|missing usage|no telemetry/.test(qn)) out.filters.push({ id: "unlinked", l: label("are billed but have usage not linked", "is billed but has usage not linked"), test: a => a.usage_unlinked, cols: ["copilot_billed_lcm", "copilot_billed_ltm"] });
     if (/\bno (active )?users\b|zero (active )?users|without (active )?users/.test(qn)) out.filters.push({ id: "no_users", l: label("have no active users this week", "has no active users this week"), test: a => !(n0(a.active_7d) > 0), cols: ["active_7d", "gross_7d"] });
     if (/\bno (ubb )?(spend|usage[- ]based)|zero spend|without spend/.test(qn)) out.filters.push({ id: "no_spend", l: label("have no UBB spend this week", "has no UBB spend this week"), test: a => !(n0(a.gross_7d) > 0), cols: ["gross_7d", "active_7d"] });
 
@@ -283,7 +286,7 @@ function AskEngine(D) {
   // ---------------------------------------------------------------- execute
   const SCOPE = {
     consuming: { test: a => a.consuming, pl: "consuming accounts", sg: "consuming account", desc: "consuming Copilot in the last 90 days" },
-    not_consuming: { test: a => !a.consuming, pl: "owned accounts not consuming Copilot", sg: "owned account not consuming Copilot", desc: "no Copilot users, seats or UBB spend in 90 days" },
+    not_consuming: { test: a => !a.consuming, pl: "owned accounts not consuming Copilot", sg: "owned account not consuming Copilot", desc: "no Copilot users, seats, UBB spend or billing" },
     all: { test: () => true, pl: "owned accounts", sg: "owned account", desc: "all accounts you own in Salesforce" },
   };
   function colGetter(key) {
@@ -296,8 +299,8 @@ function AskEngine(D) {
     contracted_seats: "Contracted", utilization: "Utilization", at_risk: "At risk", gross_7d: "UBB 7d", gross_28d: "UBB 28d", gross_90d: "UBB 90d", mtd_gross: "MTD", gross_run_rate_month: "Month run-rate",
     billable_7d: "Billable 7d", aiu_7d: "AI units 7d", total_arr: "GitHub ARR", acceptance_28d: "Acceptance", trend_4w: "4-wk trend", renewal: "Renewal", renewing_in_days: "Days to renewal",
     wow_a7: "Δ active 7d", wow_a28: "Δ active 28d", wow_assigned: "Δ assigned", wow_gross: "Δ UBB 7d", wow_at_risk: "Δ at risk", wow_health: "Δ health", wow_aiu: "Δ AI units", wow_acceptance: "Δ acceptance",
-    top_surface: "Top surface", top_model: "Top model", ghe_seats: "GHE seats", region: "Region", segment: "Segment", industry: "Industry", territory: "Territory" };
-  const COL_FMT = { gross_7d: "money", gross_28d: "money", gross_90d: "money", mtd_gross: "money", gross_run_rate_month: "money", billable_7d: "money", total_arr: "money", wow_gross: "moneyDelta",
+    copilot_billed_lcm: "Copilot billed last month", copilot_billed_ltm: "Copilot billed 12 mo", top_surface: "Top surface", top_model: "Top model", ghe_seats: "GHE seats", region: "Region", segment: "Segment", industry: "Industry", territory: "Territory" };
+  const COL_FMT = { copilot_billed_lcm: "money", copilot_billed_ltm: "money", gross_7d: "money", gross_28d: "money", gross_90d: "money", mtd_gross: "money", gross_run_rate_month: "money", billable_7d: "money", total_arr: "money", wow_gross: "moneyDelta",
     utilization: "pct", acceptance_28d: "pct", trend_4w: "pctSigned", health: "num2", wow_health: "num2Delta", wow_a7: "delta", wow_a28: "delta", wow_assigned: "delta", wow_at_risk: "deltaInv", wow_aiu: "delta", wow_acceptance: "ppDelta" };
   function col(key) {
     let lbl = COL_LABEL[key] || key, fmt = COL_FMT[key] || "auto";
@@ -395,6 +398,7 @@ function AskEngine(D) {
       const ans = rows.map(a => {
         if (p.metric) return `${a.name}: ${p.metric.label} ${fmtVal(metricGetter(p.metric, w)(a), p.metric.f)}${p.metric.wow && isNum(a[p.metric.wow]) ? ` (${a[p.metric.wow] >= 0 ? "+" : ""}${fmtVal(a[p.metric.wow], p.metric.f)} WoW)` : ""}`;
         const bits = [a.consuming ? (a.active_this_week ? "active this week" : "not active this week") : "not consuming Copilot"];
+        if (a.usage_unlinked) bits.push(`billed ${fmtVal(a.copilot_billed_lcm, "money")} for Copilot last month but usage isn't linked to this Salesforce account (likely recorded under another account/enterprise)`);
         if (isNum(a.active_7d)) bits.push(`${a.active_7d} weekly active${isNum(a.wow_a7) ? ` (${a.wow_a7 >= 0 ? "+" : ""}${a.wow_a7} WoW)` : ""}`);
         if (isNum(a.assigned)) bits.push(`${a.assigned} assigned seats`);
         if (a.health_cat) bits.push(`${a.health_cat} health`);
