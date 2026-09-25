@@ -1,0 +1,15 @@
+// qid:02 db:c360 — one row per owned account, latest snapshot (all Copilot + commercial context)
+let snap = toscalar(entity_salesforce_account | where sales_owner == "{{OWNER_NAME}}" | summarize max(measurement_date));
+entity_salesforce_account
+| where sales_owner == "{{OWNER_NAME}}" and measurement_date == snap
+| project id=entity_id, name=entity_name, measurement_date, segment=sales_segment, territory, region, industry, csm, csa,
+    next_renewal_date, deployment=final_deployment_type, is_emu, total_arr, license_seats,
+    copilot_est_arr=copilot_estimated_arr, copilot_est_arr_cb=copilot_estimated_arr_copilot_for_business, copilot_est_arr_ce=copilot_estimated_arr_copilot_enterprise,
+    copilot_billed_ltm=copilot_billed_dollars_ltm, copilot_aiu_billed_ltm=copilot_aiu_billed_dollars_ltm,
+    copilot_billed_lcm=copilot_billed_dollars_latest_complete_month, copilot_aiu_billed_lcm=copilot_aiu_billed_dollars_latest_complete_month,
+    assigned=number_copilot_assigned_users, forecast_assigned=copilot_assigned_forecasted_users, installed_1d28=number_copilot_installed_authenticated_1d28_users,
+    active_1d28=number_copilot_active_1d28_users, engaged_1d28=number_copilot_engaged_1d28_users,
+    users_at_risk, pct_users_at_risk, health=copilot_health_score, health_cat=copilot_health_score_category, grr_30day,
+    hwm_assigned_180d=high_watermark_number_copilot_assigned_users_180days, vscode_accept_pct=vscode_prompt_acceptance_percent,
+    open_renewal_license_arr=open_renewal_total_expected_license_arr, open_pipeline_license_net=open_pipeline_license_net_change_in_arr,
+    ghe_meu=ghec_meu, mover=mover_or_decliner, has_copilot

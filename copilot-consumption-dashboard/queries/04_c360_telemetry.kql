@@ -1,0 +1,12 @@
+// qid:04 db:c360 — weekly code-completion telemetry + last-28-day per-editor split
+let ids = entity_salesforce_account | where sales_owner == "{{OWNER_NAME}}" | summarize by entity_id;
+let asof = toscalar(fact_copilot_telemetry_metrics | where day > ago(21d) | summarize max(day));
+let t = fact_copilot_telemetry_metrics | where entity_type == "Salesforce Account" and entity_id in (ids) and day > asof - 91d | extend wk = toint((asof - day) / 7d);
+let editors = t | where wk < 4 | summarize acc = sum(prompts_accepted), shown = sum(prompts_shown) by entity_id, editor
+  | summarize ed = make_bag(bag_pack(editor, pack_array(acc, shown))) by eid = entity_id;
+t
+| summarize acc = sum(prompts_accepted), shown = sum(prompts_shown), loc_acc = sum(lines_of_code_accepted), loc_shown = sum(lines_of_code_shown) by entity_id, wk
+| order by entity_id asc, wk asc
+| summarize s = make_list(pack_array(wk, acc, shown, loc_acc, loc_shown)) by entity_id
+| join kind=leftouter editors on $left.entity_id == $right.eid
+| project id = entity_id, s, editors = ed, asof = asof, cols = "wk,accepted,shown,loc_accepted,loc_shown"

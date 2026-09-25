@@ -1,0 +1,452 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Copilot Consumption — My Accounts</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #fff; --ink: #1c2128; --muted: #656d76; --line: #e3e6ea;
+    --accent: #3b5bdb; --good: #1a7f37; --bad: #cf222e; --warn: #9a6700; --info: #0969da;
+    --green: #2da44e; --yellow: #d4a72c; --red: #e5534b; --na: #afb8c1;
+    --radius: 8px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0f1216; --panel: #171b21; --ink: #e6e9ed; --muted: #8c959f; --line: #2a3038;
+      --accent: #7c93f0; --good: #4ac26b; --bad: #ff7b72; --warn: #d29922; --info: #58a6ff; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; background: var(--bg); color: var(--ink); }
+  header { padding: 20px 28px 12px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 20px; }
+  header h1 { font-size: 20px; margin: 0; font-weight: 650; }
+  header .meta { color: var(--muted); font-size: 13px; }
+  nav { position: sticky; top: 0; z-index: 5; background: var(--bg); border-bottom: 1px solid var(--line); padding: 0 28px; display: flex; gap: 4px; overflow-x: auto; }
+  nav a { padding: 10px 12px; color: var(--muted); text-decoration: none; font-weight: 550; border-bottom: 2px solid transparent; white-space: nowrap; }
+  nav a:hover { color: var(--ink); }
+  main { padding: 20px 28px 60px; max-width: 1500px; }
+  section { margin-bottom: 36px; scroll-margin-top: 56px; }
+  h2 { font-size: 16px; margin: 0 0 12px; font-weight: 650; }
+  h3 { font-size: 12px; margin: 0 0 8px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; min-width: 0; }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+  .kpi { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px 10px; }
+  .kpi .label { color: var(--muted); font-size: 12px; }
+  .kpi .value { font-size: 24px; font-weight: 650; font-variant-numeric: tabular-nums; margin: 2px 0; }
+  .kpi .sub { font-size: 12px; color: var(--muted); min-height: 18px; }
+  .kpi svg { display: block; margin-top: 6px; }
+  .up { color: var(--good); } .down { color: var(--bad); } .flat { color: var(--muted); }
+  .inv.up { color: var(--bad); } .inv.down { color: var(--good); }
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 12px; }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+  input[type=search], select { font: inherit; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--ink); }
+  input[type=search] { min-width: 240px; }
+  button { font: inherit; padding: 6px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--ink); cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  .chip { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 600; border: 1px solid var(--line); white-space: nowrap; }
+  .chip.bad { color: var(--bad); border-color: currentColor; }
+  .chip.good { color: var(--good); border-color: currentColor; }
+  .chip.warn { color: var(--warn); border-color: currentColor; }
+  .chip.info { color: var(--info); border-color: currentColor; }
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; }
+  .Green { background: var(--green); } .Yellow { background: var(--yellow); } .Red { background: var(--red); } .na { background: var(--na); }
+  .tablewrap { overflow: auto; max-height: 70vh; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
+  table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+  th, td { padding: 7px 10px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
+  th { position: sticky; top: 0; background: var(--panel); font-size: 12px; color: var(--muted); font-weight: 600; cursor: pointer; user-select: none; z-index: 1; }
+  th.sorted::after { content: " ▾"; } th.sorted.asc::after { content: " ▴"; }
+  th:first-child, td:first-child, .l { text-align: left; }
+  tbody tr:hover { background: rgba(59, 91, 219, .06); }
+  tbody tr.click { cursor: pointer; }
+  td .d { font-size: 11.5px; margin-left: 4px; }
+  .name { max-width: 280px; overflow: hidden; text-overflow: ellipsis; font-weight: 550; }
+  .changes { display: grid; gap: 6px; max-height: 60vh; overflow: auto; }
+  .change { display: grid; grid-template-columns: 110px minmax(160px, 280px) 1fr; gap: 10px; align-items: center; padding: 8px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
+  .change:hover { border-color: var(--accent); }
+  .change .acct { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .muted { color: var(--muted); }
+  .small { font-size: 12px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+  .bar { height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; min-width: 60px; }
+  .bar > span { display: block; height: 100%; background: var(--accent); }
+  dialog { border: 1px solid var(--line); border-radius: 12px; padding: 0; width: min(1200px, 96vw); max-height: 92vh; background: var(--bg); color: var(--ink); }
+  dialog::backdrop { background: rgba(0,0,0,.45); }
+  .dlg-head { position: sticky; top: 0; background: var(--panel); border-bottom: 1px solid var(--line); padding: 14px 20px; display: flex; justify-content: space-between; align-items: center; gap: 12px; z-index: 2; }
+  .dlg-body { padding: 16px 20px 24px; }
+  .facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px 16px; }
+  .facts div span { display: block; color: var(--muted); font-size: 11.5px; }
+  .facts div b { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .notes li { margin-bottom: 6px; }
+  .empty { color: var(--muted); padding: 12px; text-align: center; }
+  a { color: var(--accent); }
+  svg text { fill: var(--muted); font-size: 10px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Copilot Consumption — My Salesforce Accounts</h1>
+  <span class="meta" id="meta"></span>
+</header>
+<nav>
+  <a href="#overview">Overview</a><a href="#changes">What changed</a><a href="#accounts">Accounts</a>
+  <a href="#trends">Portfolio trends</a><a href="#untapped">Not yet consuming</a><a href="#notes">Data notes</a>
+</nav>
+<main>
+  <section id="overview"><div class="kpis" id="kpis"></div></section>
+
+  <section id="changes">
+    <h2>What changed this week <span class="muted small" id="changes-sub"></span></h2>
+    <div class="toolbar">
+      <select id="chg-sev"><option value="">All severities</option><option value="bad">Negative</option><option value="warn">Watch</option><option value="good">Positive</option><option value="info">Info</option></select>
+      <select id="chg-kind"><option value="">All change types</option></select>
+      <input type="search" id="chg-q" placeholder="Filter by account…">
+      <span class="muted small" id="chg-count"></span>
+    </div>
+    <div class="changes" id="chg-list"></div>
+  </section>
+
+  <section id="accounts">
+    <h2>Consuming accounts <span class="muted small" id="acct-sub"></span></h2>
+    <div class="toolbar">
+      <input type="search" id="acct-q" placeholder="Search account, country, segment, model…">
+      <select id="acct-health"><option value="">All health</option><option>Green</option><option>Yellow</option><option>Red</option><option value="n/a">No health score</option></select>
+      <select id="acct-sig"><option value="">All signals</option><option value="active users">Has active users</option><option value="seats assigned">Has assigned seats</option><option value="UBB spend">Has UBB spend</option></select>
+      <label class="small"><input type="checkbox" id="acct-all"> include non-consuming</label>
+      <button id="acct-csv">Export CSV</button>
+    </div>
+    <div class="tablewrap"><table id="acct-table"><thead></thead><tbody></tbody></table></div>
+    <p class="muted small">Click a row for 13-week history, surfaces, models, risk and contract detail. Δ = week over week (latest 7 days vs the prior 7).</p>
+  </section>
+
+  <section id="trends">
+    <h2>Portfolio trends · last 13 weeks (consuming accounts)</h2>
+    <div class="grid2" id="trend-grid"></div>
+  </section>
+
+  <section id="untapped">
+    <h2>Owned accounts not yet consuming Copilot <span class="muted small" id="untapped-sub"></span></h2>
+    <div class="tablewrap" style="max-height:50vh"><table id="untapped-table"><thead></thead><tbody></tbody></table></div>
+  </section>
+
+  <section id="notes">
+    <h2>Data notes</h2>
+    <div class="panel"><ul class="notes" id="notes-list"></ul></div>
+  </section>
+</main>
+
+<dialog id="dlg"><div class="dlg-head"><div><h2 id="dlg-title" style="margin:0"></h2><div class="muted small" id="dlg-sub"></div></div><button id="dlg-close">Close</button></div><div class="dlg-body" id="dlg-body"></div></dialog>
+
+<script>
+const D = /*__DATA__*/null;
+(function () {
+  "use strict";
+  if (!D) { document.body.innerHTML = "<p style='padding:40px'>No data injected. Run <code>python3 build_dashboard.py</code>.</p>"; return; }
+
+  // ---------- helpers
+  const $ = (s, r = document) => r.querySelector(s);
+  const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const isNum = v => typeof v === "number" && isFinite(v);
+  const fmt = (v, d = 0) => isNum(v) ? v.toLocaleString(undefined, { maximumFractionDigits: d, minimumFractionDigits: d }) : "—";
+  const money = (v, d = 0) => isNum(v) ? "$" + fmt(v, d) : "—";
+  const compact = v => !isNum(v) ? "—" : Math.abs(v) >= 1e6 ? (v / 1e6).toFixed(1) + "M" : Math.abs(v) >= 1e4 ? (v / 1e3).toFixed(0) + "k" : Math.abs(v) >= 1e3 ? (v / 1e3).toFixed(1) + "k" : fmt(v, v % 1 ? 1 : 0);
+  const pct = (v, d = 0) => isNum(v) ? (v * 100).toFixed(d) + "%" : "—";
+  const chrono = arr => (arr || []).slice().reverse(); // builder arrays are latest-week first
+  const sfUrl = id => "https://github.lightning.force.com/lightning/r/Account/" + encodeURIComponent(id) + "/view";
+  const weeksLabels = n => Array.from({ length: n }, (_, i) => i === n - 1 ? "this wk" : "-" + (n - 1 - i) + "w");
+  function delta(v, opts = {}) {
+    if (!isNum(v)) return "";
+    if (Math.abs(v) < 1e-9) return `<span class="d flat">±0</span>`;
+    const cls = (v > 0 ? "up" : "down") + (opts.invert ? " inv" : "");
+    const s = v > 0 ? "+" : "−", m = Math.abs(v);
+    const txt = opts.money ? s + "$" + fmt(m) : opts.pct ? s + (m * 100).toFixed(1) + "pp" : s + fmt(m, m < 10 && m % 1 ? 1 : 0);
+    return `<span class="d ${cls}">${txt}</span>`;
+  }
+  const wowPct = (cur, prev) => isNum(cur) && isNum(prev) && prev ? (cur - prev) / prev : null;
+
+  // ---------- svg charts
+  const PALETTE = ["#3b5bdb", "#2da44e", "#d4a72c", "#e5534b", "#8250df", "#0aa2c0", "#f0883e", "#bf3989", "#57606a", "#1b7c83", "#a371f7", "#6e7781"];
+  function spark(values, w = 168, h = 34, color = "var(--accent)") {
+    const v = values.map(x => isNum(x) ? x : null), nums = v.filter(isNum);
+    if (nums.length < 2) return "";
+    const mn = Math.min(...nums), mx = Math.max(...nums), rg = mx - mn || 1;
+    const pts = v.map((y, i) => y == null ? null : [i * (w - 4) / (v.length - 1) + 2, h - 3 - (y - mn) / rg * (h - 6)]).filter(Boolean);
+    const last = pts[pts.length - 1];
+    return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true"><polyline fill="none" stroke="${color}" stroke-width="1.6" points="${pts.map(p => p.map(n => n.toFixed(1)).join(",")).join(" ")}"/><circle cx="${last[0].toFixed(1)}" cy="${last[1].toFixed(1)}" r="2.5" fill="${color}"/></svg>`;
+  }
+  function axisMax(v) { if (v <= 0) return 1; const p = Math.pow(10, Math.floor(Math.log10(v))); for (const m of [1, 2, 2.5, 5, 10]) if (m * p >= v) return m * p; return 10 * p; }
+  function chart({ series, labels, type = "line", stacked = false, h = 190, fmtY = compact, title = "" }) {
+    const head = title ? `<h3>${esc(title)}</h3>` : "";
+    const W = 560, H = h, L = 44, R = 10, T = 10, B = 22, iw = W - L - R, ih = H - T - B, n = labels.length;
+    const valid = series.filter(s => s.values.some(v => isNum(v) && v !== 0));
+    if (!valid.length) return head + `<div class="empty">No data</div>`;
+    let max = 0;
+    if (stacked) for (let i = 0; i < n; i++) max = Math.max(max, valid.reduce((a, s) => a + (isNum(s.values[i]) ? s.values[i] : 0), 0));
+    else valid.forEach(s => s.values.forEach(x => { if (isNum(x)) max = Math.max(max, x); }));
+    max = axisMax(max);
+    const x = i => L + (type === "bar" ? (i + 0.5) * iw / n : n > 1 ? i * iw / (n - 1) : iw / 2), y = v => T + ih - v / max * ih;
+    let g = "";
+    for (let k = 0; k <= 4; k++) { const yy = T + ih * k / 4; g += `<line x1="${L}" x2="${W - R}" y1="${yy}" y2="${yy}" stroke="var(--line)"/><text x="${L - 6}" y="${yy + 3}" text-anchor="end">${esc(fmtY(max * (1 - k / 4)))}</text>`; }
+    labels.forEach((lb, i) => { if (n <= 8 || i % 2 === (n - 1) % 2) g += `<text x="${x(i).toFixed(1)}" y="${H - 6}" text-anchor="middle">${esc(lb)}</text>`; });
+    if (type === "bar") {
+      const bw = Math.max(3, iw / n * (stacked ? 0.7 : 0.8 / valid.length));
+      for (let i = 0; i < n; i++) {
+        let acc = 0;
+        valid.forEach((s, si) => {
+          const v = isNum(s.values[i]) ? s.values[i] : 0; if (!v) return;
+          const bx = stacked ? x(i) - bw / 2 : x(i) - bw * valid.length / 2 + si * bw;
+          const y0 = stacked ? y(acc + v) : y(v), hh = stacked ? y(acc) - y(acc + v) : y(0) - y(v);
+          g += `<rect x="${bx.toFixed(1)}" y="${y0.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(0, hh).toFixed(1)}" fill="${s.color}"><title>${esc(s.name)} · ${esc(labels[i])}: ${esc(fmtY(v))}</title></rect>`;
+          if (stacked) acc += v;
+        });
+      }
+    } else {
+      valid.forEach(s => {
+        let segs = [], cur = [];
+        s.values.forEach((v, i) => { if (isNum(v)) cur.push(`${x(i).toFixed(1)},${y(v).toFixed(1)}`); else { if (cur.length) segs.push(cur); cur = []; } });
+        if (cur.length) segs.push(cur);
+        segs.forEach(sg => { g += `<polyline fill="none" stroke="${s.color}" stroke-width="2" ${s.dash ? 'stroke-dasharray="4 3"' : ""} points="${sg.join(" ")}"/>`; });
+        s.values.forEach((v, i) => { if (isNum(v)) g += `<circle cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="2.2" fill="${s.color}"><title>${esc(s.name)} · ${esc(labels[i])}: ${esc(fmtY(v))}</title></circle>`; });
+      });
+    }
+    const legend = valid.length > 1 || series.length > 1 ? `<div class="legend">${valid.map(s => `<span><i style="background:${s.color}"></i>${esc(s.name)}</span>`).join("")}</div>` : "";
+    return `${head}<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${esc(title)}">${g}</svg>${legend}`;
+  }
+
+  // ---------- data prep
+  const P = D.portfolio, A = D.accounts, cons = A.filter(a => a.consuming);
+  const byId = Object.fromEntries(A.map(a => [a.id, a]));
+  const LABELS = weeksLabels((P.a7 || []).length || 13);
+  const sumBy = (list, k) => list.reduce((s, a) => s + (isNum(a[k]) ? a[k] : 0), 0);
+  const rate = (acc, sh) => (acc || []).map((v, i) => isNum(v) && isNum((sh || [])[i]) && sh[i] ? v / sh[i] : null);
+
+  const dataAsOf = Object.values(D.asof || {}).sort().pop() || D.data_date;
+  $("#meta").innerHTML = `Data as of <b>${esc(dataAsOf)}</b> · built ${esc(D.generated_at)} · ${esc(P.owned)} owned accounts, <b>${esc(P.consuming)}</b> consuming Copilot (last 90 days)` +
+    (D.compared_to ? ` · ownership compared with ${esc(D.compared_to)}` : "");
+
+  // ---------- KPIs
+  (function kpis() {
+    const accR = rate(P.accepted, P.shown);
+    const cards = [
+      { label: "Consuming accounts (90d)", v: P.consuming, sub: `of ${P.owned} owned` },
+      { label: "Accounts active this week", v: (P.consuming_by_week || [])[0], prev: (P.consuming_by_week || [])[1], series: P.consuming_by_week, sub: "active users or UBB spend in last 7d" },
+      { label: "Weekly active users", v: P.a7[0], prev: P.a7[1], series: P.a7 },
+      { label: "28-day active users", v: P.a28[0], prev: P.a28[1], series: P.a28 },
+      { label: "Assigned seats", v: P.assigned[0], prev: P.assigned[1], series: P.assigned, sub: isNum(P.a28[0]) && P.assigned[0] ? `utilization ${pct(P.a28[0] / P.assigned[0])}` : "" },
+      { label: "Contracted Copilot seats", v: P.contracted_seats, sub: "Business + Enterprise, latest snapshot" },
+      { label: "Users at risk", v: P.at_risk[0], prev: P.at_risk[1], series: P.at_risk, invert: true },
+      { label: "UBB gross spend · last 7d", v: P.gross[0], prev: P.gross[1], series: P.gross, money: true },
+      { label: "UBB billable spend · last 7d", v: P.billable[0], prev: P.billable[1], series: P.billable, money: true, sub: "beyond included pools" },
+      { label: "AI units · last 7d", v: P.aiu[0], prev: P.aiu[1], series: P.aiu },
+      { label: "Month-to-date gross spend", v: P.mtd_gross, money: true, sub: `run-rate ${money(P.gross_run_rate_month)} · proj. billable ${money(P.projected_month_spend)}` },
+      { label: "Copilot billed · last 12 months", v: P.copilot_billed_ltm, money: true, sub: "c360 account entity" },
+      { label: "GitHub ARR · consuming accounts", v: sumBy(cons, "total_arr"), money: true, sub: `${money(sumBy(A, "total_arr"))} across all owned` },
+    ];
+    if (accR.some(isNum)) cards.splice(6, 0, { label: "Suggestion acceptance rate", v: accR[0], prev: accR[1], series: accR, isPct: true });
+    const mix = P.health_mix || {}, prev = P.health_mix_prev || {};
+    const mixHtml = ["Green", "Yellow", "Red", "n/a"].map(k => `<span style="margin-right:12px;white-space:nowrap"><span class="dot ${k === "n/a" ? "na" : k}"></span>${mix[k] || 0}${delta((mix[k] || 0) - (prev[k] || 0), { invert: k !== "Green" && k !== "n/a" })}</span>`).join("");
+    $("#kpis").innerHTML = cards.map(c => {
+      const val = c.isPct ? pct(c.v, 1) : c.money ? money(c.v) : fmt(c.v);
+      let d = "";
+      if (isNum(c.prev) && isNum(c.v)) {
+        const p = wowPct(c.v, c.prev);
+        d = (c.isPct ? delta(c.v - c.prev, { pct: true }) : delta(c.v - c.prev, { money: c.money, invert: c.invert }).replace('class="d', 'class="') +
+          (p != null ? ` <span class="muted">(${p > 0 ? "+" : ""}${(p * 100).toFixed(0)}%)</span>` : "")) + ' <span class="muted">WoW</span>';
+      }
+      return `<div class="kpi"><div class="label">${esc(c.label)}</div><div class="value">${val}</div><div class="sub">${d}${d && c.sub ? " · " : ""}${c.sub ? esc(c.sub) : ""}</div>${c.series ? spark(chrono(c.series)) : ""}</div>`;
+    }).join("") + `<div class="kpi"><div class="label">Copilot health mix (consuming)</div><div class="value" style="font-size:16px;margin-top:8px">${mixHtml}</div><div class="sub">Δ vs one week earlier</div></div>`;
+  })();
+
+  // ---------- changes
+  const KIND_LABEL = { new_consumer: "New consumer", stopped: "Stopped", active_users: "Active users", assigned: "Seats assigned", contract: "Contract", health: "Health", risk: "At risk", spend: "Spend", surface: "New surface", overage: "Overage", renewal: "Renewal", utilization: "Utilization", ownership_added: "Ownership +", ownership_removed: "Ownership −" };
+  const SEV_ORDER = { bad: 0, warn: 1, good: 2, info: 3 };
+  (function changes() {
+    const ch = D.changes || [];
+    const kinds = [...new Set(ch.map(c => c.kind))];
+    $("#chg-kind").innerHTML += kinds.map(k => `<option value="${esc(k)}">${esc(KIND_LABEL[k] || k)} (${ch.filter(c => c.kind === k).length})</option>`).join("");
+    const counts = ch.reduce((m, c) => (m[c.severity] = (m[c.severity] || 0) + 1, m), {});
+    $("#changes-sub").textContent = `· ${counts.bad || 0} negative · ${counts.warn || 0} watch · ${counts.good || 0} positive · ${counts.info || 0} info`;
+    function render() {
+      const sev = $("#chg-sev").value, kind = $("#chg-kind").value, q = $("#chg-q").value.toLowerCase();
+      const list = ch.filter(c => (!sev || c.severity === sev) && (!kind || c.kind === kind) && (!q || (c.account || "").toLowerCase().includes(q)))
+        .sort((a, b) => (SEV_ORDER[a.severity] ?? 9) - (SEV_ORDER[b.severity] ?? 9));
+      $("#chg-count").textContent = `${list.length} of ${ch.length}`;
+      $("#chg-list").innerHTML = list.length ? list.map(c => `<div class="change" data-id="${esc(c.id)}"><span><span class="chip ${esc(c.severity)}">${esc(KIND_LABEL[c.kind] || c.kind)}</span></span><span class="acct" title="${esc(c.account)}">${esc(c.account)}</span><span>${esc(c.text)}</span></div>`).join("")
+        : `<div class="empty">No changes match.</div>`;
+    }
+    ["#chg-sev", "#chg-kind"].forEach(s => $(s).addEventListener("change", render));
+    $("#chg-q").addEventListener("input", render);
+    $("#chg-list").addEventListener("click", e => { const r = e.target.closest(".change"); if (r && byId[r.dataset.id]) openAccount(r.dataset.id); });
+    render();
+  })();
+
+  // ---------- accounts table
+  const COLS = [
+    { k: "name", t: "Account", cls: "l", r: a => `<div class="name" title="${esc(a.name)}">${esc(a.name)}</div><div class="muted small">${esc([a.segment, a.country].filter(Boolean).join(" · "))}</div>` },
+    { k: "health", t: "Health", cls: "l", r: a => `<span class="dot ${a.health_cat || "na"}"></span>${a.health_cat ? esc(a.health_cat) + ` <span class="muted small">${fmt(a.health, 2)}</span>` : '<span class="muted">—</span>'}`, csv: a => a.health_cat },
+    { k: "active_7d", t: "Active 7d", r: a => fmt(a.active_7d) + delta(a.wow_a7) },
+    { k: "active_28d", t: "Active 28d", r: a => fmt(a.active_28d) + delta(a.wow_a28) },
+    { k: "assigned", t: "Assigned", r: a => fmt(a.assigned) + delta(a.wow_assigned) },
+    { k: "utilization", t: "Util.", r: a => pct(a.utilization), title: "28-day active ÷ assigned seats" },
+    { k: "contracted_seats", t: "Contracted", r: a => fmt(a.contracted_seats), title: "Contracted Copilot seats (latest)" },
+    { k: "at_risk", t: "At risk", r: a => fmt(a.at_risk) + delta(a.wow_at_risk, { invert: true }) },
+    { k: "trend_4w", t: "4-wk trend", r: a => isNum(a.trend_4w) ? `<span class="${a.trend_4w > 0.02 ? "up" : a.trend_4w < -0.02 ? "down" : "flat"}">${a.trend_4w > 0 ? "+" : ""}${(a.trend_4w * 100).toFixed(0)}%</span>` : "—", title: "Weekly actives, last 4 weeks vs the 4 before" },
+    { k: "gross_7d", t: "UBB 7d", r: a => money(a.gross_7d) + delta(a.wow_gross, { money: true }) },
+    { k: "gross_28d", t: "UBB 28d", r: a => money(a.gross_28d) },
+    { k: "mtd_gross", t: "MTD", r: a => money(a.mtd_gross) },
+    { k: "gross_run_rate_month", t: "Month run-rate", r: a => money(a.gross_run_rate_month) },
+    { k: "acceptance_28d", t: "Accept.", r: a => pct(a.acceptance_28d, 1) },
+    { k: "top_surface", t: "Top surface", cls: "l", r: a => esc(a.top_surface || "—") },
+    { k: "top_model", t: "Top model", cls: "l", r: a => esc(a.top_model || "—") },
+    { k: "total_arr", t: "GitHub ARR", r: a => money(a.total_arr) },
+    { k: "renewal", t: "Renewal", cls: "l", r: a => esc(a.renewal || "—") },
+    { k: "signals", t: "Signals", cls: "l", r: a => (a.signals || []).map(s => `<span class="chip">${esc(s)}</span>`).join(" "), csv: a => (a.signals || []).join("; "), nosort: true },
+  ];
+  let sortKey = "active_28d", sortAsc = false;
+  function acctRows() {
+    const q = $("#acct-q").value.toLowerCase(), h = $("#acct-health").value, sig = $("#acct-sig").value, all = $("#acct-all").checked;
+    return A.filter(a => (all || a.consuming)
+      && (!q || [a.name, a.country, a.segment, a.region, a.industry, a.top_surface, a.top_model].some(v => (v || "").toLowerCase().includes(q)))
+      && (!h || (h === "n/a" ? !a.health_cat : a.health_cat === h))
+      && (!sig || (a.signals || []).includes(sig)))
+      .sort((x, y) => {
+        const a = x[sortKey], b = y[sortKey];
+        if (a == null && b == null) return 0; if (a == null) return 1; if (b == null) return -1;
+        const c = typeof a === "string" ? a.localeCompare(b) : a - b; return sortAsc ? c : -c;
+      });
+  }
+  function renderAccounts() {
+    const t = $("#acct-table");
+    t.tHead.innerHTML = "<tr>" + COLS.map(c => `<th data-k="${c.k}" class="${c.cls || ""} ${c.k === sortKey ? "sorted" + (sortAsc ? " asc" : "") : ""}" ${c.title ? `title="${esc(c.title)}"` : ""}>${esc(c.t)}</th>`).join("") + "</tr>";
+    const rows = acctRows();
+    $("#acct-sub").textContent = `· showing ${rows.length}`;
+    t.tBodies[0].innerHTML = rows.length ? rows.map(a => `<tr class="click" data-id="${esc(a.id)}">${COLS.map(c => `<td class="${c.cls || ""}">${c.r(a)}</td>`).join("")}</tr>`).join("")
+      : `<tr><td colspan="${COLS.length}" class="empty">No accounts match.</td></tr>`;
+  }
+  $("#acct-table").addEventListener("click", e => {
+    const th = e.target.closest("th");
+    if (th) { const c = COLS.find(c => c.k === th.dataset.k); if (c && !c.nosort) { if (sortKey === c.k) sortAsc = !sortAsc; else { sortKey = c.k; sortAsc = c.cls === "l" && c.k !== "health"; } renderAccounts(); } return; }
+    const tr = e.target.closest("tr.click"); if (tr) openAccount(tr.dataset.id);
+  });
+  ["#acct-health", "#acct-sig", "#acct-all"].forEach(s => $(s).addEventListener("change", renderAccounts));
+  $("#acct-q").addEventListener("input", renderAccounts);
+  $("#acct-csv").addEventListener("click", () => {
+    const extra = ["id", "health_cat", "wow_a7", "wow_a28", "wow_assigned", "wow_at_risk", "wow_gross", "gross_90d", "mtd_billable", "projected_month_spend", "cb_seats", "ce_seats", "copilot_billed_ltm", "mau_grr", "mau_nrr", "region", "industry", "csm", "csa"];
+    const head = COLS.map(c => c.k).concat(extra);
+    const cell = v => { const s = v == null ? "" : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+    const lines = [head.join(",")].concat(acctRows().map(a => COLS.map(c => cell(c.csv ? c.csv(a) : a[c.k])).concat(extra.map(k => cell(a[k]))).join(",")));
+    const url = URL.createObjectURL(new Blob([lines.join("\n")], { type: "text/csv" }));
+    const link = Object.assign(document.createElement("a"), { href: url, download: `copilot-accounts-${D.data_date}.csv` });
+    document.body.appendChild(link); link.click(); link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  });
+  renderAccounts();
+
+  // ---------- portfolio trends
+  (function trends() {
+    const accR = rate(P.accepted, P.shown);
+    const tot = v => (v || []).reduce((s, x) => s + (x || 0), 0);
+    const surf = Object.entries(P.surface_weekly || {}).sort((a, b) => tot(b[1]) - tot(a[1]));
+    const models = Object.entries(P.models || {}).sort((a, b) => (b[1].l28 || 0) - (a[1].l28 || 0));
+    const totalL28 = models.reduce((s, [, m]) => s + (m.l28 || 0), 0) || 1;
+    const blocks = [
+      chart({ title: "Active users", labels: LABELS, series: [{ name: "Weekly active", values: chrono(P.a7), color: PALETTE[0] }, { name: "28-day active", values: chrono(P.a28), color: PALETTE[1] }, { name: "Assigned seats", values: chrono(P.assigned), color: PALETTE[8], dash: true }] }),
+      chart({ title: "Consuming accounts & users at risk", labels: LABELS, series: [{ name: "Accounts active (users or spend)", values: chrono(P.consuming_by_week), color: PALETTE[0] }, { name: "Users at risk", values: chrono(P.at_risk), color: PALETTE[3] }] }),
+      chart({ title: "UBB spend by week (usage-side $)", labels: LABELS, type: "bar", fmtY: v => "$" + compact(v), series: [{ name: "Gross", values: chrono(P.gross), color: PALETTE[0] }, { name: "Billable", values: chrono(P.billable), color: PALETTE[3] }] }),
+      chart({ title: "UBB gross spend by surface", labels: LABELS, type: "bar", stacked: true, fmtY: v => "$" + compact(v), series: surf.map(([n, v], i) => ({ name: n, values: chrono(v), color: PALETTE[i % PALETTE.length] })) }),
+      chart({ title: "AI units consumed", labels: LABELS, type: "bar", series: [{ name: "AI units", values: chrono(P.aiu), color: PALETTE[4] }] }),
+    ];
+    if (accR.some(isNum)) blocks.push(chart({ title: "Suggestion acceptance rate", labels: LABELS, fmtY: v => (v * 100).toFixed(0) + "%", series: [{ name: "Acceptance", values: chrono(accR), color: PALETTE[1] }] }));
+    const perSurface = {}; cons.forEach(a => Object.keys(a.surface_mix || {}).forEach(s => perSurface[s] = (perSurface[s] || 0) + 1));
+    blocks.push(`<h3>Surface adoption · this week vs last</h3><table><thead><tr><th class="l">Surface</th><th>7d $</th><th>WoW</th><th>4-wk $</th><th>Accounts</th></tr></thead><tbody>${surf.map(([n, v]) => `<tr><td class="l">${esc(n)}</td><td>${money(v[0])}</td><td>${delta((v[0] || 0) - (v[1] || 0), { money: true })}</td><td>${money(tot(v.slice(0, 4)))}</td><td>${fmt(perSurface[n] || 0)}</td></tr>`).join("")}</tbody></table>`);
+    blocks.push(`<h3>Model mix · last 28 days</h3><table><thead><tr><th class="l">Model</th><th>Share</th><th>28d $</th><th>7d $</th><th>WoW</th><th>Accounts</th></tr></thead><tbody>${models.slice(0, 15).map(([n, m]) => `<tr><td class="l">${esc(n)}</td><td><div class="bar"><span style="width:${((m.l28 || 0) / totalL28 * 100).toFixed(1)}%"></span></div></td><td>${money(m.l28)}</td><td>${money(m.l7)}</td><td>${delta((m.l7 || 0) - (m.p7 || 0), { money: true })}</td><td>${fmt(m.accounts)}</td></tr>`).join("")}</tbody></table>`);
+    $("#trend-grid").innerHTML = blocks.map(b => `<div class="panel">${b}</div>`).join("");
+  })();
+
+  // ---------- untapped
+  (function untapped() {
+    const list = A.filter(a => !a.consuming).sort((a, b) => (b.ghe_seats || 0) - (a.ghe_seats || 0) || (b.total_arr || 0) - (a.total_arr || 0));
+    $("#untapped-sub").textContent = `· ${list.length} accounts, ranked by GHE seats then ARR`;
+    const t = $("#untapped-table");
+    t.tHead.innerHTML = `<tr><th class="l">Account</th><th class="l">Type</th><th class="l">Segment</th><th class="l">Country</th><th>GHE seats</th><th>GitHub ARR</th><th class="l">Renewal</th><th>Open pipeline</th></tr>`;
+    t.tBodies[0].innerHTML = list.map(a => `<tr class="click" data-id="${esc(a.id)}"><td class="l"><div class="name" title="${esc(a.name)}">${esc(a.name)}</div></td><td class="l">${esc(a.type || "—")}</td><td class="l">${esc(a.segment || "—")}</td><td class="l">${esc(a.country || "—")}</td><td>${fmt(a.ghe_seats)}</td><td>${money(a.total_arr)}</td><td class="l">${esc(a.renewal || "—")}</td><td>${money(a.open_pipeline_net)}</td></tr>`).join("");
+    t.addEventListener("click", e => { const tr = e.target.closest("tr.click"); if (tr) openAccount(tr.dataset.id); });
+  })();
+
+  // ---------- notes
+  (function notes() {
+    const src = D.sources || {}, asof = D.asof || {};
+    const NAMES = { "01": "Salesforce owned accounts", "02": "c360 account entity (ARR, billing, owner)", "03": "c360 seat & engagement snapshot", "04": "Copilot IDE telemetry (acceptance, editors)", "05": "c360 MAU retention", "06": "Copilot health score (daily)", "07": "UBB burn rate (spend, AI units, pools)", "08": "UBB by integration / surface", "09": "Monthly product ARR & seats", "10": "Health risk factors", "11": "UBB by model" };
+    const items = [
+      `<b>Consuming</b> = any of: Copilot active users, seats assigned, or UBB spend within the last 90 days. Scope = accounts where you are the Salesforce Account Owner.`,
+      `<b>Week over week</b> compares the latest 7 days with the 7 days before (from daily facts), so it works from the first run. Ownership changes compare with the saved snapshot closest to 7 days earlier.`,
+      `<b>UBB dollars are usage-side</b> (list value of consumption), not invoiced revenue. Billable = usage beyond included pools. "Projected billable" is the warehouse month-end projection; "run-rate" = MTD gross ÷ days elapsed × days in month.`,
+      `<b>c360 sources are experimental</b> (account entity, seats/engagement, MAU retention) and may lag or be revised.`,
+      `Contracted Copilot ARR isn't broken out in the product ARR fact (Copilot lines carry seats with $0), so "GitHub ARR" is the account total.`,
+      `Sources:<table style="margin-top:6px"><thead><tr><th class="l">#</th><th class="l">Source</th><th>Rows</th><th class="l">Data as of</th><th class="l">Collected (UTC)</th></tr></thead><tbody>${Object.keys(NAMES).map(k => `<tr><td class="l">${k}</td><td class="l">${esc(NAMES[k])}</td><td>${src[k] ? fmt(src[k].rows) : '<span class="down">missing</span>'}</td><td class="l">${esc(asof[k] || "—")}</td><td class="l">${esc(src[k] ? String(src[k].collected_from || "").replace("T", " ").slice(0, 16) : "—")}</td></tr>`).join("")}</tbody></table>`,
+    ];
+    if ((D.missing_sources || []).length) items.unshift(`<span class="down"><b>Missing sources:</b> ${esc(D.missing_sources.join(", "))} — related metrics are blank.</span>`);
+    if ((D.orphans || []).length) items.push(`Attributed to you in the warehouse but not owned in Salesforce (excluded): ${D.orphans.map(o => esc(o.name) + ` <span class="muted small">${esc(o.id)}</span>`).join(", ")}.`);
+    $("#notes-list").innerHTML = items.map(i => `<li>${i}</li>`).join("");
+  })();
+
+  // ---------- drill-down
+  const dlg = $("#dlg");
+  $("#dlg-close").addEventListener("click", () => dlg.close());
+  dlg.addEventListener("click", e => { if (e.target === dlg) dlg.close(); });
+  const RISK_LABEL = { risk_mau: "Low MAU", risk_intracohort_90d: "Declining vs cohort (90d)", risk_no_activity_180d: "No activity (180d)", risk_pru_mau_retention: "Poor MAU retention" };
+  function openAccount(id) {
+    const a = byId[id]; if (!a) return;
+    $("#dlg-title").innerHTML = `${esc(a.name)} <a class="small" href="${sfUrl(a.sf_url_id || a.id)}" target="_blank" rel="noopener">Salesforce ↗</a>`;
+    $("#dlg-sub").textContent = [a.type, a.segment, a.region, a.country, a.industry, a.parent ? "Parent: " + a.parent : null].filter(Boolean).join(" · ");
+    const f = (l, v) => `<div><span>${esc(l)}</span><b>${v}</b></div>`;
+    const accR = rate(a.accepted, a.shown);
+    const facts = [
+      f("Consuming signals", (a.signals || []).map(esc).join(", ") || "none"),
+      f("Health", a.health_cat ? `<span class="dot ${a.health_cat}"></span>${esc(a.health_cat)} (${fmt(a.health, 2)})` + delta(a.wow_health) : "—"),
+      f("Product / commercial health", `${fmt(a.product_health, 2)} / ${fmt(a.commercial_health, 2)}`),
+      f("Weekly active", fmt(a.active_7d) + delta(a.wow_a7)), f("28-day active", fmt(a.active_28d) + delta(a.wow_a28)),
+      f("Assigned seats", fmt(a.assigned) + delta(a.wow_assigned)), f("Utilization (28d active ÷ assigned)", pct(a.utilization)),
+      f("Contracted seats (Business / Enterprise)", `${fmt(a.contracted_seats)} (${fmt(a.cb_seats)} / ${fmt(a.ce_seats)})`),
+      f("Assigned high-water mark (180d)", fmt(a.hwm_assigned_180d)),
+      f("Users at risk", fmt(a.at_risk) + delta(a.wow_at_risk, { invert: true }) + (isNum(a.pct_users_at_risk) ? ` <span class="muted">(${pct(a.pct_users_at_risk)})</span>` : "")),
+      f("Engaged users 28d (c360)", fmt(a.engaged_1d28)),
+      f("UBB users (max daily, 7d)", fmt((a.ubb_users || [])[0]) + delta(a.wow_ubb_users)),
+      f("MAU GRR / NRR (30d)", `${pct(a.mau_grr)} / ${pct(a.mau_nrr)}`), f("MAU retained / churned / new", `${fmt(a.mau_retained)} / ${fmt(a.mau_churned)} / ${fmt(a.mau_new)}`),
+      f("Acceptance rate 28d", pct(a.acceptance_28d, 1) + delta(a.wow_acceptance, { pct: true })),
+      f("UBB gross 7d / 28d / 90d", `${money(a.gross_7d)} / ${money(a.gross_28d)} / ${money(a.gross_90d)}`),
+      f("MTD gross / billable", `${money(a.mtd_gross)} / ${money(a.mtd_billable)}`),
+      f("Month run-rate / projected billable", `${money(a.gross_run_rate_month)} / ${money(a.projected_month_spend)}`),
+      f("Pool utilization (promo / standard)", `${pct(a.promo_util)} / ${pct(a.standard_util)}`),
+      f("Copilot billed LTM / last month", `${money(a.copilot_billed_ltm)} / ${money(a.copilot_billed_lcm)}`),
+      f("GitHub ARR", money(a.total_arr)), f("GHE seats", fmt(a.ghe_seats)),
+      f("Renewal", esc(a.renewal || "—")), f("Open renewal ARR", money(a.open_renewal_arr)), f("Open pipeline (net)", money(a.open_pipeline_net)),
+      f("Deployment / EMU", `${esc(a.deployment || "—")} / ${esc(a.emu == null ? "—" : a.emu)}`),
+      f("CSM / CSA", `${esc(a.csm || "—")} / ${esc(a.csa || "—")}`),
+    ].join("");
+    const blocks = [
+      chart({ title: "Active users & seats", labels: LABELS, series: [{ name: "Weekly active", values: chrono(a.a7), color: PALETTE[0] }, { name: "28-day active", values: chrono(a.a28), color: PALETTE[1] }, { name: "Assigned", values: chrono(a.h_assigned), color: PALETTE[8], dash: true }, { name: "UBB users (max daily)", values: chrono(a.ubb_users), color: PALETTE[4] }] }),
+      chart({ title: "Health score (×100) & users at risk", labels: LABELS, series: [{ name: "Health ×100", values: chrono(a.h_health).map(v => isNum(v) ? v * 100 : null), color: PALETTE[1] }, { name: "Users at risk", values: chrono(a.h_at_risk), color: PALETTE[3] }] }),
+      chart({ title: "UBB spend by week", labels: LABELS, type: "bar", fmtY: v => "$" + compact(v), series: [{ name: "Gross", values: chrono(a.gross), color: PALETTE[0] }, { name: "Billable", values: chrono(a.billable), color: PALETTE[3] }] }),
+      chart({ title: "AI units by week", labels: LABELS, type: "bar", series: [{ name: "AI units", values: chrono(a.aiu), color: PALETTE[4] }] }),
+    ];
+    if (accR.some(isNum)) blocks.push(chart({ title: "Acceptance rate", labels: LABELS, fmtY: v => (v * 100).toFixed(0) + "%", series: [{ name: "Acceptance", values: chrono(accR), color: PALETTE[1] }] }));
+    const ser = a.arr_series || [];
+    if (ser.some(p => p.seats || p.total_arr)) blocks.push(chart({ title: "Contracted Copilot seats (month-ends)", labels: ser.map(p => p.date === "current" ? "now" : p.date.slice(0, 7)), type: "bar", series: [{ name: "Copilot seats", values: ser.map(p => p.seats), color: PALETTE[0] }] }) +
+      `<table class="small"><thead><tr><th class="l">Period</th><th>Business</th><th>Enterprise</th><th>All Copilot</th><th>GitHub ARR</th></tr></thead><tbody>${ser.map(p => `<tr><td class="l">${esc(p.date)}</td><td>${fmt(p.cb)}</td><td>${fmt(p.ce)}</td><td>${fmt(p.seats)}</td><td>${money(p.total_arr)}</td></tr>`).join("")}</tbody></table>`);
+    const ints = a.integrations || [];
+    blocks.push(`<h3>Surfaces / integrations (UBB)</h3>` + (ints.length ? `<table class="small"><thead><tr><th class="l">Integration</th><th class="l">Surface</th><th>7d $</th><th>WoW</th><th>28d $</th><th>AI units 28d</th><th>Users 7d</th><th>Users 28d</th></tr></thead><tbody>${ints.map(i => `<tr><td class="l">${esc(i.integration)}</td><td class="l">${esc(i.surface)}</td><td>${money(i.l7)}</td><td>${delta((i.l7 || 0) - (i.p7 || 0), { money: true })}</td><td>${money(i.l28)}</td><td>${compact(i.aiu28)}</td><td>${fmt(i.u7)}${delta((i.u7 || 0) - (i.up7 || 0))}</td><td>${fmt(i.u28)}</td></tr>`).join("")}</tbody></table>` : `<div class="empty">No UBB integration usage.</div>`));
+    const ms = a.models || [], mTot = ms.reduce((s, m) => s + (m.l28 || 0), 0) || 1;
+    blocks.push(`<h3>Models (UBB)</h3>` + (ms.length ? `<table class="small"><thead><tr><th class="l">Model</th><th>Share 28d</th><th>7d $</th><th>WoW</th><th>28d $</th></tr></thead><tbody>${ms.map(m => `<tr><td class="l">${esc(m.model)}</td><td><div class="bar"><span style="width:${((m.l28 || 0) / mTot * 100).toFixed(1)}%"></span></div></td><td>${money(m.l7)}</td><td>${delta((m.l7 || 0) - (m.p7 || 0), { money: true })}</td><td>${money(m.l28)}</td></tr>`).join("")}</tbody></table>` : `<div class="empty">No model usage.</div>`));
+    const eds = Object.entries(a.editors || {}).sort((x, y) => y[1] - x[1]);
+    const risk = a.risk ? Object.entries(a.risk).filter(([, v]) => v != null) : [];
+    blocks.push(`<h3>Risk factors (users)</h3>${risk.length ? `<table class="small"><tbody>${risk.map(([k, v]) => `<tr><td class="l">${esc(RISK_LABEL[k] || k)}</td><td>${fmt(v)}</td></tr>`).join("")}</tbody></table>` : '<div class="empty">No risk breakdown.</div>'}` +
+      `<h3 style="margin-top:14px">Editors (28d active)</h3>${eds.length ? `<table class="small"><tbody>${eds.map(([k, v]) => `<tr><td class="l">${esc(k)}</td><td>${fmt(v)}</td></tr>`).join("")}</tbody></table>` : '<div class="empty">No editor telemetry.</div>'}`);
+    const acctChanges = (D.changes || []).filter(c => c.id === a.id);
+    $("#dlg-body").innerHTML = (acctChanges.length ? `<div class="panel" style="margin-bottom:12px"><h3>This week</h3>${acctChanges.map(c => `<div style="margin:4px 0"><span class="chip ${esc(c.severity)}">${esc(KIND_LABEL[c.kind] || c.kind)}</span> ${esc(c.text)}</div>`).join("")}</div>` : "") +
+      `<div class="panel" style="margin-bottom:12px"><div class="facts">${facts}</div></div><div class="grid2">${blocks.map(b => `<div class="panel">${b}</div>`).join("")}</div>`;
+    dlg.showModal(); dlg.scrollTop = 0;
+  }
+})();
+</script>
+</body>
+</html>

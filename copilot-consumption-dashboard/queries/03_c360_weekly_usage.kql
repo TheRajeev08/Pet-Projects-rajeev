@@ -1,0 +1,10 @@
+// qid:03 db:c360 — 13 weekly points per account (wk 0 = most recent 7 days) of Copilot active users (1-day-in-7 and 1-day-in-28)
+let ids = entity_salesforce_account | where sales_owner == "{{OWNER_NAME}}" | summarize by entity_id;
+let asof = toscalar(fact_copilot_active_users | where day > ago(21d) | summarize max(day));
+fact_copilot_active_users
+| where entity_type == "Salesforce Account" and entity_id in (ids) and day > asof - 91d
+| extend wk = toint((asof - day) / 7d)
+| summarize arg_max(day, number_copilot_active_1d7_users, number_copilot_active_1d28_users) by entity_id, wk
+| order by entity_id asc, wk asc
+| summarize s = make_list(pack_array(wk, number_copilot_active_1d7_users, number_copilot_active_1d28_users)) by id = entity_id
+| extend asof = asof, cols = "wk,a7,a28"

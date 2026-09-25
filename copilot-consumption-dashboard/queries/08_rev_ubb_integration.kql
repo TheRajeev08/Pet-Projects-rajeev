@@ -1,0 +1,11 @@
+// qid:08 db:rev_source — per account x integration (surface): last 7d, prior 7d, last 28d gross spend, AI units and users
+let asof = toscalar(salesforce_account_daily_ubb_revenue_fact | where measurement_date > ago(21d) | summarize max(measurement_date));
+salesforce_account_daily_ubb_revenue_fact
+| where sales_owner_id == "{{OWNER_ID}}" and measurement_date > asof - 28d
+| join kind=leftouter ubb_integration_model_dim on ubb_integration_model_id
+| extend d = (asof - measurement_date) / 1d
+| summarize g = sum(gross_usage_in_dollar), a = sum(ai_units_consumed), u = sum(nbr_of_ubb_users) by id = salesforce_account_id, integration, measurement_date, d
+| summarize l7 = round(sumif(g, d < 7), 2), p7 = round(sumif(g, d >= 7 and d < 14), 2), l28 = round(sum(g), 2), aiu28 = round(sum(a), 1),
+    u7 = maxif(u, d < 7), up7 = maxif(u, d >= 7 and d < 14), u28 = max(u) by id, integration
+| where l28 > 0 or u28 > 0
+| extend asof = asof
