@@ -418,10 +418,50 @@ def previous_snapshot(day):
         return json.load(f)
 
 
+DEFINITIONS = {
+    "consuming": "Any Copilot active users, seats assigned, or UBB spend in the last 90 days",
+    "active_this_week": "Active users > 0 or UBB gross spend > 0 in the latest 7 days",
+    "active_last_week": "Same as active_this_week, for the 7 days before that",
+    "inactive_this_week": "Consuming (90d) but not active this week",
+    "trend_4w": "Avg weekly active users, last 4 weeks vs the 4 weeks before",
+    "declining": "trend_4w <= -10%",
+    "growing": "trend_4w >= +10%",
+    "low_utilization": "Consuming, >= 10 assigned seats and 28-day active / assigned < 30%",
+    "renewing_in_days": "Days from the data date to next renewal (negative = past)",
+    "health_moved": "Copilot health category differs from one week earlier",
+    "utilization": "28-day active users / assigned seats",
+    "wow_*": "Latest 7 days minus the prior 7 days",
+}
+
+
+def add_flags(model):
+    """Shared, question-friendly flags used by both the dashboard Ask box and ask.py."""
+    today = dt.date.fromisoformat(model["data_date"])
+    for a in model["accounts"]:
+        def pos(key, i):
+            v = num((a.get(key) or [None, None])[i])
+            return v is not None and v > 0
+        a["active_this_week"] = pos("a7", 0) or pos("gross", 0)
+        a["active_last_week"] = pos("a7", 1) or pos("gross", 1)
+        a["inactive_this_week"] = a["consuming"] and not a["active_this_week"]
+        t = a.get("trend_4w")
+        a["declining"] = t is not None and t <= -0.1
+        a["growing"] = t is not None and t >= 0.1
+        u = a.get("utilization")
+        a["low_utilization"] = bool(a["consuming"] and u is not None and (a.get("assigned") or 0) >= 10 and u < 0.3)
+        a["renewing_in_days"] = (dt.date.fromisoformat(a["renewal"]) - today).days if a.get("renewal") else None
+        hc = a.get("h_health_cat") or [None, None]
+        a["health_prev"] = hc[1] if len(hc) > 1 else None
+        a["health_moved"] = bool(a.get("health_cat") and a["health_prev"] and a["health_cat"] != a["health_prev"])
+    model["definitions"] = DEFINITIONS
+
+
+SNAP_FIELDS = ("id", "name", "consuming", "active_this_week", "active_7d", "active_28d", "assigned", "contracted_seats", "utilization",
+               "at_risk", "health", "health_cat", "gross_7d", "gross_28d", "mtd_gross", "top_surface", "top_model")
+
+
 def slim(model):
-    return {"data_date": model["data_date"],
-            "accounts": [{"id": a["id"], "name": a["name"], "consuming": a["consuming"], "active_7d": a["active_7d"],
-                          "assigned": a["assigned"], "health_cat": a["health_cat"], "gross_7d": a["gross_7d"]} for a in model["accounts"]]}
+    return {"data_date": model["data_date"], "accounts": [{k: a.get(k) for k in SNAP_FIELDS} for a in model["accounts"]]}
 
 
 def main():
@@ -436,6 +476,7 @@ def main():
     if "01" in missing:
         sys.exit("Query 01 (owned accounts) is required.")
     model = build(day, raw, meta)
+    add_flags(model)
     model["missing_sources"] = missing
     prev = previous_snapshot(day)
     model["compared_to"] = prev["data_date"] if prev else None
@@ -447,9 +488,13 @@ def main():
 
     with open(os.path.join(ROOT, "template.html")) as f:
         tpl = f.read()
+    with open(os.path.join(os.path.dirname(args.out), "model.json"), "w") as f:
+        json.dump(model, f, separators=(",", ":"))
     blob = json.dumps(model, separators=(",", ":")).replace("</", "<\\/")
+    with open(os.path.join(ROOT, "ask_engine.js")) as f:
+        engine = f.read().replace("</", "<\\/")
     with open(args.out, "w") as f:
-        f.write(tpl.replace("/*__DATA__*/null", blob))
+        f.write(tpl.replace("/*__ASK_ENGINE__*/", engine).replace("/*__DATA__*/null", blob))
 
     p = model["portfolio"]
     print(f"Dashboard written: {args.out}")

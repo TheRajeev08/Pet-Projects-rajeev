@@ -78,6 +78,18 @@
   .facts div b { font-weight: 600; font-variant-numeric: tabular-nums; }
   .notes li { margin-bottom: 6px; }
   .empty { color: var(--muted); padding: 12px; text-align: center; }
+  .ask { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; }
+  .ask form { display: flex; gap: 8px; }
+  .ask input { flex: 1; font: inherit; font-size: 15px; padding: 9px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); }
+  .ask input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .ask button[type=submit] { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 600; }
+  .ask-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .ask-chips button { font-size: 12px; padding: 3px 10px; border-radius: 999px; color: var(--muted); }
+  .ask-answer { margin-top: 14px; }
+  .ask-answer .a { font-size: 15px; font-weight: 550; }
+  .ask-answer .interp { margin: 4px 0 10px; }
+  .ask-answer .tablewrap { max-height: 50vh; }
+  kbd { font: 11px ui-monospace, monospace; border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
   a { color: var(--accent); }
   svg text { fill: var(--muted); font-size: 10px; }
 </style>
@@ -88,10 +100,22 @@
   <span class="meta" id="meta"></span>
 </header>
 <nav>
-  <a href="#overview">Overview</a><a href="#changes">What changed</a><a href="#accounts">Accounts</a>
+  <a href="#ask">Ask</a><a href="#overview">Overview</a><a href="#changes">What changed</a><a href="#accounts">Accounts</a>
   <a href="#trends">Portfolio trends</a><a href="#untapped">Not yet consuming</a><a href="#notes">Data notes</a>
 </nav>
 <main>
+  <section id="ask">
+    <div class="ask">
+      <form id="ask-form" autocomplete="off">
+        <input id="ask-q" type="text" placeholder="Ask about your accounts, e.g. which accounts are not active this week?" aria-label="Ask a question about your accounts">
+        <button type="submit">Ask</button>
+      </form>
+      <div class="ask-chips" id="ask-chips"></div>
+      <div class="ask-answer" id="ask-answer" hidden></div>
+      <p class="muted small" style="margin:10px 0 0">Answers come only from this page's data (runs offline in your browser). Press <kbd>/</kbd> to focus. For anything it can't answer, use <b>Copy for Copilot</b> and paste into Copilot chat.</p>
+    </div>
+  </section>
+
   <section id="overview"><div class="kpis" id="kpis"></div></section>
 
   <section id="changes">
@@ -136,6 +160,9 @@
 
 <dialog id="dlg"><div class="dlg-head"><div><h2 id="dlg-title" style="margin:0"></h2><div class="muted small" id="dlg-sub"></div></div><button id="dlg-close">Close</button></div><div class="dlg-body" id="dlg-body"></div></dialog>
 
+<script>
+/*__ASK_ENGINE__*/
+</script>
 <script>
 const D = /*__DATA__*/null;
 (function () {
@@ -446,6 +473,50 @@ const D = /*__DATA__*/null;
       `<div class="panel" style="margin-bottom:12px"><div class="facts">${facts}</div></div><div class="grid2">${blocks.map(b => `<div class="panel">${b}</div>`).join("")}</div>`;
     dlg.showModal(); dlg.scrollTop = 0;
   }
+  // ---------- ask (natural language, offline)
+  (function () {
+    if (typeof AskEngine !== "function") { $("#ask").hidden = true; return; }
+    const eng = AskEngine(D), form = $("#ask-form"), input = $("#ask-q"), out = $("#ask-answer"), chips = $("#ask-chips");
+    const DELTA = { delta: {}, deltaInv: { invert: true }, moneyDelta: { money: true }, ppDelta: { pct: true }, num2Delta: {} };
+    const cell = (c, row) => {
+      const v = c.get ? c.get(row) : row[c.key];
+      if (DELTA[c.fmt]) return isNum(v) ? (c.fmt === "num2Delta" ? (v > 0 ? "+" : "") + v.toFixed(2) : delta(v, DELTA[c.fmt]).replace('class="d ', 'class="')) : "—";
+      if (c.key === "health_cat" || c.key === "health_prev") return v ? `<span class="dot ${esc(v)}"></span>${esc(v)}` : "—";
+      if (c.key === "name") return `<span class="name">${esc(v)}</span>`;
+      return esc(eng.fmtVal(v, c.fmt));
+    };
+    const copyText = q => "Using the copilot-dashboard-ask skill, answer from my Copilot consumption dashboard: " + q;
+    function renderChips(list) { chips.innerHTML = list.map(q => `<button type="button">${esc(q)}</button>`).join(""); }
+    function run(q) {
+      const r = eng.ask(q);
+      let body = "";
+      if (r.type === "accounts" && r.rows.length) {
+        body = `<div class="tablewrap"><table><thead><tr>${r.cols.map((c, i) => `<th class="${i ? "" : "l"}">${esc(c.label)}</th>`).join("")}</tr></thead><tbody>${r.rows.map(a => `<tr class="click" data-id="${esc(a.id)}">${r.cols.map(c => `<td>${cell(c, a)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+      } else if (r.type === "table" && r.rows.length) {
+        body = `<div class="tablewrap"><table><thead><tr>${r.cols.map((c, i) => `<th class="${i ? "" : "l"}">${esc(c.label)}</th>`).join("")}</tr></thead><tbody>${r.rows.map(x => `<tr>${r.cols.map(c => `<td>${cell(c, x)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+      } else if (r.type === "changes" && r.rows.length) {
+        body = `<div class="changes">${r.rows.map(c => `<div class="change" data-id="${esc(c.id)}"><span><span class="chip ${esc(c.severity)}">${esc(KIND_LABEL[c.kind] || c.kind)}</span></span><span class="acct">${esc(c.account)}</span><span>${esc(c.text)}</span></div>`).join("")}</div>`;
+      }
+      const sugg = r.suggestions ? `<div class="ask-chips">${r.suggestions.map(s => `<button type="button" data-q="${esc(s)}">${esc(s)}</button>`).join("")}</div>` : "";
+      out.innerHTML = `<div class="a">${esc(r.answer)}</div>` +
+        `<div class="interp muted small">${r.interpreted && r.interpreted.length ? "Interpreted as: " + r.interpreted.map(esc).join(" · ") + " · " : ""}data as of ${esc(r.asof || "—")} · <button type="button" id="ask-copy" class="small" style="padding:1px 8px">Copy for Copilot</button></div>` + sugg + body;
+      out.hidden = false;
+      $("#ask-copy", out).addEventListener("click", ev => {
+        const t = copyText(q), b = ev.currentTarget;
+        (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(() => { b.textContent = "Copied ✓"; }, () => { window.prompt("Copy this into Copilot chat:", t); });
+      });
+    }
+    form.addEventListener("submit", ev => { ev.preventDefault(); const q = input.value.trim(); if (q) { run(q); history.replaceState(null, "", "#ask=" + encodeURIComponent(q)); } });
+    chips.addEventListener("click", ev => { const b = ev.target.closest("button"); if (b) { input.value = b.textContent; form.requestSubmit(); } });
+    out.addEventListener("click", ev => {
+      const s = ev.target.closest("button[data-q]"); if (s) { input.value = s.dataset.q; form.requestSubmit(); return; }
+      const r = ev.target.closest("[data-id]"); if (r) openAccount(r.dataset.id);
+    });
+    document.addEventListener("keydown", ev => { if (ev.key === "/" && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName) && !dlg.open) { ev.preventDefault(); input.focus(); input.select(); } });
+    renderChips(eng.suggestions().slice(0, 8));
+    const m = location.hash.match(/^#ask=(.+)/);
+    if (m) { input.value = decodeURIComponent(m[1]); run(input.value); }
+  })();
 })();
 </script>
 </body>

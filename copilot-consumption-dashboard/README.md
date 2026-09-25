@@ -8,6 +8,7 @@ A daily-refreshed, **local-only** dashboard of the Salesforce accounts you own t
 
 | Section | Contents |
 |---|---|
+| **Ask** | A natural-language question box, e.g. *"which accounts are not active this week?"*, *"Red health accounts using Copilot CLI with more than 20 users"*, *"biggest drop in spend"*, *"who renews in 60 days?"*, *"what changed for <account>"*. It runs offline in the page, shows how the question was interpreted, and returns a table you can click into. |
 | **Overview KPIs** | Consuming accounts, accounts active this week, weekly/28-day active users, assigned and contracted seats, users at risk, acceptance rate, UBB gross/billable spend, AI units, month-to-date spend with run-rate and projected billable, Copilot billed over the last 12 months, GitHub ARR, health mix. All show WoW deltas and 13-week sparklines. |
 | **What changed this week** | New or stopped consumers, active-user swings, seat assignment and contract changes, health category moves, rising users at risk, spend spikes and drops, newly adopted surfaces, pool overage risk, renewals within 90 days with declining usage, low utilisation, and ownership adds/removes. Filterable, and each item links to its account. |
 | **Accounts table** | Sortable and searchable, with WoW deltas: health, actives, assigned, utilisation, contracted seats, at risk, 4-week trend, UBB 7d/28d/MTD/run-rate, acceptance, top surface and model, ARR, renewal. CSV export. |
@@ -27,12 +28,29 @@ flowchart LR
   C --> D[~/CopilotConsumptionDashboard/data/raw/DATE/*.json]
   D --> E[build_dashboard.py<br/>metrics · WoW · changes]
   E --> F[data/snapshots/DATE.json]
-  E --> G[~/CopilotConsumptionDashboard/dashboard.html<br/>self-contained, offline]
+  E --> G[~/CopilotConsumptionDashboard/dashboard.html<br/>self-contained, offline, Ask box]
+  E --> H[model.json] --> I[ask.py / copilot-dashboard-ask skill]
 ```
 
 - The queries in `queries/` are the versioned source of truth. `{{OWNER_ID}}` and `{{OWNER_NAME}}` come from your config.
 - **WoW** compares the latest 7 days with the 7 before, using daily facts, so it works from the first run. Ownership changes compare with the saved snapshot closest to 7 days earlier.
 - The dashboard is a single HTML file with inline JS/SVG, no network calls and no CDN.
+
+## Asking questions
+
+There are two ways to ask questions, and both answer **only from the dashboard's data**, so the answers always match the page.
+
+1. **The Ask box** on the dashboard is a rule-based parser (`ask_engine.js`, inlined at build time). It handles filters (activity, health, surfaces, models, region/segment, renewals, utilisation, numeric thresholds), WoW changes, top/bottom-N rankings, counts/totals/averages, account lookups, and model/surface breakdowns. Filters can be combined. Press `/` to focus. Questions are shareable via `dashboard.html#ask=<question>`.
+2. **Copilot chat** handles anything the box can't parse. Click **Copy for Copilot** and paste the text into Copilot chat. The `copilot-dashboard-ask` skill answers with read-only SQL over the same model via `ask.py`:
+   ```bash
+   python3 ask.py schema                       # tables, columns and shared definitions
+   python3 ask.py sql "SELECT name, active_7d FROM accounts WHERE inactive_this_week = 1"
+   python3 ask.py install-skill                # (re)install the skill into ~/.copilot/skills/
+   ```
+
+Shared definitions such as *active this week*, *inactive*, *declining* and *low utilisation* are computed once in `build_dashboard.py` (`add_flags`) and used by the page, the Ask box and `ask.py`. The builder also writes the full model to `~/CopilotConsumptionDashboard/model.json` for `ask.py`.
+
+Tests: `node tests/test_ask_engine.js` (synthetic data; when a local `model.json` exists it also checks the Ask box agrees with the shared flags).
 
 ## Setup
 
@@ -40,8 +58,9 @@ flowchart LR
 2. Make sure the **revenue-mcp-server** MCP is connected in the Copilot app.
 3. Ask Copilot to *"Follow copilot-consumption-dashboard/REFRESH.md"*, or create a daily automation with that prompt.
 4. Open `~/CopilotConsumptionDashboard/dashboard.html`.
+5. Optional: run `python3 ask.py install-skill` to enable chat questions.
 
-Requires Python 3.9+ (stdlib only).
+Requires Python 3.9+ (stdlib only). Node is needed only to run the tests.
 
 ## Data sources and caveats
 

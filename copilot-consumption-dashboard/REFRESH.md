@@ -28,7 +28,12 @@ Config, data and output live in `~/CopilotConsumptionDashboard/`, outside the re
    ```
    Any `WARNING … 1000 rows` line means a query hit the row cap. Report it, because the query needs splitting.
 
-5. **Report back** in a few lines:
+5. **Refresh the chat skill** (keeps the `copilot-dashboard-ask` skill in sync with this code)
+   ```bash
+   python3 ask.py install-skill
+   ```
+
+6. **Report back** in a few lines:
    - the headline line printed by the builder;
    - the top 5–8 changes, prioritising `bad`/`warn`;
    - the path `~/CopilotConsumptionDashboard/dashboard.html`;
