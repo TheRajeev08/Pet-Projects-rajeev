@@ -29,6 +29,8 @@ const D = {
     acct({ name: "Gammaray Systems", active_7d: 0, active_28d: 12, assigned: 15, utilization: 0.8, gross_7d: 0, wow_a7: -9, wow_gross: -50,
       health: 0.5, health_cat: "Yellow", health_prev: "Yellow", active_last_week: true, inactive_this_week: true, a7: [0, 9], gross: [0, 50] }),
     acct({ name: "Deltoid Nonuser", consuming: false }),
+    acct({ name: "Zetaflow Partners", usage_unlinked: true, signals: ["UBB on unowned account"], linked_gross_28d: 4000,
+      linked_usage: [{ id: "X1", name: "zetaflowpartner", gross_7d: 1500, gross_p7: 600, gross_28d: 4000, users_7d: 120 }] }),
     acct({ name: "Epsilon Private Limited", usage_unlinked: true, signals: ["Copilot billed"], copilot_billed_lcm: 1200, copilot_billed_ltm: 9000 }),
   ],
   changes: [
@@ -47,9 +49,9 @@ t("accounts that stopped this week", r => assert.deepStrictEqual(names(r), ["Gam
 t("which accounts have red health", r => assert.deepStrictEqual(names(r), ["Betamax Ltd"]));
 t("health worsened", r => assert.deepStrictEqual(names(r), ["Betamax Ltd"]));
 t("which accounts use copilot cli", r => assert.deepStrictEqual(names(r), ["Alphaworks Corp"]));
-t("accounts not using copilot cli", r => assert.deepStrictEqual(names(r), ["Betamax Ltd", "Epsilon Private Limited", "Gammaray Systems"]));
+t("accounts not using copilot cli", r => assert.deepStrictEqual(names(r), ["Betamax Ltd", "Epsilon Private Limited", "Gammaray Systems", "Zetaflow Partners"]));
 t("accounts using claude models", r => assert.deepStrictEqual(names(r), ["Alphaworks Corp"]));
-t("accounts not using claude", r => assert.deepStrictEqual(names(r), ["Betamax Ltd", "Epsilon Private Limited", "Gammaray Systems"]));
+t("accounts not using claude", r => assert.deepStrictEqual(names(r), ["Betamax Ltd", "Epsilon Private Limited", "Gammaray Systems", "Zetaflow Partners"]));
 t("accounts with more than 50 active users", r => assert.deepStrictEqual(names(r), ["Alphaworks Corp"]));
 t("accounts with fewer than 5 users and red health", r => assert.deepStrictEqual(names(r), ["Betamax Ltd"]));
 t("accounts with between 10 and 50 assigned seats", r => assert.deepStrictEqual(names(r), ["Betamax Ltd", "Gammaray Systems"]));
@@ -66,7 +68,9 @@ t("is betamax active this week?", r => assert.match(r.answer, /^No/));
 t("what changed this week", r => { assert.strictEqual(r.type, "changes"); assert.strictEqual(r.rows.length, 2); });
 t("negative changes", r => assert.strictEqual(r.rows.length, 1));
 t("accounts in northland with more than 50 users", r => assert.deepStrictEqual(names(r), ["Alphaworks Corp"]));
-t("accounts with usage not linked", r => assert.deepStrictEqual(names(r), ["Epsilon Private Limited"]));
+t("accounts with usage not linked", r => assert.deepStrictEqual(names(r), ["Epsilon Private Limited", "Zetaflow Partners"]));
+t("which accounts have usage on unowned accounts", r => assert.deepStrictEqual(names(r), ["Epsilon Private Limited", "Zetaflow Partners"]));
+t("how is zetaflow doing", r => { assert.match(r.answer, /unowned Salesforce account 'zetaflowpartner' \(\$1,500 last 7d/); assert.doesNotMatch(r.answer, /not active/); });
 t("epsilon limited", r => assert.match(r.answer, /billed \$1,200/));
 t("help", r => assert.strictEqual(r.type, "help"));
 t("gibberish blah", r => { assert.strictEqual(r.ok, false); assert.ok(r.suggestions.length > 0); });

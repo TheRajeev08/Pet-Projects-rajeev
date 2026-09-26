@@ -133,10 +133,15 @@ def build(day, raw, meta):
         integ.setdefault(r["id"], []).append(r)
     for r in raw.get("11", []):
         models.setdefault(r["id"], []).append(r)
+    linked = {}
+    for r in raw.get("12", []):
+        linked.setdefault(r["id"], []).append({"id": r["linked_id"], "name": r["linked_name"], "gross_7d": num(r["gross_7d"]) or 0,
+                                               "gross_p7": num(r["gross_p7"]) or 0, "gross_28d": num(r["gross_28d"]) or 0,
+                                               "users_7d": r.get("users_7d") or 0})
 
     asof = {}
     arr_dates = sorted({period(p["date"]) for r in raw.get("09", []) for p in chunk(r["s"], r["cols"])})
-    for q in ("03", "04", "06", "07", "08", "10"):
+    for q in ("03", "04", "06", "07", "08", "10", "12"):
         rows = raw.get(q) or []
         if rows and rows[0].get("asof"):
             asof[q] = rows[0]["asof"][:10]
@@ -223,6 +228,7 @@ def build(day, raw, meta):
                                      "u28": r.get("u28") or 0} for r in integ.get(aid, [])], key=lambda r: -r["l28"])
         a["models"] = sorted([{"model": r["model"], "l7": num(r["l7"]) or 0, "p7": num(r["p7"]) or 0, "l28": num(r["l28"]) or 0}
                               for r in models.get(aid, [])], key=lambda r: -r["l28"])
+        a["linked_usage"] = sorted(linked.get(aid, []), key=lambda r: -r["gross_28d"])
         derive(a)
         accounts.append(a)
 
@@ -276,10 +282,14 @@ def derive(a):
         signals.append("UBB spend")
     if (a.get("copilot_billed_lcm") or 0) > 0:
         signals.append("Copilot billed")
+    if a.get("linked_usage"):
+        signals.append("UBB on unowned account")
     a["signals"] = signals
-    # Billed for Copilot but no usage telemetry under this Salesforce ID: usage is likely
-    # attributed to another account (e.g. the enterprise/org is linked elsewhere).
-    a["usage_unlinked"] = signals == ["Copilot billed"]
+    # No usage telemetry under this Salesforce ID even though the customer is billed or has usage on an
+    # unowned look-alike account (typically auto-created from a GitHub enterprise slug).
+    a["usage_unlinked"] = bool(signals) and set(signals) <= {"Copilot billed", "UBB on unowned account"}
+    a["linked_gross_7d"] = round(sum(r["gross_7d"] for r in a.get("linked_usage") or []), 2) if a.get("linked_usage") else None
+    a["linked_gross_28d"] = round(sum(r["gross_28d"] for r in a.get("linked_usage") or []), 2) if a.get("linked_usage") else None
     a["consuming"] = bool(signals)
     # 13-week trend of active users: last 4 weeks avg vs weeks 4-7 avg
     def avg(xs):
@@ -390,6 +400,9 @@ def changes(model, prev_snapshot):
                 add("renewal", "bad", a, f"Renews in {days} days with active users down {fmt_pct(a['trend_4w'])} (4-wk avg)", days)
             elif 0 <= days <= 90:
                 add("renewal", "info", a, f"Renews in {days} days ({a['renewal']})", days)
+        for r in a.get("linked_usage") or []:
+            add("linked", "warn", a, f"Copilot usage on unowned Salesforce account '{r['name']}': ${r['gross_7d']:,.0f} this week, ${r['gross_28d']:,.0f} over 28 days "
+                f"({r['users_7d']} users). Ask Sales Ops to merge it into this account", r["gross_28d"])
         if a["utilization"] is not None and a["assigned"] and a["assigned"] >= 5 and a["utilization"] < 0.5:
             add("utilization", "warn", a, f"Low utilization: {a['utilization']*100:.0f}% of {int(a['assigned'])} assigned seats active (28d)", a["utilization"])
 
@@ -424,9 +437,10 @@ def previous_snapshot(day):
 
 
 DEFINITIONS = {
-    "consuming": "Any Copilot active users, seats assigned, or UBB spend in the last 90 days, or Copilot billed last month",
+    "consuming": "Any Copilot active users, seats assigned, or UBB spend in the last 90 days, Copilot billed last month, or UBB on an unowned look-alike account",
+    "linked_usage": "UBB spend (28d) on Salesforce accounts with no real owner (e.g. Data Syncer, auto-created from a GitHub enterprise slug) whose name matches this account. Shown for context; not added to this account's totals",
     "active_this_week": "Active users > 0 or UBB gross spend > 0 in the latest 7 days",
-    "usage_unlinked": "Billed for Copilot last month but no usage telemetry under this Salesforce account (usage likely attributed to another account); excluded from inactive_this_week since activity is unknown",
+    "usage_unlinked": "Billed for Copilot or has usage on an unowned look-alike account, but no usage telemetry under this Salesforce account; excluded from inactive_this_week",
     "active_last_week": "Same as active_this_week, for the 7 days before that",
     "inactive_this_week": "Consuming (90d) but not active this week",
     "trend_4w": "Avg weekly active users, last 4 weeks vs the 4 weeks before",
@@ -478,7 +492,7 @@ def main():
     args = ap.parse_args()
 
     day, raw, meta = load_raw(args.date)
-    missing = [q for q in ("01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11") if q not in raw]
+    missing = [q for q in ("01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12") if q not in raw]
     if "01" in missing:
         sys.exit("Query 01 (owned accounts) is required.")
     model = build(day, raw, meta)

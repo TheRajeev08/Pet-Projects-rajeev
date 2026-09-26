@@ -157,7 +157,7 @@ function AskEngine(D) {
       if (lastWeek) out.filters.push({ id: "active_last", l: label("were active last week", "was active last week"), test: a => a.active_last_week, cols: ["active_7d"] });
       else out.filters.push({ id: "active", l: label("are active this week", "is active this week"), test: a => a.active_this_week, cols: ["active_7d", "gross_7d"] });
     }
-    if (/usage not linked|unlinked|billed (but|with) no usage|missing usage|no telemetry/.test(qn)) out.filters.push({ id: "unlinked", l: label("are billed but have usage not linked", "is billed but has usage not linked"), test: a => a.usage_unlinked, cols: ["copilot_billed_lcm", "copilot_billed_ltm"] });
+    if (/usage not linked|unlinked|billed (but|with) no usage|missing usage|no telemetry|unowned|data syncer|\bmerg(e|ed|ing)\b|wrong (salesforce )?account|misattributed/.test(qn)) { out.filters.push({ id: "unlinked", l: label("have usage not linked to their Salesforce account", "has usage not linked to its Salesforce account"), test: a => a.usage_unlinked || (a.linked_usage || []).length > 0, cols: ["linked_gross_28d", "copilot_billed_lcm"] }); out.defaultSort = out.defaultSort || { key: "linked_gross_28d", dir: "desc" }; }
     if (/\bno (active )?users\b|zero (active )?users|without (active )?users/.test(qn)) out.filters.push({ id: "no_users", l: label("have no active users this week", "has no active users this week"), test: a => !(n0(a.active_7d) > 0), cols: ["active_7d", "gross_7d"] });
     if (/\bno (ubb )?(spend|usage[- ]based)|zero spend|without spend/.test(qn)) out.filters.push({ id: "no_spend", l: label("have no UBB spend this week", "has no UBB spend this week"), test: a => !(n0(a.gross_7d) > 0), cols: ["gross_7d", "active_7d"] });
 
@@ -299,8 +299,8 @@ function AskEngine(D) {
     contracted_seats: "Contracted", utilization: "Utilization", at_risk: "At risk", gross_7d: "UBB 7d", gross_28d: "UBB 28d", gross_90d: "UBB 90d", mtd_gross: "MTD", gross_run_rate_month: "Month run-rate",
     billable_7d: "Billable 7d", aiu_7d: "AI units 7d", total_arr: "GitHub ARR", acceptance_28d: "Acceptance", trend_4w: "4-wk trend", renewal: "Renewal", renewing_in_days: "Days to renewal",
     wow_a7: "Δ active 7d", wow_a28: "Δ active 28d", wow_assigned: "Δ assigned", wow_gross: "Δ UBB 7d", wow_at_risk: "Δ at risk", wow_health: "Δ health", wow_aiu: "Δ AI units", wow_acceptance: "Δ acceptance",
-    copilot_billed_lcm: "Copilot billed last month", copilot_billed_ltm: "Copilot billed 12 mo", top_surface: "Top surface", top_model: "Top model", ghe_seats: "GHE seats", region: "Region", segment: "Segment", industry: "Industry", territory: "Territory" };
-  const COL_FMT = { copilot_billed_lcm: "money", copilot_billed_ltm: "money", gross_7d: "money", gross_28d: "money", gross_90d: "money", mtd_gross: "money", gross_run_rate_month: "money", billable_7d: "money", total_arr: "money", wow_gross: "moneyDelta",
+    linked_gross_28d: "UBB 28d on unowned account", copilot_billed_lcm: "Copilot billed last month", copilot_billed_ltm: "Copilot billed 12 mo", top_surface: "Top surface", top_model: "Top model", ghe_seats: "GHE seats", region: "Region", segment: "Segment", industry: "Industry", territory: "Territory" };
+  const COL_FMT = { linked_gross_28d: "money", copilot_billed_lcm: "money", copilot_billed_ltm: "money", gross_7d: "money", gross_28d: "money", gross_90d: "money", mtd_gross: "money", gross_run_rate_month: "money", billable_7d: "money", total_arr: "money", wow_gross: "moneyDelta",
     utilization: "pct", acceptance_28d: "pct", trend_4w: "pctSigned", health: "num2", wow_health: "num2Delta", wow_a7: "delta", wow_a28: "delta", wow_assigned: "delta", wow_at_risk: "deltaInv", wow_aiu: "delta", wow_acceptance: "ppDelta" };
   function col(key) {
     let lbl = COL_LABEL[key] || key, fmt = COL_FMT[key] || "auto";
@@ -397,8 +397,10 @@ function AskEngine(D) {
       const extra = p.metric ? [col(p.metric.k)] : [];
       const ans = rows.map(a => {
         if (p.metric) return `${a.name}: ${p.metric.label} ${fmtVal(metricGetter(p.metric, w)(a), p.metric.f)}${p.metric.wow && isNum(a[p.metric.wow]) ? ` (${a[p.metric.wow] >= 0 ? "+" : ""}${fmtVal(a[p.metric.wow], p.metric.f)} WoW)` : ""}`;
-        const bits = [a.consuming ? (a.active_this_week ? "active this week" : "not active this week") : "not consuming Copilot"];
-        if (a.usage_unlinked) bits.push(`billed ${fmtVal(a.copilot_billed_lcm, "money")} for Copilot last month but usage isn't linked to this Salesforce account (likely recorded under another account/enterprise)`);
+        const bits = [a.consuming ? (a.active_this_week ? "active this week" : a.usage_unlinked ? "no usage recorded on this Salesforce account" : "not active this week") : "not consuming Copilot"];
+        const lu = a.linked_usage || [];
+        if (lu.length) bits.push(`Copilot usage is recorded on unowned Salesforce account ${lu.map(r => `'${r.name}' (${fmtVal(r.gross_7d, "money")} last 7d, ${fmtVal(r.gross_28d, "money")} 28d, ${r.users_7d} users)`).join(", ")}, not on this one`);
+        else if (a.usage_unlinked) bits.push(`billed ${fmtVal(a.copilot_billed_lcm, "money")} for Copilot last month but usage isn't linked to this Salesforce account (likely recorded under another account/enterprise)`);
         if (isNum(a.active_7d)) bits.push(`${a.active_7d} weekly active${isNum(a.wow_a7) ? ` (${a.wow_a7 >= 0 ? "+" : ""}${a.wow_a7} WoW)` : ""}`);
         if (isNum(a.assigned)) bits.push(`${a.assigned} assigned seats`);
         if (a.health_cat) bits.push(`${a.health_cat} health`);

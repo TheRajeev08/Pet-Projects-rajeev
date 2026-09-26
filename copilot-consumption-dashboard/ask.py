@@ -20,7 +20,7 @@ WEEKLY_METRICS = {"a7": "active_7d", "a28": "active_28d", "h_assigned": "assigne
                   "gross": "ubb_gross", "billable": "ubb_billable", "aiu": "ai_units", "ubb_users": "ubb_users",
                   "accepted": "accepted", "shown": "shown"}
 LIST_KEYS = {"a7", "a28", "h_assigned", "h_at_risk", "h_health", "h_health_cat", "h_grr_30d", "gross", "billable", "aiu", "ubb_users",
-             "accepted", "shown", "signals", "arr_series", "integrations", "models", "editors", "risk", "surface_mix"}
+             "accepted", "shown", "signals", "arr_series", "integrations", "models", "editors", "risk", "surface_mix", "linked_usage"}
 
 
 def scalar(v):
@@ -50,7 +50,10 @@ def load():
     db.execute("CREATE TABLE integrations (id, name, integration, surface, spend_7d, spend_prev_7d, spend_28d, ai_units_28d, users_7d, users_prev_7d, users_28d)")
     db.execute("CREATE TABLE models (id, name, model, spend_7d, spend_prev_7d, spend_28d)")
     db.execute("CREATE TABLE contract_history (id, name, period, copilot_seats, business_seats, enterprise_seats, total_arr)")
+    db.execute("CREATE TABLE linked_usage (id, name, linked_id, linked_name, spend_7d, spend_prev_7d, spend_28d, users_7d)")
     for a in accts:
+        for r in a.get("linked_usage") or []:
+            db.execute("INSERT INTO linked_usage VALUES (?,?,?,?,?,?,?,?)", (a["id"], a["name"], r.get("id"), r.get("name"), r.get("gross_7d"), r.get("gross_p7"), r.get("gross_28d"), r.get("users_7d")))
         for k, metric in WEEKLY_METRICS.items():
             for i, v in enumerate(a.get(k) or []):
                 if v is not None:
@@ -114,6 +117,7 @@ def cmd_schema():
         "integrations": "UBB spend by integration (surface = product area) per account",
         "models": "UBB spend by model per account",
         "contract_history": "contracted Copilot seats and total ARR at month-ends ('current' = latest)",
+        "linked_usage": "Copilot UBB on unowned Salesforce accounts (e.g. Data Syncer, created from a GitHub enterprise slug) whose name matches an owned account; not included in account totals",
         "changes": "this week's change feed shown on the dashboard",
         "snapshots": "one row per account per saved daily snapshot (history grows daily)",
         "meta": "data_date, data_as_of, generated_at, missing_sources",

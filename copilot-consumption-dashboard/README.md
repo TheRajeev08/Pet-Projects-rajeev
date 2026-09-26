@@ -15,6 +15,7 @@ A daily-refreshed, **local-only** dashboard of the Salesforce accounts you own t
 | **Account drill-down** | 13-week charts (actives, seats, health, at risk, spend, AI units, acceptance), contracted seat history, a per-integration/surface table, model mix, risk-factor breakdown, editors, MAU retention (GRR/NRR), pools, billing, pipeline, CSM/CSA. |
 | **Portfolio trends** | Active users, active accounts, spend, spend stacked by surface, AI units, acceptance, surface adoption table, model mix. |
 | **Not yet consuming** | Owned accounts with no Copilot signal, ranked by GHE seats and ARR. These are whitespace. |
+| **Usage on unowned accounts** | Copilot usage on Salesforce accounts with no real owner (for example auto-created by Data Syncer from a GitHub enterprise slug) whose name matches an account you own. It shows in the account's detail and in What changed so you can get it merged. It isn't added to totals. |
 | **Data notes** | Definitions, per-source freshness and row counts, and caveats. |
 
 **Consuming** means any Copilot active users, seats assigned, or usage-based-billing (UBB) spend in the last 90 days, or Copilot billed last month. Accounts billed with no usage telemetry are flagged *usage not linked*, which usually means their usage is attributed to another account or enterprise. **Scope** is accounts where you are the Salesforce Account Owner.
