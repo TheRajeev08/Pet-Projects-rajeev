@@ -1,0 +1,4 @@
+data/
+dashboard.html
+__pycache__/
+config.local.json

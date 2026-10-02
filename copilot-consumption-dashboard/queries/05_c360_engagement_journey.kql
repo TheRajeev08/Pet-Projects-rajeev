@@ -1,0 +1,18 @@
+// qid:05 db:c360 — latest + 7-days-earlier engagement ratios, adoption phase, MAU retention
+let ids = entity_salesforce_account | where sales_owner == "{{OWNER_NAME}}" | summarize by entity_id;
+let easof = toscalar(fact_engagement_metrics_v2 | where day > ago(21d) | summarize max(day));
+let eng = fact_engagement_metrics_v2
+  | where entity_type == "Salesforce Account" and entity_id in (ids) and product == "Copilot" and (day == easof or day == easof - 7d)
+  | summarize num = sum(engagement_metric_numerator_value), den = sum(engagement_metric_denominator_value) by entity_id, engagement_metric_name, cur = day == easof
+  | summarize eng = make_bag(bag_pack(strcat(engagement_metric_name, iff(cur, "", " (prev)")), pack_array(num, den))) by entity_id;
+let jny = copilot_customer_journey | where entity_type == "Salesforce Account" and entity_id in (ids) and day > ago(21d)
+  | summarize arg_max(day, adoption_phase, health_status, copilot_first_paid_date, adoption_metric_value, engagement_metric_value) by entity_id;
+let ret = fact_copilot_mau_retention | where entity_type == "Salesforce Account" and entity_id in (ids) and day > ago(45d)
+  | summarize arg_max(day, period_length, mau_grr, mau_nrr, num_mau_users_retained, num_mau_users_churned, num_mau_users_new) by entity_id, period_length
+  | summarize ret = make_bag(bag_pack(period_length, pack_array(mau_grr, mau_nrr, num_mau_users_retained, num_mau_users_churned, num_mau_users_new)))  by entity_id;
+eng
+| join kind=fullouter jny on entity_id
+| extend entity_id = coalesce(entity_id, entity_id1)
+| join kind=fullouter ret on entity_id
+| project id = coalesce(entity_id, entity_id2), eng, adoption_phase, journey_health = health_status, copilot_first_paid_date,
+    adoption_value = adoption_metric_value, engagement_value = engagement_metric_value, retention = ret, eng_asof = easof

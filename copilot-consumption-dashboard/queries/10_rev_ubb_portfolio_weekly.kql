@@ -1,0 +1,8 @@
+// qid:10 db:rev_source — portfolio weekly gross spend by integration (for mix / trend charts)
+let asof = toscalar(salesforce_account_daily_ubb_revenue_fact | where measurement_date > ago(21d) | summarize max(measurement_date));
+salesforce_account_daily_ubb_revenue_fact
+| where sales_owner_id == "{{OWNER_ID}}" and measurement_date > asof - 91d
+| join kind=leftouter ubb_integration_model_dim on ubb_integration_model_id
+| extend wk = toint((asof - measurement_date) / 7d)
+| summarize gross = round(sum(gross_usage_in_dollar), 2), accts = count_distinct(salesforce_account_id) by wk, integration
+| extend asof = asof

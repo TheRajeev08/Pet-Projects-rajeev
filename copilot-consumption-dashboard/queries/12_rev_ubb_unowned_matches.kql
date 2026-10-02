@@ -1,0 +1,23 @@
+// qid:12 db:rev_source — Copilot UBB on unowned Salesforce accounts (e.g. auto-created from a GitHub enterprise slug) whose name matches an account you own
+let asof = toscalar(salesforce_account_daily_ubb_utilization_burn_rate_fact | where measurement_date > ago(21d) | summarize max(measurement_date));
+let norm = (n: string) { replace_regex(replace_regex(tolower(n), @"[^a-z0-9]", ""), @"(privatelimited|pvtltd|pvt|limited|ltd|inc|llc|llp|india|technologies|technology|solutions|software|services|systems|consulting|corporation|corp|gmbh|group|labs|co)+$", "") };
+let owned = salesforce_account_monthly_product_arr_seats_fact | where sales_owner_id == "{{OWNER_ID}}" and measurement_date > ago(100d)
+  | distinct salesforce_account_id
+  | join kind=inner salesforce_account_dim on salesforce_account_id
+  | project owned_id = salesforce_account_id, okey = norm(salesforce_account_name)
+  | where strlen(okey) >= 5 | extend b = substring(okey, 0, 5);
+let cand = salesforce_account_daily_ubb_utilization_burn_rate_fact
+  | where measurement_date > asof - 28d and sales_owner_id != "{{OWNER_ID}}"
+  | summarize gross_28d = round(sum(account_gross_usage_in_dollar), 2), gross_7d = round(sumif(account_gross_usage_in_dollar, measurement_date > asof - 7d), 2),
+      gross_p7 = round(sumif(account_gross_usage_in_dollar, measurement_date <= asof - 7d and measurement_date > asof - 14d), 2),
+      users_7d = max(iff(measurement_date > asof - 7d, account_nbr_of_ubb_users, long(0))), owner_id = take_any(sales_owner_id) by salesforce_account_id
+  | where gross_28d > 0
+  | join kind=leftouter (sales_owner_dim | project owner_id = sales_owner_id, owner = sales_owner) on owner_id
+  | where isempty(owner)
+  | join kind=inner salesforce_account_dim on salesforce_account_id
+  | project linked_id = salesforce_account_id, linked_name = salesforce_account_name, gross_7d, gross_p7, gross_28d, users_7d, ckey = norm(salesforce_account_name)
+  | where strlen(ckey) >= 5 | extend b = substring(ckey, 0, 5);
+owned | join kind=inner cand on b
+| where ckey == okey or (strlen(okey) >= 8 and ckey startswith okey) or (strlen(ckey) >= 8 and okey startswith ckey)
+| project id = owned_id, linked_id, linked_name, gross_7d, gross_p7, gross_28d, users_7d, asof
+| order by gross_28d desc

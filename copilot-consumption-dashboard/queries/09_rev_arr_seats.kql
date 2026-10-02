@@ -1,0 +1,8 @@
+// qid:09 db:rev_source — contracted Copilot ARR & seats snapshots (month-ends + latest day), last ~100 days
+salesforce_account_monthly_product_arr_seats_fact
+| where sales_owner_id == "{{OWNER_ID}}" and measurement_date > ago(100d)
+| summarize total_arr = sum(total_arr), copilot_arr = sumif(total_arr, product_type == "Copilot"),
+    cb = sum(copilot_business_seats), ce = sum(copilot_enterprise_seats), cs = sum(copilot_standalone_seats), ghe_seats = sum(license_seats) by id = salesforce_account_id, measurement_date
+| order by id asc, measurement_date asc
+| summarize s = make_list(pack_array(format_datetime(measurement_date, "yyyy-MM-dd"), total_arr, copilot_arr, cb, ce, cs, ghe_seats)) by id
+| extend cols = "date,total_arr,copilot_arr,cb_seats,ce_seats,standalone_seats,ghe_seats"

@@ -1,0 +1,11 @@
+// qid:06 db:rev_source — Copilot health score, weekly (wk 0 = latest available day)
+let asof = toscalar(salesforce_account_daily_copilot_health_score_fact | where measurement_date > ago(21d) | summarize max(measurement_date));
+salesforce_account_daily_copilot_health_score_fact
+| where sales_owner_id == "{{OWNER_ID}}" and measurement_date > asof - 91d
+| extend wk = toint((asof - measurement_date) / 7d)
+| summarize arg_max(measurement_date, assigned_users, users_at_risk, copilot_health_score, copilot_health_score_category, product_health_score, commercial_health_score, grr_30day,
+    users_w_copilot_mau_risk, users_w_intracohort_90d_usar_risk, users_w_no_activity_l180d_risk, users_w_pru_mau_retention_risk) by salesforce_account_id, wk
+| order by salesforce_account_id asc, wk asc
+| summarize s = make_list(pack_array(wk, assigned_users, users_at_risk, round(copilot_health_score, 3), copilot_health_score_category, round(product_health_score, 3), round(commercial_health_score, 3), round(grr_30day, 3),
+    users_w_copilot_mau_risk, users_w_intracohort_90d_usar_risk, users_w_no_activity_l180d_risk, users_w_pru_mau_retention_risk)) by id = salesforce_account_id
+| extend asof = asof, cols = "wk,assigned,at_risk,health,health_cat,product_health,commercial_health,grr_30d,risk_mau,risk_intracohort_90d,risk_no_activity_180d,risk_pru_mau_retention"

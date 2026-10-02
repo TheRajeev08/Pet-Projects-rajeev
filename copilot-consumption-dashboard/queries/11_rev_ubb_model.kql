@@ -1,0 +1,9 @@
+// qid:11 db:rev_source — per account x model: last 7d, prior 7d and last 28d gross spend (model mix)
+let asof = toscalar(salesforce_account_daily_ubb_revenue_fact | where measurement_date > ago(21d) | summarize max(measurement_date));
+salesforce_account_daily_ubb_revenue_fact
+| where sales_owner_id == "{{OWNER_ID}}" and measurement_date > asof - 28d
+| join kind=leftouter ubb_integration_model_dim on ubb_integration_model_id
+| extend d = (asof - measurement_date) / 1d
+| summarize l7 = round(sumif(gross_usage_in_dollar, d < 7), 2), p7 = round(sumif(gross_usage_in_dollar, d >= 7 and d < 14), 2), l28 = round(sum(gross_usage_in_dollar), 2) by id = salesforce_account_id, model
+| where l28 > 0
+| extend asof = asof

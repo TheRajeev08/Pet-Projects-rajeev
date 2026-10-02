@@ -1,0 +1,18 @@
+// qid:07 db:rev_source — Copilot usage-based billing: weekly spend/AI units/users + latest month-end projection & pool utilization
+let asof = toscalar(salesforce_account_daily_ubb_utilization_burn_rate_fact | where measurement_date > ago(21d) | summarize max(measurement_date));
+let f = salesforce_account_daily_ubb_utilization_burn_rate_fact | where sales_owner_id == "{{OWNER_ID}}" and measurement_date > asof - 91d;
+let m0 = startofmonth(asof);
+let cur = f | where measurement_date >= m0
+  | summarize arg_max(measurement_date, projected_month_end_spend, promo_pool_for_month_in_dollar, promo_pool_utilization_pct, standard_pool_for_month_in_dollar, standard_pool_utilization_pct) by salesforce_account_id;
+let mtd = f | where measurement_date >= m0
+  | summarize mtd_gross = sum(account_gross_usage_in_dollar), mtd_billable = sum(account_billable_usage_in_dollar) by salesforce_account_id;
+f
+| extend wk = toint((asof - measurement_date) / 7d)
+| summarize gross = round(sum(account_gross_usage_in_dollar), 2), billable = round(sum(account_billable_usage_in_dollar), 2), aiu = round(sum(account_ai_units_consumed), 1), users = max(account_nbr_of_ubb_users) by salesforce_account_id, wk
+| order by salesforce_account_id asc, wk asc
+| summarize s = make_list(pack_array(wk, gross, billable, aiu, users)) by salesforce_account_id
+| join kind=leftouter cur on salesforce_account_id
+| join kind=leftouter mtd on salesforce_account_id
+| project id = salesforce_account_id, s, last_day = measurement_date, month_start = m0, projected_month_end_spend = round(projected_month_end_spend, 2),
+    promo_pool = promo_pool_for_month_in_dollar, promo_util = round(promo_pool_utilization_pct, 3), standard_pool = standard_pool_for_month_in_dollar, standard_util = round(standard_pool_utilization_pct, 3),
+    mtd_gross = round(mtd_gross, 2), mtd_billable = round(mtd_billable, 2), asof = asof, cols = "wk,gross,billable,ai_units,max_daily_users"
