@@ -256,12 +256,42 @@ def build(day, raw, meta):
             "sources": meta, "accounts": accounts, "portfolio": portfolio, "orphans": orphans}
 
 
-NAME_SUFFIX = re.compile(r"(privatelimited|pvtltd|pvt|limited|ltd|inc|llc|llp|india|technologies|technology|solutions|software|services|systems|consulting|corporation|corp|gmbh|group|labs|co)+$")
+NAME_SUFFIXES = (
+    "privatelimited",
+    "technologies",
+    "corporation",
+    "consulting",
+    "technology",
+    "solutions",
+    "software",
+    "services",
+    "systems",
+    "pvtltd",
+    "limited",
+    "india",
+    "group",
+    "gmbh",
+    "labs",
+    "corp",
+    "pvt",
+    "ltd",
+    "inc",
+    "llc",
+    "llp",
+    "co",
+)
 
 
 def name_key(n):
     """Same normalisation as query 12: lowercase alphanumerics with trailing corporate suffixes removed."""
-    return NAME_SUFFIX.sub("", re.sub(r"[^a-z0-9]", "", (n or "").lower()))
+    k = re.sub(r"[^a-z0-9]", "", (n or "").lower())
+    while True:
+        for suffix in NAME_SUFFIXES:
+            if k.endswith(suffix):
+                k = k[:-len(suffix)]
+                break
+        else:
+            return k
 
 
 def names_match(k1, k2):
