@@ -284,7 +284,7 @@ const D = /*__DATA__*/null;
   })();
 
   // ---------- changes
-  const KIND_LABEL = { new_consumer: "New consumer", stopped: "Stopped", active_users: "Active users", assigned: "Seats assigned", contract: "Contract", health: "Health", risk: "At risk", spend: "Spend", surface: "New surface", overage: "Overage", renewal: "Renewal", utilization: "Utilization", linked: "Unowned account usage", ownership_added: "Ownership +", ownership_removed: "Ownership −" };
+  const KIND_LABEL = { new_consumer: "New consumer", stopped: "Stopped", active_users: "Active users", assigned: "Seats assigned", contract: "Contract", health: "Health", risk: "At risk", spend: "Spend", surface: "New surface", overage: "Overage", renewal: "Renewal", utilization: "Utilization", linked: "Unowned account usage", ownership_added: "Ownership +", ownership_removed: "Ownership −", ownership: "Ownership" };
   const SEV_ORDER = { bad: 0, warn: 1, good: 2, info: 3 };
   (function changes() {
     const ch = D.changes || [];
@@ -420,7 +420,10 @@ const D = /*__DATA__*/null;
   // ---------- drill-down
   const dlg = $("#dlg");
   $("#dlg-close").addEventListener("click", () => dlg.close());
-  dlg.addEventListener("click", e => { if (e.target === dlg) dlg.close(); });
+  dlg.addEventListener("click", e => {
+    if (e.target === dlg) return dlg.close();
+    const s = e.target.closest("[data-sib]"); if (s) { e.preventDefault(); openAccount(s.dataset.sib); }
+  });
   const RISK_LABEL = { risk_mau: "Low MAU", risk_intracohort_90d: "Declining vs cohort (90d)", risk_no_activity_180d: "No activity (180d)", risk_pru_mau_retention: "Poor MAU retention" };
   function openAccount(id) {
     const a = byId[id]; if (!a) return;
@@ -476,7 +479,11 @@ const D = /*__DATA__*/null;
       (lu.length ? `Copilot usage is recorded on ${lu.length === 1 ? "an unowned Salesforce account" : "unowned Salesforce accounts"} with a matching name, typically auto-created from the GitHub enterprise slug. Ask Sales Ops to merge ${lu.length === 1 ? "it" : "them"} into this account:` +
         `<table class="small" style="margin-top:8px"><thead><tr><th class="l">Unowned account</th><th>UBB 7d</th><th>WoW</th><th>UBB 28d</th><th>Users 7d</th></tr></thead><tbody>${lu.map(r => `<tr><td class="l"><a href="${sfUrl(r.id)}" target="_blank" rel="noopener">${esc(r.name)} ↗</a></td><td>${money(r.gross_7d)}</td><td>${delta(r.gross_7d - r.gross_p7, { money: true })}</td><td>${money(r.gross_28d)}</td><td>${fmt(r.users_7d)}</td></tr>`).join("")}</tbody></table>`
         : `The usage is probably recorded under another account or enterprise.`) + `</div>` : "";
-    $("#dlg-body").innerHTML = unlinked + (acctChanges.length ? `<div class="panel" style="margin-bottom:12px"><h3>This week</h3>${acctChanges.map(c => `<div style="margin:4px 0"><span class="chip ${esc(c.severity)}">${esc(KIND_LABEL[c.kind] || c.kind)}</span> ${esc(c.text)}</div>`).join("")}</div>` : "") +
+    const sib = a.usage_on_sibling || [];
+    const sibling = sib.length ? `<div class="panel" style="margin-bottom:12px"><span class="chip info">Usage on sibling account</span> No telemetry is attributed to this Salesforce account` +
+      (isNum(a.copilot_billed_lcm) && a.copilot_billed_lcm > 0 ? ` (billed ${money(a.copilot_billed_lcm)} for Copilot last month)` : "") +
+      `; its usage is recorded on ${sib.map(s => `<a href="#" data-sib="${esc(s.id)}">${esc(s.name)}</a> (${money(s.gross_28d)} UBB 28d)`).join(", ")}, which you also own.</div>` : "";
+    $("#dlg-body").innerHTML = unlinked + sibling + (acctChanges.length ? `<div class="panel" style="margin-bottom:12px"><h3>This week</h3>${acctChanges.map(c => `<div style="margin:4px 0"><span class="chip ${esc(c.severity)}">${esc(KIND_LABEL[c.kind] || c.kind)}</span> ${esc(c.text)}</div>`).join("")}</div>` : "") +
       `<div class="panel" style="margin-bottom:12px"><div class="facts">${facts}</div></div><div class="grid2">${blocks.map(b => `<div class="panel">${b}</div>`).join("")}</div>`;
     dlg.showModal(); dlg.scrollTop = 0;
   }

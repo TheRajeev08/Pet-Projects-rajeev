@@ -14,6 +14,7 @@ import glob
 import json
 import math
 import os
+import re
 import sys
 
 from paths import ROOT, dashboard_path, data_dir
@@ -108,17 +109,28 @@ def period(d):
 
 
 def arr_series(row, dates):
-    pts = {}
+    pts, cur_dates = {}, []
     for p in (chunk(row["s"], row["cols"]) if row else []):
         k = period(p["date"])
+        if k.startswith("9999"):
+            cur_dates.append(p["date"])
         agg = pts.setdefault(k, {"copilot_arr": 0.0, "total_arr": 0.0, "cb": 0.0, "ce": 0.0, "cs": 0.0})
         agg["copilot_arr"] += num(p["copilot_arr"]) or 0
         agg["total_arr"] += num(p["total_arr"]) or 0
         agg["cb"] += num(p["cb_seats"]) or 0
         agg["ce"] += num(p["ce_seats"]) or 0
         agg["cs"] += num(p["standalone_seats"]) or 0
+    # Each product's latest snapshot lands on its own day, and right after a month closes it moves onto the new
+    # month-end. When that month-end is newer than the account's 'current' days, fill any field that is empty in
+    # 'current' from it instead of reading it as zero.
+    month_ends = [d for d in dates if not d.startswith("9999")]
+    if dates and dates[-1].startswith("9999") and month_ends and month_ends[-1] in pts and max(cur_dates, default="") < month_ends[-1]:
+        cur = pts.setdefault(dates[-1], {"copilot_arr": 0.0, "total_arr": 0.0, "cb": 0.0, "ce": 0.0, "cs": 0.0})
+        for k, v in pts[month_ends[-1]].items():
+            if not cur[k]:
+                cur[k] = v
     out = []
-    for d in dates:  # a missing period means no contracted products then -> zero
+    for d in dates:  # otherwise a missing period means no contracted products then -> zero
         g = pts.get(d, {"copilot_arr": 0.0, "total_arr": 0.0, "cb": 0.0, "ce": 0.0, "cs": 0.0})
         out.append({"date": "current" if d.startswith("9999") else d, "copilot_arr": g["copilot_arr"], "total_arr": g["total_arr"],
                     "seats": g["cb"] + g["ce"] + g["cs"], "cb": g["cb"], "ce": g["ce"]})
@@ -232,6 +244,8 @@ def build(day, raw, meta):
         derive(a)
         accounts.append(a)
 
+    link_billed_to_siblings(accounts)
+
     orphans = []
     kusto_ids = set(snap) | set(by["03"]) | set(by["06"]) | set(by["07"])
     for aid in sorted(kusto_ids - set(sf)):
@@ -240,6 +254,34 @@ def build(day, raw, meta):
     portfolio = build_portfolio(accounts, raw.get("10", []))
     return {"generated_at": dt.datetime.now().isoformat(timespec="minutes"), "data_date": day, "asof": asof,
             "sources": meta, "accounts": accounts, "portfolio": portfolio, "orphans": orphans}
+
+
+NAME_SUFFIX = re.compile(r"(privatelimited|pvtltd|pvt|limited|ltd|inc|llc|llp|india|technologies|technology|solutions|software|services|systems|consulting|corporation|corp|gmbh|group|labs|co)+$")
+
+
+def name_key(n):
+    """Same normalisation as query 12: lowercase alphanumerics with trailing corporate suffixes removed."""
+    return NAME_SUFFIX.sub("", re.sub(r"[^a-z0-9]", "", (n or "").lower()))
+
+
+def names_match(k1, k2):
+    return len(k1) >= 5 and len(k2) >= 5 and (k1 == k2 or (len(k1) >= 8 and k2.startswith(k1)) or (len(k2) >= 8 and k1.startswith(k2)))
+
+
+def link_billed_to_siblings(accounts):
+    """A billed-only account whose usage is recorded on another owned look-alike account (e.g. after Sales Ops
+    reassigns the slug-created account) is covered, not unlinked."""
+    direct = [b for b in accounts if set(b["signals"]) & {"active users", "seats assigned", "UBB spend"}]
+    for a in accounts:
+        a["usage_on_sibling"] = []
+        if not a["usage_unlinked"] or a.get("linked_usage"):
+            continue
+        k = name_key(a["name"])
+        sib = [{"id": b["id"], "name": b["name"], "gross_28d": b.get("gross_28d")} for b in direct if b["id"] != a["id"] and names_match(k, name_key(b["name"]))]
+        if sib:
+            a["usage_on_sibling"] = sib
+            a["usage_unlinked"] = False
+            a["signals"].append("usage on sibling account")
 
 
 def v0(series):
@@ -441,6 +483,7 @@ DEFINITIONS = {
     "linked_usage": "UBB spend (28d) on Salesforce accounts with no real owner (e.g. Data Syncer, auto-created from a GitHub enterprise slug) whose name matches this account. Shown for context; not added to this account's totals",
     "active_this_week": "Active users > 0 or UBB gross spend > 0 in the latest 7 days",
     "usage_unlinked": "Billed for Copilot or has usage on an unowned look-alike account, but no usage telemetry under this Salesforce account; excluded from inactive_this_week",
+    "usage_on_sibling": "Billed for Copilot with no telemetry of its own, but another owned account with a matching name carries the usage (e.g. a reassigned slug-created account); excluded from inactive_this_week",
     "active_last_week": "Same as active_this_week, for the 7 days before that",
     "inactive_this_week": "Consuming (90d) but not active this week",
     "trend_4w": "Avg weekly active users, last 4 weeks vs the 4 weeks before",
@@ -463,7 +506,7 @@ def add_flags(model):
             return v is not None and v > 0
         a["active_this_week"] = pos("a7", 0) or pos("gross", 0)
         a["active_last_week"] = pos("a7", 1) or pos("gross", 1)
-        a["inactive_this_week"] = a["consuming"] and not a["active_this_week"] and not a.get("usage_unlinked")
+        a["inactive_this_week"] = a["consuming"] and not a["active_this_week"] and not a.get("usage_unlinked") and not a.get("usage_on_sibling")
         t = a.get("trend_4w")
         a["declining"] = t is not None and t <= -0.1
         a["growing"] = t is not None and t >= 0.1

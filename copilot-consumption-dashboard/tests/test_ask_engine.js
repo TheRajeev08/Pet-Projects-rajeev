@@ -72,6 +72,15 @@ t("accounts with usage not linked", r => assert.deepStrictEqual(names(r), ["Epsi
 t("which accounts have usage on unowned accounts", r => assert.deepStrictEqual(names(r), ["Epsilon Private Limited", "Zetaflow Partners"]));
 t("how is zetaflow doing", r => { assert.match(r.answer, /unowned Salesforce account 'zetaflowpartner' \(\$1,500 last 7d/); assert.doesNotMatch(r.answer, /not active/); });
 t("epsilon limited", r => assert.match(r.answer, /billed \$1,200/));
+{
+  const e2 = AskEngine({ ...D, accounts: [acct({ name: "Omegaline Partners", signals: ["Copilot billed", "usage on sibling account"], copilot_billed_lcm: 900,
+    usage_on_sibling: [{ id: "S1", name: "omegalinepartner", gross_28d: 5000 }] })] });
+  const r = e2.ask("how is omegaline doing");
+  assert.match(r.answer, /usage is recorded on sibling account 'omegalinepartner' \(\$5,000 28d\)/);
+  assert.doesNotMatch(r.answer, /not active this week/);
+  assert.deepStrictEqual(e2.ask("which accounts are not active this week?").rows.length, 0);
+  n++;
+}
 t("help", r => assert.strictEqual(r.type, "help"));
 t("gibberish blah", r => { assert.strictEqual(r.ok, false); assert.ok(r.suggestions.length > 0); });
 

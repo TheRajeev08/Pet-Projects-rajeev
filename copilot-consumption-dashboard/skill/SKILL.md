@@ -41,6 +41,7 @@ The dashboard's "Ask" box uses these same definitions. Don't invent your own.
 | what changed | `changes` table (same feed as the dashboard) |
 | history across days | `snapshots` (grows by one row per account per daily refresh) |
 | usage not linked / on the wrong or unowned Salesforce account / needs merging | `accounts.usage_unlinked = 1` and the `linked_usage` table (usage on unowned look-alike accounts, e.g. auto-created from a GitHub enterprise slug; **not** in account totals) |
+| billed on one account but usage on another owned account | `accounts.usage_on_sibling` (JSON list of owned look-alike accounts carrying the usage; such accounts are not counted as inactive) |
 
 Unless the user asks otherwise, scope questions about "accounts" to consuming accounts (`consuming = 1`). Say that you did.
 

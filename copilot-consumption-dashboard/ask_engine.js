@@ -397,10 +397,11 @@ function AskEngine(D) {
       const extra = p.metric ? [col(p.metric.k)] : [];
       const ans = rows.map(a => {
         if (p.metric) return `${a.name}: ${p.metric.label} ${fmtVal(metricGetter(p.metric, w)(a), p.metric.f)}${p.metric.wow && isNum(a[p.metric.wow]) ? ` (${a[p.metric.wow] >= 0 ? "+" : ""}${fmtVal(a[p.metric.wow], p.metric.f)} WoW)` : ""}`;
-        const bits = [a.consuming ? (a.active_this_week ? "active this week" : a.usage_unlinked ? "no usage recorded on this Salesforce account" : "not active this week") : "not consuming Copilot"];
+        const bits = [a.consuming ? (a.active_this_week ? "active this week" : a.usage_unlinked ? "no usage recorded on this Salesforce account" : (a.usage_on_sibling || []).length ? "billed here, usage on a sibling account" : "not active this week") : "not consuming Copilot"];
         const lu = a.linked_usage || [];
         if (lu.length) bits.push(`Copilot usage is recorded on unowned Salesforce account ${lu.map(r => `'${r.name}' (${fmtVal(r.gross_7d, "money")} last 7d, ${fmtVal(r.gross_28d, "money")} 28d, ${r.users_7d} users)`).join(", ")}, not on this one`);
         else if (a.usage_unlinked) bits.push(`billed ${fmtVal(a.copilot_billed_lcm, "money")} for Copilot last month but usage isn't linked to this Salesforce account (likely recorded under another account/enterprise)`);
+        if ((a.usage_on_sibling || []).length) bits.push(`no telemetry of its own; usage is recorded on sibling account ${a.usage_on_sibling.map(s => `'${s.name}' (${fmtVal(s.gross_28d, "money")} 28d)`).join(", ")}`);
         if (isNum(a.active_7d)) bits.push(`${a.active_7d} weekly active${isNum(a.wow_a7) ? ` (${a.wow_a7 >= 0 ? "+" : ""}${a.wow_a7} WoW)` : ""}`);
         if (isNum(a.assigned)) bits.push(`${a.assigned} assigned seats`);
         if (a.health_cat) bits.push(`${a.health_cat} health`);
