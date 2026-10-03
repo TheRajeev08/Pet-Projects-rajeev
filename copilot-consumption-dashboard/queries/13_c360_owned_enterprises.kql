@@ -1,0 +1,7 @@
+// qid:13 db:c360 — GitHub enterprise accounts owned by me, for the Copilot Impact dashboard
+let snap = toscalar(entity_all | where entity_type == "Enterprise Account" and measurement_date > ago(14d) | summarize max(measurement_date));
+entity_all
+| where entity_type == "Enterprise Account" and measurement_date == snap and sales_owner == "{{OWNER_NAME}}"
+| project slug = entity_name, enterprise_id = entity_id, plan = plan_name, segment = sales_segment,
+    region, industry, csm, csa, health_cat = copilot_health_score_category, deployment = final_deployment_type
+| order by slug asc

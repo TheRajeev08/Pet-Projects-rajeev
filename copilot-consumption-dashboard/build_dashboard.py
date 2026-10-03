@@ -78,6 +78,52 @@ def weekly(points, key):
     return out
 
 
+def load_impact(day):
+    """Copilot Impact payloads, one file per enterprise slug, written by `refresh.py collect`."""
+    folder = os.path.join(DATA, "raw", day, "impact")
+    out = {}
+    for path in sorted(glob.glob(os.path.join(folder, "*.json"))):
+        try:
+            with open(path) as f:
+                payload = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            continue
+        slug = payload.get("slug")
+        if slug:
+            out[slug] = payload
+    return out
+
+
+def suggest_account(slug, accounts):
+    """Best-effort slug -> Salesforce account match by name. Never asserted as confirmed: the
+    warehouse exposes no authoritative mapping, and roughly half of all slugs are ambiguous."""
+    key = name_key(slug)
+    hits = [a for a in accounts if names_match(key, name_key(a["name"]))]
+    return {"confidence": "none" if not hits else "single" if len(hits) == 1 else "ambiguous",
+            "candidates": [{"id": a["id"], "name": a["name"], "consuming": a["consuming"]} for a in hits[:6]]}
+
+
+def build_enterprises(rows13, impact, accounts):
+    out = []
+    for row in rows13:
+        slug = row.get("slug")
+        if not slug:
+            continue
+        payload = impact.get(slug) or {}
+        data = payload.get("result") or {}
+        out.append({
+            "slug": slug, "enterprise_id": row.get("enterprise_id"),
+            "plan": row.get("plan") or None, "segment": row.get("segment") or None,
+            "region": row.get("region") or None, "industry": row.get("industry") or None,
+            "deployment": row.get("deployment") or None,
+            "match": suggest_account(slug, accounts),
+            "collected_from": payload.get("collected_from"),
+            "impact": data or None,
+            "has_impact": bool(data.get("dataAvailable")) and bool(data.get("impact")),
+        })
+    return sorted(out, key=lambda e: e["slug"].lower())
+
+
 def load_raw(day):
     base = os.path.join(DATA, "raw")
     if day is None:
@@ -253,8 +299,10 @@ def build(day, raw, meta):
         orphans.append({"id": aid, "name": (snap.get(aid) or {}).get("name") or aid})
 
     portfolio = build_portfolio(accounts, raw.get("10", []))
+    enterprises = build_enterprises(raw.get("13", []), load_impact(day), accounts)
     return {"generated_at": dt.datetime.now().isoformat(timespec="minutes"), "data_date": day, "asof": asof,
-            "sources": meta, "accounts": accounts, "portfolio": portfolio, "orphans": orphans}
+            "sources": meta, "accounts": accounts, "portfolio": portfolio, "orphans": orphans,
+            "enterprises": enterprises}
 
 
 NAME_SUFFIXES = (
@@ -567,7 +615,7 @@ def main():
     args = ap.parse_args()
 
     day, raw, meta = load_raw(args.date)
-    missing = [q for q in ("01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12") if q not in raw]
+    missing = [q for q in ("01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12", "13") if q not in raw]
     if "01" in missing:
         sys.exit("Query 01 (owned accounts) is required.")
     model = build(day, raw, meta)
