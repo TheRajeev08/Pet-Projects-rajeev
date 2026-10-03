@@ -8,7 +8,7 @@ Config, data and output live in `~/CopilotConsumptionDashboard/`, outside the re
    ```bash
    python3 refresh.py render
    ```
-   This prints 13 blocks like `=== 07 · query_kusto · database=rev_source ===` followed by the query text. If it reports missing config, stop and tell the user to create `~/CopilotConsumptionDashboard/config.json` from `config.example.json`.
+   This prints 15 blocks like `=== 07 · query_kusto · database=rev_source ===` followed by the query text. If it reports missing config, stop and tell the user to create `~/CopilotConsumptionDashboard/config.json` from `config.example.json`.
 
 2. **Run every query verbatim**
    - `query_salesforce` blocks → `revenue-mcp-server-query_salesforce` with the SOQL exactly as printed.
@@ -22,11 +22,13 @@ Config, data and output live in `~/CopilotConsumptionDashboard/`, outside the re
    ```
    Exit code 2 means some queries weren't found (it lists the IDs). Re-run just those queries verbatim, then run `collect` again.
 
-4. **Fetch Copilot Impact per enterprise**
+4. **Fetch Copilot Impact and feature settings per enterprise**
    ```bash
    python3 refresh.py slugs
    ```
-   This lists the GitHub enterprise slugs still needing Copilot Impact data today (query 13 supplies the list, so run step 3 first). For each one call `revenue-mcp-server-get_copilot_impact` with that `slug` and `namespace: "enterprise"`. Parallel calls are fine; batches of roughly eight work well. Some enterprises legitimately return `noDataReason` of `feature_disabled` or `low_or_no_usage` — collect those results as they are, do not retry them. Then run `python3 refresh.py collect` again to save the payloads, and `python3 refresh.py slugs` to confirm none are outstanding.
+   This lists the GitHub enterprise slugs still needing data today and, for each, whether `impact`, `settings` or both are outstanding (query 13 supplies the list, so run step 3 first). For each slug call `revenue-mcp-server-get_copilot_impact` **and** `revenue-mcp-server-get_copilot_feature_settings`, both with `namespace: "enterprise"`. Parallel calls are fine; batches of roughly eight work well. Some enterprises legitimately return `noDataReason` of `feature_disabled` or `low_or_no_usage` — collect those as they are, do not retry them. Then run `python3 refresh.py collect` again to save the payloads, and `python3 refresh.py slugs` to confirm none are outstanding.
+
+   Feature settings are what let the dashboard tell *"CLI is switched off"* apart from *"CLI is on and nobody uses it"*, so skipping them leaves the surface gaps blank rather than wrong.
 
 5. **Build the dashboard**
    ```bash
@@ -42,6 +44,6 @@ Config, data and output live in `~/CopilotConsumptionDashboard/`, outside the re
 7. **Report back** in a few lines:
    - the headline line printed by the builder;
    - the top 5–8 changes, prioritising `bad`/`warn`;
-   - how many enterprises returned Copilot Impact data;
+   - how many enterprises returned Copilot Impact data and feature settings;
    - the path `~/CopilotConsumptionDashboard/dashboard.html`;
    - any missing sources or warnings.

@@ -83,7 +83,7 @@ def cmd_collect(args):
     qs = queries()
     by_kql = {q["qid"]: q for q in qs if q["tool"] == "query_kusto"}
     by_soql = {norm(q["query"]): q for q in qs if q["tool"] == "query_salesforce"}
-    starts, found, impact = {}, {}, {}
+    starts, found, impact, settings = {}, {}, {}, {}
     for e in iter_events(args.session):
         d = e.get("data") or {}
         if e.get("type") == "tool.execution_start":
@@ -100,8 +100,8 @@ def cmd_collect(args):
             if not isinstance(args_in, dict):
                 args_in = {}
             qtext = args_in.get("query", "")
-            # Copilot Impact is fetched per enterprise slug, not by query text.
-            if tool.endswith("get_copilot_impact"):
+            # Copilot Impact and feature settings are fetched per enterprise slug, not by query text.
+            if tool.endswith("get_copilot_impact") or tool.endswith("get_copilot_feature_settings"):
                 slug = args_in.get("slug")
                 if slug:
                     payload = (d.get("result") or {}).get("structuredContent")
@@ -110,7 +110,8 @@ def cmd_collect(args):
                             payload = json.loads((d.get("result") or {}).get("content", ""))
                         except (json.JSONDecodeError, TypeError):
                             continue
-                    impact[slug] = {"collected_from": e.get("timestamp"), "slug": slug,
+                    bucket = settings if tool.endswith("feature_settings") else impact
+                    bucket[slug] = {"collected_from": e.get("timestamp"), "slug": slug,
                                     "namespace": args_in.get("namespace"), "result": payload}
                 continue
             q = None
@@ -142,17 +143,23 @@ def cmd_collect(args):
     # A query collected earlier today is not missing; this keeps the Impact step re-runnable.
     missing = [qid for qid in missing if not os.path.exists(os.path.join(out, f"{qid}.json"))]
 
-    if impact:
-        idir = os.path.join(out, "impact")
-        os.makedirs(idir, exist_ok=True)
-        for slug, payload in impact.items():
-            with open(os.path.join(idir, f"{slug_file(slug)}.json"), "w") as f:
+    for name, bucket in (("impact", impact), ("settings", settings)):
+        if not bucket:
+            continue
+        folder = os.path.join(out, name)
+        os.makedirs(folder, exist_ok=True)
+        for slug, payload in bucket.items():
+            with open(os.path.join(folder, f"{slug_file(slug)}.json"), "w") as f:
                 json.dump(payload, f)
-        print(f"Collected Copilot Impact for {len(impact)} enterprises into {idir}")
-    pending = [s for s in owned_slugs(day) if s not in impact]
-    if pending:
-        print(f"Copilot Impact still missing for {len(pending)} enterprises "
-              f"(run `python3 refresh.py slugs` for the list).")
+        print(f"Collected Copilot {name} for {len(bucket)} enterprises into {folder}")
+
+    slugs = owned_slugs(day)
+    for name, bucket in (("Impact", impact), ("feature settings", settings)):
+        pending = [s for s in slugs if s not in bucket and
+                   not os.path.exists(os.path.join(out, "impact" if name == "Impact" else "settings", f"{slug_file(s)}.json"))]
+        if pending:
+            print(f"Copilot {name} still missing for {len(pending)} enterprises "
+                  f"(run `python3 refresh.py slugs` for the list).")
 
     if missing:
         print("MISSING: " + ", ".join(missing) + " — run these queries (verbatim from `render`) and collect again.")
@@ -185,12 +192,19 @@ def cmd_slugs(args):
     if not slugs:
         sys.exit("No enterprise slugs collected yet — run query 13, then `collect`.")
     day = args.date or dt.date.today().isoformat()
-    idir = os.path.join(DATA, "raw", day, "impact")
-    have = {os.path.splitext(f)[0] for f in os.listdir(idir)} if os.path.isdir(idir) else set()
-    pending = [s for s in slugs if slug_file(s) not in have]
-    print(f"{len(slugs)} owned enterprises · {len(slugs) - len(pending)} already collected today")
+    base = os.path.join(DATA, "raw", day)
+    have = {}
+    for name in ("impact", "settings"):
+        folder = os.path.join(base, name)
+        have[name] = {os.path.splitext(f)[0] for f in os.listdir(folder)} if os.path.isdir(folder) else set()
+    pending = [s for s in slugs
+               if slug_file(s) not in have["impact"] or slug_file(s) not in have["settings"]]
+    print(f"{len(slugs)} owned enterprises · Impact collected {len(have['impact'])} · "
+          f"feature settings collected {len(have['settings'])}")
+    print("Call get_copilot_impact AND get_copilot_feature_settings (namespace \"enterprise\") for each slug below:")
     for s in pending:
-        print(s)
+        missing = [n for n in ("impact", "settings") if slug_file(s) not in have[n]]
+        print(f"{s}\t{'+'.join(missing)}")
 
 
 def main():
