@@ -214,6 +214,7 @@ def build(day, raw, meta):
         t = by["04"].get(aid)
         tp = chunk(t["s"], t["cols"]) if t else []
         a["accepted"], a["shown"] = weekly(tp, "accepted"), weekly(tp, "shown")
+        a["loc_accepted"], a["loc_shown"] = weekly(tp, "loc_accepted"), weekly(tp, "loc_shown")
         a["editors"] = {k: {"accepted": v[0], "shown": v[1]} for k, v in (dec(t.get("editors")) or {}).items()} if t else {}
         # engagement / retention
         e = by["05"].get(aid, {})
@@ -385,6 +386,7 @@ def build_portfolio(accounts, rows10):
          "a7": series("a7"), "a28": series("a28"), "assigned": series("h_assigned"), "gross": series("gross"),
          "billable": series("billable"), "aiu": series("aiu"), "at_risk": series("h_at_risk"),
          "accepted": series("accepted"), "shown": series("shown"),
+         "loc_accepted": series("loc_accepted"), "loc_shown": series("loc_shown"),
          "consuming_by_week": [sum(1 for a in cons if (num(a["a7"][w]) or 0) > 0 or (num(a["gross"][w]) or 0) > 0) for w in range(WEEKS)],
          "copilot_arr": sum(a["copilot_arr"] or 0 for a in cons), "contracted_seats": sum(a["contracted_seats"] or 0 for a in cons),
          "mtd_gross": sum(a["mtd_gross"] or 0 for a in cons), "projected_month_spend": sum(a["projected_month_spend"] or 0 for a in cons),
