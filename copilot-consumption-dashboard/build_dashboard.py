@@ -78,20 +78,36 @@ def weekly(points, key):
     return out
 
 
+def prior_days(day):
+    """data/raw/<date>/ folders at or before `day`, newest first."""
+    base = os.path.join(DATA, "raw")
+    if not os.path.isdir(base):
+        return []
+    days = sorted(d for d in os.listdir(base) if os.path.isdir(os.path.join(base, d)))
+    return [d for d in reversed(days) if d <= day]
+
+
 def load_enterprise_payloads(day):
-    """Per-enterprise MCP payloads written by `refresh.py collect`, keyed by slug."""
+    """Per-enterprise MCP payloads written by `refresh.py collect`, keyed by slug.
+
+    Collection is incremental and spans many days, and these payloads describe month- and
+    week-grained windows that do not move daily. A day whose per-enterprise calls did not run
+    therefore carries the most recent earlier payload forward instead of dropping the enterprise
+    entirely. Each payload keeps its own collected_from, so the UI still reports when it was read.
+    """
     out = {}
     for kind in ("impact", "settings"):
         bucket = {}
-        for path in sorted(glob.glob(os.path.join(DATA, "raw", day, kind, "*.json"))):
-            try:
-                with open(path) as f:
-                    payload = json.load(f)
-            except (OSError, json.JSONDecodeError):
-                continue
-            slug = payload.get("slug")
-            if slug:
-                bucket[slug] = payload
+        for d in prior_days(day):
+            for path in sorted(glob.glob(os.path.join(DATA, "raw", d, kind, "*.json"))):
+                try:
+                    with open(path) as f:
+                        payload = json.load(f)
+                except (OSError, json.JSONDecodeError):
+                    continue
+                slug = payload.get("slug")
+                if slug and slug not in bucket:
+                    bucket[slug] = payload
         out[kind] = bucket
     return out
 
@@ -225,6 +241,37 @@ def load_raw(day):
         if len(rows) >= 1000:
             print(f"WARNING: query {qid} returned {len(rows)} rows — Kusto 1000-row cap may have truncated results.", file=sys.stderr)
     return day, raw, meta
+
+
+# Enterprise-grained queries. They feed the Impact view, are collected incrementally, and describe
+# windows that do not move daily, so a run that skipped them reuses the last result rather than
+# publishing a model with no enterprises at all.
+ENTERPRISE_QUERIES = ("13", "14", "15")
+
+
+def carry_forward(day, raw, meta):
+    """Fill absent enterprise queries from the most recent earlier day. Returns {qid: source day}."""
+    carried = {}
+    for qid in ENTERPRISE_QUERIES:
+        if qid in raw:
+            continue
+        for d in prior_days(day):
+            path = os.path.join(DATA, "raw", d, f"{qid}.json")
+            if not os.path.isfile(path):
+                continue
+            try:
+                with open(path) as f:
+                    payload = json.load(f)
+            except (OSError, json.JSONDecodeError):
+                continue
+            res = payload["result"]
+            rows = res.get("records") if "records" in res else res.get("rows", [])
+            raw[qid] = [{k: dec(v) for k, v in r.items()} for r in rows]
+            meta[qid] = {"rows": len(rows), "collected_from": payload.get("collected_from"),
+                         "carried_from": d}
+            carried[qid] = d
+            break
+    return carried
 
 
 # ---------------------------------------------------------------- model
@@ -697,12 +744,14 @@ def main():
     args = ap.parse_args()
 
     day, raw, meta = load_raw(args.date)
+    carried = carry_forward(day, raw, meta)
     missing = [q for q in ("01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12", "13", "14", "15") if q not in raw]
     if "01" in missing:
         sys.exit("Query 01 (owned accounts) is required.")
     model = build(day, raw, meta)
     add_flags(model)
     model["missing_sources"] = missing
+    model["stale_sources"] = carried
     prev = previous_snapshot(day)
     model["compared_to"] = prev["data_date"] if prev else None
     model["changes"] = changes(model, prev)
