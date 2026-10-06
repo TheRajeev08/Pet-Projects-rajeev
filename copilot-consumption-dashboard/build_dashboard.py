@@ -78,6 +78,133 @@ def weekly(points, key):
     return out
 
 
+def load_enterprise_payloads(day):
+    """Per-enterprise MCP payloads written by `refresh.py collect`, keyed by slug."""
+    out = {}
+    for kind in ("impact", "settings"):
+        bucket = {}
+        for path in sorted(glob.glob(os.path.join(DATA, "raw", day, kind, "*.json"))):
+            try:
+                with open(path) as f:
+                    payload = json.load(f)
+            except (OSError, json.JSONDecodeError):
+                continue
+            slug = payload.get("slug")
+            if slug:
+                bucket[slug] = payload
+        out[kind] = bucket
+    return out
+
+
+def suggest_account(slug, accounts):
+    """Fallback slug -> Salesforce account match by name, used only where the warehouse supplies no
+    mapping. Never asserted as confirmed: roughly half of all slugs are ambiguous or unmatched."""
+    key = name_key(slug)
+    hits = [a for a in accounts if names_match(key, name_key(a["name"]))]
+    return {"confidence": "none" if not hits else "single" if len(hits) == 1 else "ambiguous",
+            "candidates": [{"id": a["id"], "name": a["name"], "consuming": a["consuming"]} for a in hits[:6]]}
+
+
+# Copilot feature policies that gate a usage surface, mapped onto the SURFACES taxonomy.
+# A surface is only described as "unused" when a policy confirms it is switched on.
+SURFACE_POLICIES = {
+    "Copilot CLI": ["cli"],
+    "Code review": ["code_review", "automatic_code_review"],
+    "Coding agent": ["swe_agent", "copilot_cloud_agent"],
+    "Copilot app": ["copilot_app", "desktop"],
+    "GitHub.com chat": ["dotcom_chat", "github_enterprise_feature_group"],
+    "IDE chat": ["chat_enabled", "agent_mode"],
+    "Mobile": ["mobile_chat"],
+}
+
+# Policies worth surfacing even though they carry no matching UBB integration.
+EXTRA_POLICIES = ("mcp", "spaces", "pr_summarizations", "cca_agentic_github_apps",
+                  "model_native_search", "client_byok", "memory", "insights")
+
+
+def policy_state(values):
+    """Strongest signal wins: an explicit enable or disable beats an unset policy."""
+    if "enabled" in values or "allowed" in values:
+        return "enabled"
+    if "disabled" in values or "blocked" in values:
+        return "disabled"
+    if "unconfigured" in values:
+        return "unconfigured"
+    return "no_policy" if values else "unknown"
+
+
+def build_settings(payload):
+    rows = (payload.get("result") or {}).get("settings") or []
+    values = {r.get("identifier"): r.get("value") for r in rows if r.get("identifier")}
+    labels = {r.get("identifier"): r.get("displayName") for r in rows if r.get("identifier")}
+    return {
+        "surfaces": {name: policy_state([values[p] for p in ids if p in values])
+                     for name, ids in SURFACE_POLICIES.items()},
+        "policies": [{"id": p, "label": labels.get(p, p), "value": values[p]}
+                     for p in EXTRA_POLICIES if p in values],
+        "count": len(rows),
+        "collected_from": payload.get("collected_from"),
+    }
+
+
+def build_enterprises(rows13, rows14, rows15, payloads, accounts):
+    impact, settings = payloads.get("impact", {}), payloads.get("settings", {})
+    owned_by_id = {a["id"]: a for a in accounts}
+    usage = {}
+    for r in rows14:
+        slug = r.get("slug")
+        if not slug:
+            continue
+        usage.setdefault(slug, []).append({
+            "integration": r.get("integration"), "surface": surface(r.get("integration")),
+            "l7": num(r.get("l7")) or 0, "p7": num(r.get("p7")) or 0, "l28": num(r.get("l28")) or 0,
+            "aiu28": num(r.get("aiu28")) or 0, "u7": r.get("u7") or 0, "up7": r.get("up7") or 0,
+            "u28": r.get("u28") or 0,
+            "weekly": weekly(chunk(r.get("s"), r.get("cols") or "wk,gross"), "gross"),
+        })
+    adoption = {r["slug"]: r for r in rows15 if r.get("slug")}
+
+    out = []
+    for row in rows13:
+        slug = row.get("slug")
+        if not slug:
+            continue
+        payload = impact.get(slug) or {}
+        data = payload.get("result") or {}
+        extra = adoption.get(slug) or {}
+        settings_payload = settings.get(slug)
+        # The warehouse mapping is authoritative; name matching is only a labelled fallback.
+        sf_id = (extra.get("sf_id") or "").strip()
+        linked = owned_by_id.get(sf_id)
+        if linked:
+            match = {"confidence": "confirmed", "source": "warehouse",
+                     "candidates": [{"id": linked["id"], "name": linked["name"],
+                                     "consuming": linked["consuming"]}]}
+        else:
+            match = {**suggest_account(slug, accounts), "source": "name",
+                     "unowned_sf_id": sf_id or None}
+        out.append({
+            "slug": slug, "enterprise_id": row.get("enterprise_id"),
+            "plan": row.get("plan") or None, "segment": row.get("segment") or None,
+            "region": row.get("region") or None, "industry": row.get("industry") or None,
+            "deployment": row.get("deployment") or None,
+            "match": match,
+            "collected_from": payload.get("collected_from"),
+            "impact": data or None,
+            "has_impact": bool(data.get("dataAvailable")) and bool(data.get("impact")),
+            "integrations": sorted(usage.get(slug, []), key=lambda r: -r["l28"]),
+            "settings": build_settings(settings_payload) if settings_payload else None,
+            "adoption": {k: extra.get(k) for k in (
+                "licensed", "ubb_users", "adoption_rate", "adoption_band", "wow_ubb_users",
+                "promo_util", "standard_util", "overage_risk", "utilization_band",
+                "projected_entitlement_status", "insight_category", "feature_categories",
+                "feature_category_count", "integration_count", "model_count", "adoption_maturity",
+                "spend_intensity", "product_breadth", "conversation_theme", "week_asof", "month_asof",
+            )} if extra else None,
+        })
+    return sorted(out, key=lambda e: e["slug"].lower())
+
+
 def load_raw(day):
     base = os.path.join(DATA, "raw")
     if day is None:
@@ -214,6 +341,7 @@ def build(day, raw, meta):
         t = by["04"].get(aid)
         tp = chunk(t["s"], t["cols"]) if t else []
         a["accepted"], a["shown"] = weekly(tp, "accepted"), weekly(tp, "shown")
+        a["loc_accepted"], a["loc_shown"] = weekly(tp, "loc_accepted"), weekly(tp, "loc_shown")
         a["editors"] = {k: {"accepted": v[0], "shown": v[1]} for k, v in (dec(t.get("editors")) or {}).items()} if t else {}
         # engagement / retention
         e = by["05"].get(aid, {})
@@ -252,8 +380,11 @@ def build(day, raw, meta):
         orphans.append({"id": aid, "name": (snap.get(aid) or {}).get("name") or aid})
 
     portfolio = build_portfolio(accounts, raw.get("10", []))
+    enterprises = build_enterprises(raw.get("13", []), raw.get("14", []), raw.get("15", []),
+                                    load_enterprise_payloads(day), accounts)
     return {"generated_at": dt.datetime.now().isoformat(timespec="minutes"), "data_date": day, "asof": asof,
-            "sources": meta, "accounts": accounts, "portfolio": portfolio, "orphans": orphans}
+            "sources": meta, "accounts": accounts, "portfolio": portfolio, "orphans": orphans,
+            "enterprises": enterprises}
 
 
 NAME_SUFFIXES = (
@@ -385,6 +516,7 @@ def build_portfolio(accounts, rows10):
          "a7": series("a7"), "a28": series("a28"), "assigned": series("h_assigned"), "gross": series("gross"),
          "billable": series("billable"), "aiu": series("aiu"), "at_risk": series("h_at_risk"),
          "accepted": series("accepted"), "shown": series("shown"),
+         "loc_accepted": series("loc_accepted"), "loc_shown": series("loc_shown"),
          "consuming_by_week": [sum(1 for a in cons if (num(a["a7"][w]) or 0) > 0 or (num(a["gross"][w]) or 0) > 0) for w in range(WEEKS)],
          "copilot_arr": sum(a["copilot_arr"] or 0 for a in cons), "contracted_seats": sum(a["contracted_seats"] or 0 for a in cons),
          "mtd_gross": sum(a["mtd_gross"] or 0 for a in cons), "projected_month_spend": sum(a["projected_month_spend"] or 0 for a in cons),
@@ -565,7 +697,7 @@ def main():
     args = ap.parse_args()
 
     day, raw, meta = load_raw(args.date)
-    missing = [q for q in ("01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12") if q not in raw]
+    missing = [q for q in ("01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12", "13", "14", "15") if q not in raw]
     if "01" in missing:
         sys.exit("Query 01 (owned accounts) is required.")
     model = build(day, raw, meta)

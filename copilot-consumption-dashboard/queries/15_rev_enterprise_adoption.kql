@@ -1,0 +1,37 @@
+// qid:15 db:rev_source — per GitHub enterprise: adoption breadth, licensed vs active users, pools and the authoritative Salesforce account id
+let owned = materialize(
+    database("c360").entity_all
+    | where entity_type == "Enterprise Account" and measurement_date > ago(14d) and sales_owner == "{{OWNER_NAME}}"
+    | summarize arg_max(measurement_date, entity_name) by entity_id
+    | project eid = entity_id, slug = entity_name);
+let wk = toscalar(enterprise_account_weekly_ubb_summary_fact | where week_end_date > ago(30d) | summarize max(week_end_date));
+let mo = toscalar(enterprise_account_monthly_ubb_cohort_insights_fact | summarize max(measurement_month_start_date));
+let weekly = enterprise_account_weekly_ubb_summary_fact
+    | where week_end_date == wk
+    | summarize arg_max(week_end_date, salesforce_account_id, license_users_on_account, ubb_users_on_account,
+        ubb_adoption_rate, ubb_adoption_band, promo_pool_utilization_pct, standard_pool_utilization_pct,
+        overage_risk_flag, utilization_band, projected_entitlement_status, account_insight_category,
+        wow_delta_ubb_users_on_account) by enterprise_account_id;
+let monthly = enterprise_account_monthly_ubb_cohort_insights_fact
+    | where measurement_month_start_date == mo
+    | summarize arg_max(measurement_month_start_date, salesforce_account_id, nbr_of_licensed_users, nbr_of_ubb_users,
+        adoption_rate, feature_category_count, integration_count, model_count, feature_category_list,
+        adoption_maturity_level, spend_intensity_level, product_breadth_level, customer_conversation_theme)
+        by enterprise_account_id;
+owned
+| join kind=leftouter weekly on $left.eid == $right.enterprise_account_id
+| join kind=leftouter monthly on $left.eid == $right.enterprise_account_id
+| project slug,
+    sf_id = coalesce(salesforce_account_id, salesforce_account_id1),
+    licensed = coalesce(license_users_on_account, nbr_of_licensed_users),
+    ubb_users = coalesce(ubb_users_on_account, nbr_of_ubb_users),
+    adoption_rate = coalesce(ubb_adoption_rate, adoption_rate),
+    adoption_band = ubb_adoption_band, wow_ubb_users = wow_delta_ubb_users_on_account,
+    promo_util = promo_pool_utilization_pct, standard_util = standard_pool_utilization_pct,
+    overage_risk = overage_risk_flag, utilization_band, projected_entitlement_status,
+    insight_category = account_insight_category,
+    feature_categories = feature_category_list, feature_category_count, integration_count, model_count,
+    adoption_maturity = adoption_maturity_level, spend_intensity = spend_intensity_level,
+    product_breadth = product_breadth_level, conversation_theme = customer_conversation_theme
+| extend week_asof = wk, month_asof = mo
+| order by slug asc

@@ -1,0 +1,32 @@
+// qid:14 db:rev_source — per GitHub enterprise x integration: 7d/prior 7d/28d gross, AI units, users + 13-week gross series
+let asof = toscalar(enterprise_account_daily_ubb_revenue_fact | where measurement_date > ago(21d) | summarize max(measurement_date));
+let owned = materialize(
+    database("c360").entity_all
+    | where entity_type == "Enterprise Account" and measurement_date > ago(14d) and sales_owner == "{{OWNER_NAME}}"
+    | summarize arg_max(measurement_date, entity_name) by entity_id
+    | project eid = tolong(entity_id), slug = entity_name);
+let usage = enterprise_account_daily_ubb_revenue_fact
+    | where measurement_date > asof - 91d
+    | join kind=inner owned on $left.enterprise_account_id == $right.eid
+    | join kind=leftouter ubb_integration_model_dim on ubb_integration_model_id
+    | extend d = toint((asof - measurement_date) / 1d), wk = toint((asof - measurement_date) / 7d);
+// nbr_of_ubb_users is a per-slice distinct count; take the max across the model split rather than summing it.
+let daily = usage
+    | summarize g = sum(gross_usage_in_dollar), a = sum(ai_units_consumed), u = max(nbr_of_ubb_users)
+        by slug, integration, measurement_date, d, wk;
+let totals = daily
+    | summarize l7 = round(sumif(g, d < 7), 2), p7 = round(sumif(g, d >= 7 and d < 14), 2),
+        l28 = round(sumif(g, d < 28), 2), aiu28 = round(sumif(a, d < 28), 1),
+        u7 = maxif(u, d < 7), up7 = maxif(u, d >= 7 and d < 14), u28 = maxif(u, d < 28)
+        by slug, integration;
+let series = daily
+    | where wk < 13
+    | summarize wg = round(sum(g), 2) by slug, integration, wk
+    | order by slug asc, integration asc, wk asc
+    | summarize s = make_list(pack_array(wk, wg)) by slug, integration;
+totals
+| join kind=leftouter series on slug, integration
+| where l28 > 0 or u28 > 0 or isnotempty(s)
+| project slug, integration, l7, p7, l28, aiu28, u7, up7, u28, s
+| extend asof = asof, cols = "wk,gross"
+| order by slug asc, l28 desc
