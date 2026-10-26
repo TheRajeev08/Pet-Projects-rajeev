@@ -1,6 +1,6 @@
 // Customer Pulse canvas client: hash routing, rendering through views.mjs, live updates and local action state.
 import { accountIndex, clipQuery, hashFor, isClosed, parseHash, SIGNAL_PRIORITIES, SIGNAL_SOURCES, validateModel } from "./model.mjs";
-import { VIEW_LABELS, esc, renderDrawer, renderNav, renderNotices, renderTopbar, renderUnavailable, renderView } from "./views.mjs";
+import { VIEW_LABELS, embedProblem, esc, renderDrawer, renderNav, renderNotices, renderTopbar, renderUnavailable, renderView } from "./views.mjs";
 
 const els = {
     shell: document.getElementById("app"),
@@ -36,6 +36,7 @@ const state = {
     account: null,
     subview: null,
     copilotAccount: null,
+    embedFailure: null,
     query: "",
     sort: {},
     expanded: new Set(),
@@ -120,6 +121,7 @@ function uiState() {
         account: state.account,
         subview: state.subview,
         copilotAccount: state.copilotAccount,
+        embedFailure: state.embedFailure,
         query: state.query,
         sort: state.sort,
         expanded: state.expanded,
@@ -345,6 +347,7 @@ function setHistory(hash, mode, data = null) {
 
 function apply(next) {
     const viewChanged = next.view !== state.view;
+    if (viewChanged) state.embedFailure = null;
     state.view = next.view;
     state.subview = next.subview || null;
     state.account = next.account;
@@ -584,6 +587,9 @@ function runCommand(command) {
         loadModel({ toast: "Reloaded the snapshot." });
     } else if (command === "refresh") {
         requestRefresh();
+    } else if (command === "retry-embed") {
+        state.embedFailure = null;
+        render();
     } else if (command === "dismiss-refresh") {
         state.dismissed = refreshKey(state.refresh);
         writeDismissed(state.dismissed);
@@ -712,6 +718,18 @@ document.addEventListener("keydown", event => {
         runUndo();
     }
 });
+
+// Embedded dashboards ---------------------------------------------------------------------------
+// A server that cannot serve the page (an older canvas process, a stopped server) would otherwise show its raw error inside the frame.
+
+document.addEventListener("load", event => {
+    const frame = event.target;
+    if (!(frame instanceof HTMLIFrameElement) || !frame.hasAttribute("data-embed")) return;
+    const detail = embedProblem(frame);
+    if (!detail) return;
+    state.embedFailure = { src: frame.getAttribute("src"), detail };
+    render();
+}, true);
 
 // Boot ----------------------------------------------------------------------------------------------
 

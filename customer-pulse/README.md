@@ -14,6 +14,7 @@ A daily automation refreshes the data, emails you a short digest of what is new,
 | --- | --- |
 | **Overview** | Headline numbers, open actions (High first), recent seat changes, upcoming renewals, a card per product, and every account with its seats and most urgent item. |
 | **Copilot** | Embedded adoption dashboard: account plays, usage, surfaces, models, Impact, forecasts and modeled whitespace. **Seats & actions** keeps Pulse's seat table, health mix, usage funnel, actions and changes. |
+| **Impact** | The embedded dashboard's Copilot Impact view on its own tab: enterprise adoption phases, throughput, cost and ROI where the snapshot has them, and a clear empty state where it does not. |
 | **GHE** | Contracted seats, metered and billable users, and adoption per account, plus accounts without GHE. |
 | **GHAS** | Contracted seats, active committers and utilization, code and secret scanning coverage, licensing model and Code Quality, plus GHE accounts without GHAS. |
 | **Signals** | Evidence-backed Gong, public-web and optional ZoomInfo signals, filtered by priority, source, account and open/done/dismissed state. Competitors and aligned engineering priorities are High; GitHub mentions are Notify; other news is FYI. |

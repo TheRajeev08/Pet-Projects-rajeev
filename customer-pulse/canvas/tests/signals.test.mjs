@@ -262,6 +262,12 @@ test("signal decisions persist through guarded HTTP API, reload and reopen", asy
     const embedded = await request(server, "GET", "/copilot/?embed=1");
     assert.equal(embedded.status, 200);
     assert.match(embedded.text, /app\.js/);
+    const missingPage = await request(server, "GET", "/copilot/nowhere", { headers: { Accept: "text/html,*/*" } });
+    assert.equal(missingPage.status, 404);
+    assert.match(missingPage.headers["content-type"], /^text\/html/);
+    assert.match(missingPage.text, /<meta name="canvas-error" content="[^"]+">/);
+    assert.doesNotMatch(missingPage.text, /not_found/);
+    assert.equal((await request(server, "GET", "/copilot/nowhere")).json.code, "not_found");
 });
 
 test("concurrent action and signal writes preserve each other and unreadable state is held back", async t => {

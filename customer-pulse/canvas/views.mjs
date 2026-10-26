@@ -6,7 +6,7 @@ import {
 } from "./model.mjs";
 
 export const ROW_LIMIT = 50;
-export const VIEW_LABELS = { overview: "Overview", copilot: "Copilot", ghe: "GHE", ghas: "GHAS", signals: "Signals", data: "Data" };
+export const VIEW_LABELS = { overview: "Overview", copilot: "Copilot", impact: "Impact", ghe: "GHE", ghas: "GHAS", signals: "Signals", data: "Data" };
 export const VIEW_FAMILY = { copilot: "ghcp", ghe: "ghe", ghas: "ghas" };
 const FAMILY_VIEW = { ghcp: "copilot", ghe: "ghe", ghas: "ghas" };
 const PRODUCT_TITLES = { ghe: "GitHub Enterprise", ghas: "GitHub Advanced Security", ghcp: "GitHub Copilot" };
@@ -733,13 +733,50 @@ function renderData(model) {
             `<div><dt>${esc(key)}</dt><dd>${esc(JSON.stringify(th[key]))}</dd></div>`).join("")}</dl></details>`;
 }
 
+/** Why an embedded frame's document is not the dashboard, or null when it loaded. Same-origin, so the document is readable. */
+export function embedProblem(frame) {
+    let doc;
+    try {
+        doc = frame.contentDocument;
+    } catch {
+        doc = null;
+    }
+    if (!doc) return "the page could not be reached.";
+    const marker = doc.querySelector('meta[name="canvas-error"]');
+    if (marker) return marker.getAttribute("content") || "the canvas server could not serve it.";
+    if (doc.contentType === "text/html") return null;
+    let message = "";
+    try {
+        message = JSON.parse(doc.body?.textContent || "")?.error || "";
+    } catch {
+        message = "";
+    }
+    return message ? `the canvas server answered “${String(message).slice(0, 200)}”` : "the canvas server sent something other than the dashboard page.";
+}
+
+/** Embedded Copilot dashboard page, or a recovery panel when the last load of that same page failed. */
+function embedFrame(ui, { name, title, src }) {
+    const failure = ui.embedFailure?.src === src ? ui.embedFailure : null;
+    if (!failure) return `<iframe class="copilot-frame" name="${name}" title="${esc(title)}" data-embed src="${esc(src)}"></iframe>`;
+    return `<section class="panel empty-state embed-failure" role="alert"><h2>${esc(title)} could not load</h2>`
+        + `<p>This canvas did not get the dashboard page${failure.detail ? `: ${esc(failure.detail)}` : "."}</p>`
+        + "<p>If Customer Pulse was updated while this canvas was open, its server may still be running the older version. "
+        + "Close this canvas and open Customer Pulse again, or start a new Copilot session, to load the update.</p>"
+        + '<p><button type="button" class="button primary" data-command="retry-embed">Try again</button></p></section>';
+}
+
 export function renderView(model, ui = {}) {
     if (ui.view === "copilot") {
         const nav = `<nav class="copilot-subnav" aria-label="Copilot views"><a href="#/copilot"${ui.subview !== "seats" ? ' aria-current="page"' : ""}>Adoption dashboard</a>`
             + `<a href="#/copilot/seats"${ui.subview === "seats" ? ' aria-current="page"' : ""}>Seats &amp; actions</a>`
             + '<a href="copilot/" target="_blank" rel="noopener noreferrer">Open Copilot dashboard in its own tab</a></nav>';
         return nav + (ui.subview === "seats" ? renderProduct(model, ui, "ghcp")
-            : `<iframe class="copilot-frame" name="copilot-dashboard" title="Copilot adoption dashboard" src="copilot/?embed=1${ui.copilotAccount ? `#/account/${encodeURIComponent(ui.copilotAccount)}` : ""}"></iframe>`);
+            : embedFrame(ui, { name: "copilot-dashboard", title: "Copilot adoption dashboard",
+                src: `copilot/?embed=1${ui.copilotAccount ? `#/account/${encodeURIComponent(ui.copilotAccount)}` : ""}` }));
+    }
+    if (ui.view === "impact") {
+        return '<nav class="copilot-subnav" aria-label="Impact views"><a href="copilot/#/impact" target="_blank" rel="noopener noreferrer">Open Copilot Impact in its own tab</a></nav>'
+            + embedFrame(ui, { name: "copilot-impact", title: "Copilot Impact dashboard", src: "copilot/?embed=1#/impact" });
     }
     if (VIEW_FAMILY[ui.view]) return renderProduct(model, ui, VIEW_FAMILY[ui.view]);
     if (ui.view === "signals") return renderSignals(model, ui);

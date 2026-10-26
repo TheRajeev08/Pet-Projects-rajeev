@@ -262,6 +262,15 @@ function json(res, status, payload) {
     res.end(JSON.stringify(payload));
 }
 
+/** Page navigations (a frame or a new tab) get a readable page, marked so the embedding canvas can offer recovery. */
+function notFoundPage(res) {
+    res.statusCode = 404;
+    headers(res, "text/html; charset=utf-8");
+    res.end('<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="canvas-error" content="this canvas has no page at that address.">'
+        + "<title>Page not found · Customer Pulse</title></head><body><h1>This Customer Pulse page does not exist</h1>"
+        + "<p>If Customer Pulse was updated while this canvas was open, close it and open Customer Pulse again to load the update.</p></body></html>");
+}
+
 function equalToken(actual, expected) {
     if (typeof actual !== "string" || actual.length !== expected.length) return false;
     return timingSafeEqual(Buffer.from(actual), Buffer.from(expected));
@@ -391,6 +400,8 @@ export async function startCanvasServer({ paths = pulsePaths(), refresh, port = 
                 guard(req, "action_forbidden");
                 const { id, state } = checkActionInput(await readJsonBody(req, 512, "action_input"));
                 json(res, 200, await setActionState({ paths, id, state }));
+            } else if (req.method === "GET" && /\btext\/html\b/.test(req.headers.accept || "")) {
+                notFoundPage(res);
             } else {
                 json(res, 404, { error: "This canvas route does not exist.", code: "not_found" });
             }
