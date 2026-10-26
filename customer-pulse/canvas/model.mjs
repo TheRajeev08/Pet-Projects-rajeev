@@ -17,6 +17,7 @@ export const SOURCE_STATES = {
     not_connected: "Not connected",
 };
 export const VIEWS = ["overview", "copilot", "impact", "ghe", "ghas", "signals", "data"];
+export const COPILOT_VIEWS = ["desk", "accounts", "trends", "changes", "notes"];
 export const TYPE_LABELS = { GHSP: "Secret Protection", GHCS: "Code Security", "Visual Studio": "Visual Studio bundle" };
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -240,7 +241,7 @@ export function clipQuery(text) {
 export function hashFor({ view = "overview", subview = null, account = null, query = "" } = {}) {
     const tab = VIEWS.includes(view) ? view : "overview";
     const search = clipQuery(query);
-    return `#/${tab}${tab === "copilot" && subview === "seats" ? "/seats" : ""}${account ? `/account/${encodeURIComponent(account)}` : ""}${search ? `?q=${encodeURIComponent(search)}` : ""}`;
+    return `#/${tab}${tab === "copilot" && COPILOT_VIEWS.includes(subview) ? `/${subview}` : ""}${account ? `/account/${encodeURIComponent(account)}` : ""}${search ? `?q=${encodeURIComponent(search)}` : ""}`;
 }
 
 /** Inverse of hashFor. Unknown views fall back to the overview, and malformed parts are dropped. */
@@ -249,8 +250,8 @@ export function parseHash(hash) {
     const mark = raw.indexOf("?");
     const parts = (mark < 0 ? raw : raw.slice(0, mark)).split("/");
     const view = VIEWS.includes(parts[0]) ? parts[0] : "overview";
-    const seats = view === "copilot" && parts[1] === "seats";
-    if (seats) parts.splice(1, 1);
+    const subview = view === "copilot" && COPILOT_VIEWS.includes(parts[1]) ? parts[1] : null;
+    if (subview || (view === "copilot" && parts[1] === "seats")) parts.splice(1, 1);
     let account = null;
     if (parts[1] === "account" && parts.length > 2) {
         try {
@@ -267,7 +268,86 @@ export function parseHash(hash) {
             query = "";
         }
     }
-    return { view, account, query, ...(seats ? { subview: "seats" } : {}) };
+    return { view, account, query, ...(subview ? { subview } : {}) };
+}
+
+const copilotMetrics = ["licenses", "business", "enterprise", "assigned", "active28", "engaged28"];
+const numberOrNull = value => isNumber(value) ? value : null;
+
+/** Null-preserving totals, with independent coverage for every measure. */
+export function copilotRowTotals(rows) {
+    const totals = {};
+    const metrics = {};
+    for (const key of copilotMetrics) {
+        const known = rows.filter(row => isNumber(row[key]));
+        totals[key] = known.length ? known.reduce((sum, row) => sum + row[key], 0) : null;
+        metrics[key] = { n: known.length, of: rows.length };
+    }
+    totals.reporting = { n: rows.filter(row => isNumber(row.active28) && isNumber(row.engaged28)).length, of: rows.length, metrics };
+    return totals;
+}
+
+/** Pulse is authoritative for contracted seats and adoption. The second model only reconciles licenses and slugs. */
+export function copilotLicenses(pulseModel, copilotModel = null) {
+    const dashboard = new Map((copilotModel?.accounts || []).map(account => [account.id, account]));
+    const slugs = new Map();
+    for (const enterprise of copilotModel?.enterprises || []) {
+        const match = enterprise.match;
+        if (!["confirmed", "single"].includes(match?.confidence) || match.candidates?.length !== 1 || !enterprise.slug) continue;
+        const id = match.candidates[0].id;
+        slugs.set(id, [...new Set([...(slugs.get(id) || []), enterprise.slug])]);
+    }
+    const usageDate = pulseModel.sources?.find(source => source.feed === "attributes")?.as_of ?? null;
+    const attention = attentionIndex(pulseModel);
+    const rows = pulseModel.accounts.filter(account => hasProduct(account, "ghcp")
+        || (!copilotModel?.missing_sources?.includes("09") && dashboard.get(account.id)?.contracted_seats > 0 && isNumber(account.products.ghcp.contracted)
+            && account.products.ghcp.contracted !== dashboard.get(account.id).contracted_seats)).map(account => {
+        const cp = account.products.ghcp;
+        const other = dashboard.get(account.id);
+        const licenses = numberOrNull(cp.contracted);
+        const assigned = numberOrNull(cp.assigned);
+        const active28 = numberOrNull(cp.funnel?.active_1d28);
+        const engaged28 = numberOrNull(cp.funnel?.engaged_1d28);
+        const dashboardLicenses = copilotModel?.missing_sources?.includes("09") ? null : numberOrNull(other?.contracted_seats);
+        const flags = {
+            unassigned: licenses !== null && assigned !== null && assigned < licenses,
+            over_assigned: licenses !== null && assigned !== null && assigned > licenses,
+            engaged_lt_50: licenses > 0 && engaged28 !== null && engaged28 / licenses < .5,
+            renewing_90: isNumber(account.renewing_in_days) && account.renewing_in_days >= 0 && account.renewing_in_days <= 90,
+            source_mismatch: licenses !== null && dashboardLicenses !== null && licenses !== dashboardLicenses,
+        };
+        return {
+            account_id: account.id, name: account.name, slug: (slugs.get(account.id) || []).sort().join(", ") || null,
+            licenses, business: numberOrNull(cp.business), enterprise: numberOrNull(cp.enterprise), assigned, active28, engaged28, flags,
+            reconciliationOnly: !hasProduct(account, "ghcp"),
+            dashboardLicenses, dashboardAsOf: copilotModel?.asof?.["09"] ?? copilotModel?.data_date ?? null,
+            licensesAsOf: cp.contracted_as_of ?? null, assignedAsOf: cp.as_of ?? null, usageAsOf: usageDate,
+            needsAttention: (attention.get(account.id)?.rank ?? PRIORITIES.length) < PRIORITIES.length
+                || cp.health?.category === "Red" || flags.source_mismatch,
+        };
+    });
+    return { rows, totals: copilotRowTotals(rows),
+        flags: Object.fromEntries(["unassigned", "over_assigned", "engaged_lt_50", "renewing_90", "source_mismatch"]
+            .map(flag => [flag, rows.filter(row => row.flags[flag]).length])),
+        reconciliation: copilotModel ? "available" : "unavailable",
+        note: copilotModel ? null : "Copilot dashboard reconciliation unavailable. Showing Pulse figures only." };
+}
+
+export function copilotTotals(model) {
+    return copilotLicenses(model).totals;
+}
+
+export function copilotFilterCounts(rows) {
+    return { all: rows.length, attention: rows.filter(row => row.needsAttention).length,
+        unassigned: rows.filter(row => row.flags.unassigned).length,
+        engaged_lt_50: rows.filter(row => row.flags.engaged_lt_50).length,
+        renewing_90: rows.filter(row => row.flags.renewing_90).length };
+}
+
+export function copilotRowsFor(rows, filter = "all", query = "") {
+    const text = clipQuery(query).trim().toLowerCase();
+    return rows.filter(row => (!text || [row.name, row.account_id, row.slug].some(value => String(value || "").toLowerCase().includes(text)))
+        && (filter === "all" || (filter === "attention" ? row.needsAttention : Boolean(row.flags[filter]))));
 }
 
 /** The local decision store is authoritative for actions and signals, including reopened items. Never mutates. */
@@ -298,6 +378,7 @@ const kpiOf = kpi => isObject(kpi)
 /** Compact, JSON-safe digest of the model for the agent-facing get_summary action. */
 export function summarize(model, { limit = 8 } = {}) {
     const kpis = model.kpis || {};
+    const copilot = copilotTotals(model);
     const open = actionsFor(model);
     const counts = Object.fromEntries(PRIORITIES.slice(0, 3).map(priority => [priority, open.filter(a => a.priority === priority).length]));
     return {
@@ -314,6 +395,7 @@ export function summarize(model, { limit = 8 } = {}) {
             ghas: { accounts: kpis.ghas?.accounts ?? null, contracted_seats: kpiOf(kpis.ghas?.contracted),
                 active_committers: kpiOf(kpis.ghas?.committers), utilization: kpis.ghas?.utilization ?? null },
             copilot: { accounts: kpis.ghcp?.accounts ?? null, contracted_seats: kpiOf(kpis.ghcp?.contracted),
+                licenses_total: copilot.licenses, active_devs_28d: copilot.active28, engaged_devs_28d: copilot.engaged28,
                 assigned_seats: kpiOf(kpis.ghcp?.assigned), users_at_risk: kpis.ghcp?.at_risk ?? null,
                 health_categories: kpis.ghcp?.categories ?? {} },
         },

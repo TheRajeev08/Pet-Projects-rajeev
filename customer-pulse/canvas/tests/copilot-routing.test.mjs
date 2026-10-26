@@ -2,23 +2,35 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { hashFor, parseHash } from "../model.mjs";
 import { embedProblem, renderNav, renderView } from "../views.mjs";
+import { syntheticModel } from "./helpers.mjs";
 
 test("Copilot sub-view round trips with the existing drawer and search grammar", () => {
     for (const input of [
-        { view: "copilot", subview: "seats", account: null, query: "" },
-        { view: "copilot", subview: "seats", account: "synthetic/a", query: "test & more" },
+        ...["desk", "accounts", "trends", "changes", "notes"].flatMap(subview => [
+            { view: "copilot", subview, account: null, query: "" },
+            { view: "copilot", subview, account: "synthetic/a", query: "test & more" },
+        ]),
     ]) {
         assert.deepEqual(parseHash(hashFor(input)), input);
     }
     assert.equal(hashFor({ view: "ghe", subview: "seats" }), "#/ghe");
     assert.deepEqual(parseHash("#/copilot"), { view: "copilot", account: null, query: "" });
+    assert.equal(hashFor(parseHash("#/copilot/seats")), "#/copilot");
+    assert.equal(hashFor(parseHash("#/copilot/seats/account/synthetic%2Fa")), "#/copilot/account/synthetic%2Fa");
+    assert.deepEqual(parseHash("#/copilot/account/synthetic%2Fa"), { view: "copilot", account: "synthetic/a", query: "" });
 });
 
-test("Copilot defaults to a same-origin iframe and retains a separate-tab fallback", () => {
-    const html = renderView({}, { view: "copilot", copilotAccount: "synthetic/a" });
-    assert.match(html, /src="copilot\/\?embed=1#\/account\/synthetic%2Fa"/);
-    assert.match(html, /href="#\/copilot\/seats"/);
-    assert.match(html, /Open Copilot dashboard in its own tab/);
+test("Copilot defaults to native Portfolio and deep dives retain a same-origin frame and separate-tab fallback", () => {
+    const portfolio = renderView(syntheticModel(), { view: "copilot" });
+    assert.doesNotMatch(portfolio, /<iframe/);
+    for (const label of ["Licenses", "Active devs 28d", "Engaged devs 28d", "Customers"]) assert.ok(portfolio.includes(label));
+    assert.equal((portfolio.match(/aria-label="Copilot views"/g) || []).length, 1);
+    const html = renderView(syntheticModel(), { view: "copilot", subview: "desk", account: "synthetic/a" });
+    assert.match(html, /src="copilot\/\?embed=1&amp;view=desk#\/account\/synthetic%2Fa"/);
+    for (const view of ["desk", "accounts", "trends", "changes", "notes"]) {
+        assert.match(renderView(syntheticModel(), { view: "copilot", subview: view }), new RegExp(`src="copilot/\\?embed=1#/${view}"`));
+    }
+    assert.match(html, /Open full screen/);
 });
 
 test("Impact is a top-level tab that opens the embedded Impact view directly", () => {
@@ -34,13 +46,13 @@ test("Impact is a top-level tab that opens the embedded Impact view directly", (
 });
 
 test("a failed embed renders a recovery panel for that page only, never the raw error", () => {
-    const failure = { src: "copilot/?embed=1", detail: "the canvas server answered “<b>nope</b>”" };
-    const copilot = renderView({}, { view: "copilot", embedFailure: failure });
+    const failure = { src: "copilot/?embed=1#/desk", detail: "the canvas server answered “<b>nope</b>”" };
+    const copilot = renderView(syntheticModel(), { view: "copilot", subview: "desk", embedFailure: failure });
     assert.doesNotMatch(copilot, /<iframe/);
     assert.match(copilot, /role="alert"><h2>Copilot adoption dashboard could not load<\/h2>/);
     assert.match(copilot, /&lt;b&gt;nope&lt;\/b&gt;/);
     assert.match(copilot, /data-command="retry-embed"/);
-    assert.match(copilot, /href="#\/copilot\/seats"/);
+    assert.match(copilot, /href="#\/copilot"/);
     assert.match(renderView({}, { view: "impact", embedFailure: failure }), /<iframe[^>]+src="copilot\/\?embed=1#\/impact"/);
 });
 

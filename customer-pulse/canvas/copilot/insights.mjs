@@ -119,6 +119,15 @@ export function hasSources(model, ...ids) {
     return ids.every(id => !model.missing_sources.includes(id));
 }
 
+/** Portfolio adoption is a sum of account readings, never the weekly history arrays. */
+export function adoptionTotals(model) {
+    return Object.fromEntries([["assigned", "06"], ["active_28d", "03"], ["engaged_1d28", "02"]].map(([key, source]) => {
+        const known = hasSources(model, source) ? model.accounts.filter(account => isNumber(account[key])) : [];
+        return [key, { value: known.length ? known.reduce((sum, account) => sum + account[key], 0) : null,
+            n: known.length, of: model.accounts.length }];
+    }));
+}
+
 export function isNewMetric(model, key, now = new Date()) {
     const entry = (model.new_metrics || []).find(metric => metric.key === key);
     const age = entry ? (now.getTime() - Date.parse(`${entry.since}T00:00:00Z`)) / 86400000 : NaN;

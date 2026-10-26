@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import {
-    accountPlays, accountStatus, contractMovement, dataCaveats, getQueue, hasSurfaceSignal,
+    accountPlays, accountStatus, adoptionTotals, contractMovement, dataCaveats, getQueue, hasSurfaceSignal,
     integrityIssues, isNewMetric, queueByLane, riskProfile, summarize, usageMovement, validateModel,
 } from "../insights.mjs";
 import {
@@ -50,6 +50,21 @@ function fixture(accounts = []) {
         missing_sources: [], asof: { "02": "2030-01-06", "03": "2030-01-06", "06": "2030-01-04" }, changes: [],
     };
 }
+
+test("adoption funnel sums account values instead of reading weekly portfolio arrays", () => {
+    const model = fixture([
+        account("Synthetic One", { assigned: 10, active_28d: 6, engaged_1d28: 4 }),
+        account("Synthetic Two", { assigned: 5, active_28d: 2, engaged_1d28: null }),
+    ]);
+    model.portfolio.assigned = [900, 800];
+    model.portfolio.a28 = [700, 600];
+    assert.deepEqual(adoptionTotals(model), {
+        assigned: { value: 15, n: 2, of: 2 }, active_28d: { value: 8, n: 2, of: 2 },
+        engaged_1d28: { value: 4, n: 1, of: 2 },
+    });
+    model.missing_sources = ["06", "03", "02"];
+    for (const metric of Object.values(adoptionTotals(model))) assert.equal(metric.value, null);
+});
 
 const accounts = [
     account("Alphaworks", { declining: true, trend_4w: -.24, renewing_in_days: 30, renewal: "2030-02-06" }),

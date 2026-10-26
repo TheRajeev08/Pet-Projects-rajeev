@@ -296,6 +296,8 @@ function browserHarness(fetch) {
     const context = vm.createContext({
         ...modelHelpers, fetch, HTMLSelectElement: Select, HTMLInputElement: class {}, CSS: { escape: value => value },
         setTimeout: () => 0, clearTimeout: () => {},
+        MutationObserver: class { observe() {} }, matchMedia: () => ({ addEventListener() {} }),
+        window: { addEventListener() {} },
         document: { getElementById: () => ({}), querySelector: () => null,
             addEventListener: (name, listener) => { listeners[name] = listener; } },
     });
