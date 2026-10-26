@@ -578,7 +578,7 @@ function copilotMix(model) {
                 `<span class="seg ${category}" style="width:${((counts[category] / total) * 100).toFixed(2)}%"></span>`).join("") + "</div>"
             + `<p class="legend">${["Red", "Yellow", "Green"].map(category => `<span class="health ${category}">${category} ${counts[category] || 0}</span>`).join("")}</p>`
         : '<p class="empty">No Copilot health scores yet.</p>';
-    const steps = [["assigned", "Assigned"], ["installed_1d28", "Installed"], ["active_1d28", "Active"], ["engaged_1d28", "Engaged"]];
+    const steps = [["assigned", "Assigned"], ["active_1d28", "Active 28d"], ["engaged_1d28", "Engaged 28d"]];
     // A step no account reports stays blank: missing data must never read as zero users.
     const reporting = Object.fromEntries(steps.map(([key]) => [key, cp.filter(product => isNumber(product.funnel?.[key]))]));
     const sums = Object.fromEntries(steps.map(([key]) => [key, reporting[key].length ? reporting[key].reduce((sum, product) => sum + product.funnel[key], 0) : null]));
@@ -692,6 +692,13 @@ function renderData(model) {
 }
 
 export function renderView(model, ui = {}) {
+    if (ui.view === "copilot") {
+        const nav = `<nav class="copilot-subnav" aria-label="Copilot views"><a href="#/copilot"${ui.subview !== "seats" ? ' aria-current="page"' : ""}>Adoption dashboard</a>`
+            + `<a href="#/copilot/seats"${ui.subview === "seats" ? ' aria-current="page"' : ""}>Seats &amp; actions</a>`
+            + '<a href="copilot/" target="_blank" rel="noopener noreferrer">Open Copilot dashboard in its own tab</a></nav>';
+        return nav + (ui.subview === "seats" ? renderProduct(model, ui, "ghcp")
+            : `<iframe class="copilot-frame" name="copilot-dashboard" title="Copilot adoption dashboard" src="copilot/?embed=1${ui.copilotAccount ? `#/account/${encodeURIComponent(ui.copilotAccount)}` : ""}"></iframe>`);
+    }
     if (VIEW_FAMILY[ui.view]) return renderProduct(model, ui, VIEW_FAMILY[ui.view]);
     if (ui.view === "signals") return renderSignals(model);
     if (ui.view === "data") return renderData(model);
@@ -796,7 +803,7 @@ function copilotPanel(account, windowDays) {
         .filter(([, value]) => isNumber(value) && value).map(([name, value]) => `${name} ${fmtInt(value)}`).join(" · ");
     const share = isNumber(cp.at_risk) && cp.assigned ? ` <span class="sub">${fmtPct(cp.at_risk / cp.assigned)} of assigned</span>` : "";
     const funnelHtml = funnel && isNumber(funnel.assigned) && funnel.assigned > 0
-        ? `<ol class="funnel compact">${[["assigned", "Assigned"], ["installed_1d28", "Installed"], ["active_1d28", "Active"], ["engaged_1d28", "Engaged"]].map(([key, label]) => {
+        ? `<ol class="funnel compact">${[["assigned", "Assigned"], ["active_1d28", "Active 28d"], ["engaged_1d28", "Engaged 28d"]].map(([key, label]) => {
             const value = isNumber(funnel[key]) ? funnel[key] : null;
             const width = isNumber(value) ? Math.max(0, Math.min(100, (value / funnel.assigned) * 100)) : 0;
             return `<li><span class="funnel-label">${label}</span><span class="funnel-bar"><span style="width:${width.toFixed(2)}%"></span></span><span class="funnel-value">${fmtInt(value)}</span></li>`;
@@ -805,6 +812,7 @@ function copilotPanel(account, windowDays) {
         ["Contracted seats", withChange(cp, "contracted", windowDays, cp.contracted_as_of)],
         ["Plan mix", plan || null],
         ["Assigned seats", withChange(cp, "assigned", windowDays, cp.as_of) ?? lastReported(cp.assigned_last)],
+        ["Installed IDE users 28d (partial)", `<span>${fmtInt(funnel?.installed_1d28)}</span>`],
         ["Users at risk", isNumber(cp.at_risk) ? `${fmtInt(cp.at_risk)}${share}` : null],
         ["At-risk reasons", risks || null],
         ["Health", healthInfo.category ? `${health(healthInfo.category)}${scores ? ` <span class="sub">${esc(scores)}</span>` : ""}` : null],
@@ -850,7 +858,7 @@ export function renderDrawer(model, ui = {}) {
     return `<div class="backdrop" data-close></div><aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title">`
         + `<header class="drawer-head"><div><h2 id="drawer-title">${esc(account.name || account.id)}</h2>${sub ? `<p class="sub">${sub}</p>` : ""}</div>`
         + `<div class="drawer-tools">${sfdc ? `<a class="button subtle tiny" href="${esc(sfdc)}" target="_blank" rel="noopener noreferrer">Open in Salesforce</a>` : ""}${close}</div></header>`
-        + `<div class="drawer-body"><dl class="fact-strip">${strip.map(([term, value]) => `<div><dt>${esc(term)}</dt><dd>${value}</dd></div>`).join("")}</dl>`
+        + `<div class="drawer-body"><p><a href="copilot/?embed=1#/account/${encodeURIComponent(account.id)}" data-copilot-account="${esc(account.id)}" target="copilot-dashboard">Open in Copilot dashboard</a></p><dl class="fact-strip">${strip.map(([term, value]) => `<div><dt>${esc(term)}</dt><dd>${value}</dd></div>`).join("")}</dl>`
         + `<section class="drawer-section"><h3>Actions <span class="count-text">${actions.filter(action => !isClosed(action)).length}</span></h3>`
         + `${actions.length ? `<ol class="action-list">${actions.map(action => actionRow(model, action, { showAccount: false, showReasons: true })).join("")}</ol>` : '<p class="empty">No actions for this account.</p>'}</section>`
         + ghePanel(account, windowDays) + ghasPanel(account, windowDays) + copilotPanel(account, windowDays)

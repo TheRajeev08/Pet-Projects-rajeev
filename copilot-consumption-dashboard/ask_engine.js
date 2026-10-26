@@ -10,6 +10,10 @@ function AskEngine(D) {
 
   // ---------------------------------------------------------------- metrics
   const METRICS = [
+    { k: "ws_whitespace_seats", label: "whitespace seats (model estimate, parent-level)", re: /whitespace seats?/, source: "17" },
+    { k: "ws_potential_seats", label: "potential seats (model estimate, parent-level)", re: /potential seats?/, source: "17" },
+    { k: "ws_som_annual", label: "annual SOM (model estimate, parent-level)", re: /\bsom\b|serviceable obtainable market/, f: "money", source: "17" },
+    { k: "forecast_above_pool", label: "projected above included pool", re: /projected above (included )?pool/, f: "money", source: "16" },
     { k: "mtd_gross", label: "month-to-date spend", re: /month[- ]to[- ]date|\bmtd\b/, f: "money" },
     { k: "gross_run_rate_month", label: "month run-rate spend", re: /run[- ]?rate|projected (spend|month)/, f: "money" },
     { k: "gross_28d", label: "UBB spend (28d)", re: /(28[- ]?d(ay)?s?|monthly|4[- ]weeks?|last month)\s*(ubb |gross )?(spend|usage|consumption)|(spend|usage|consumption)\s*(over|in|for)?\s*(the )?(last|past)?\s*(28 days|month|4 weeks)/, f: "money" },
@@ -32,6 +36,9 @@ function AskEngine(D) {
   const MET = Object.fromEntries(METRICS.map(m => [m.k, m]));
   const weekVal = (a, key, w) => { const s = a[key]; return Array.isArray(s) && isNum(s[w]) ? s[w] : null; };
   function metricGetter(m, w) {
+    if (m.source) return a => (D.missing_sources || []).includes(m.source)
+      || (m.source === "17" && a.ws_estimate_source === "rejected_as_implausible")
+      || !isNum(a[m.k]) ? null : a[m.k];
     if (w && m.wk) return a => weekVal(a, m.wk, w);
     if (m.k === "billable_7d" || m.k === "aiu_7d") return a => weekVal(a, m.wk, 0);
     return a => (isNum(a[m.k]) ? a[m.k] : null);
@@ -127,7 +134,7 @@ function AskEngine(D) {
       const fv = x => (mt.f === "money" ? "$" + x.toLocaleString() : mt.f === "pct" ? Math.round(x * 100) + "%" : x.toLocaleString());
       let test, txt;
       // missing counts mean 0; missing ratios (utilization, health) are unknown
-      const lo = mt.f === "pct" || mt.f === "num2" || mt.f === "pctSigned" ? a => (isNum(get(a)) ? get(a) : NaN) : a => n0(get(a));
+      const lo = mt.source || mt.f === "pct" || mt.f === "num2" || mt.f === "pctSigned" ? a => (isNum(get(a)) ? get(a) : NaN) : a => n0(get(a));
       if (c.op === "between") { test = a => isNum(get(a)) && get(a) >= v && get(a) <= v2; txt = `between ${fv(v)} and ${fv(v2)}`; }
       else if (/more|greater|over|above|exceed|^>$/.test(c.op)) { test = a => isNum(get(a)) && get(a) > v; txt = `more than ${fv(v)}`; }
       else if (/at least|>=/.test(c.op)) { test = a => isNum(get(a)) && get(a) >= v; txt = `at least ${fv(v)}`; }
@@ -140,7 +147,14 @@ function AskEngine(D) {
 
     // scope
     if (/\b(all|every) (owned |my )?accounts\b|\ball owned\b|including non[- ]consuming/.test(qn)) out.scope = "all";
-    const notUsingCopilot = /(not|n't|never|no longer)\s+(been\s+)?(using|consuming|on|adopted|adopting)\s+copilot(?!\s+(cli|app|agents?|reviews?|chat|mobile|sdk|coding|code review))|\bnot consuming\b|\bnon[- ]consuming\b|whitespace|untapped|no copilot|without copilot|haven't adopted|not (yet )?adopted|never used/.test(qn);
+    const seatEstimate = /\bwhitespace seats?|\bpotential seats?|\bsom\b|serviceable obtainable market/.test(q);
+    if (seatEstimate) out.scope = "all";
+    const notUsingCopilot = /(not|n't|never|no longer)\s+(been\s+)?(using|consuming|on|adopted|adopting)\s+copilot(?!\s+(cli|app|agents?|reviews?|chat|mobile|sdk|coding|code review))|\bnot consuming\b|\bnon[- ]consuming\b|whitespace(?! seats?)|untapped|no copilot|without copilot|haven't adopted|not (yet )?adopted|never used/.test(qn);
+    if (/projected to exceed (included )?pool/.test(qn)) {
+      out.scope = "all";
+      out.filters.push({ id: "pool", l: label("are projected to exceed included pool", "is projected to exceed included pool"),
+        test: a => !(D.missing_sources || []).includes("16") && a.entitlement_status === "Projected to Exceed Included Pool", cols: ["forecast_above_pool", "entitlement_status"] });
+    }
 
     // activity
     const inactiveRe = /(\bnot|n't|\bno longer)\s+(been\s+|yet\s+|currently\s+)?active|\binactive\b|\bdormant\b|\bidle\b(?! seats)|no (activity|usage)|zero (usage|activity)|(haven't|hasn't|didn't|did not|have not|has not)\s+(used|been using)|not (being )?used/;

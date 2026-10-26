@@ -548,3 +548,7 @@ tbody tr:hover > * { background: var(--hover-row); }
     .card-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .toast { bottom: 12px; }
 }
+/* The adoption dashboard owns its navigation and scrolling within this tab. */
+.copilot-subnav { display: flex; gap: 1.25rem; flex-wrap: wrap; margin-bottom: 1rem; }
+.copilot-subnav [aria-current="page"] { font-weight: 700; }
+.copilot-frame { width: 100%; height: calc(100vh - 210px); min-height: 580px; border: 0; border-radius: 12px; }

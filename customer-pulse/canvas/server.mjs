@@ -5,6 +5,7 @@ import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ACTION_STATES, isObject, validateModel, withActionStates } from "./model.mjs";
+import { validateModel as validateCopilotModel } from "./copilot/insights.mjs";
 
 const assets = dirname(fileURLToPath(import.meta.url));
 const STATIC = {
@@ -12,6 +13,10 @@ const STATIC = {
     "/model.mjs": "text/javascript; charset=utf-8",
     "/views.mjs": "text/javascript; charset=utf-8",
     "/style.css": "text/css; charset=utf-8",
+    "/copilot/app.js": "text/javascript; charset=utf-8",
+    "/copilot/insights.mjs": "text/javascript; charset=utf-8",
+    "/copilot/impact.mjs": "text/javascript; charset=utf-8",
+    "/copilot/style.css": "text/css; charset=utf-8",
 };
 const WORKFLOW_ID = /^[0-9a-f][0-9a-f-]{7,63}$/i;
 
@@ -62,7 +67,7 @@ async function readOptionalJson(path) {
     return JSON.parse(text);
 }
 
-export async function readModel(path) {
+export async function readModel(path, validate = validateModel) {
     let content;
     let before;
     let after;
@@ -82,11 +87,20 @@ export async function readModel(path) {
     }
     let model;
     try {
-        model = validateModel(JSON.parse(content));
+        model = validate(JSON.parse(content));
     } catch (error) {
         throw new CanvasRequestError("dashboard_invalid", 503, `The Customer Pulse snapshot cannot be used: ${error.message}`);
     }
     return { model, revision: `${after.mtimeMs}:${after.size}` };
+}
+
+export const readCopilotModel = path => readModel(path, validateCopilotModel);
+
+export async function copilotModelPath(paths) {
+    const config = await readOptionalJson(paths.config);
+    if (config?.copilot_home) return join(pulseHome(config.copilot_home), "model.json");
+    const pulse = await readOptionalJson(paths.model);
+    return pulse?.copilot?.model_path || join(homedir(), "CopilotConsumptionDashboard", "model.json");
 }
 
 /** The last build outcome from status.json, or null when it is missing or unreadable. */
@@ -231,14 +245,14 @@ export function createRefreshCoordinator({ modelPath, launch, now = Date.now, ti
     return { request, observe, fail, status };
 }
 
-function headers(res, type) {
+function headers(res, type, classic = false) {
     res.setHeader("Content-Type", type);
     res.setHeader("Cache-Control", "no-store, max-age=0");
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("Referrer-Policy", "no-referrer");
     res.setHeader("Cross-Origin-Resource-Policy", "same-origin");
     if (type.startsWith("text/html")) {
-        res.setHeader("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'");
+        res.setHeader("Content-Security-Policy", `default-src 'self'; script-src 'self'${classic ? " 'unsafe-inline'" : ""}; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'`);
     }
 }
 
@@ -271,6 +285,7 @@ async function readJsonBody(req, limit, code) {
 export async function startCanvasServer({ paths = pulsePaths(), refresh, port = 0, pollMs = 4000 }) {
     const token = randomBytes(24).toString("hex");
     const clients = new Set();
+    const copilotClients = new Set();
     let address;
 
     async function revisions() {
@@ -302,11 +317,43 @@ export async function startCanvasServer({ paths = pulsePaths(), refresh, port = 
     const broadcast = (event, data) => {
         for (const client of clients) client.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
     };
+    const copilotStatus = async () => {
+        await statusPayload();
+        return { refresh: refresh.status(), revision: await revisionOf(await copilotModelPath(paths)) };
+    };
 
     const server = createServer(async (req, res) => {
         try {
             const route = new URL(req.url, "http://127.0.0.1").pathname;
-            if (req.method === "GET" && route === "/") {
+            if (req.method === "GET" && route === "/copilot") {
+                res.writeHead(302, { Location: "/copilot/" });
+                res.end();
+            } else if (req.method === "GET" && route === "/copilot/") {
+                const html = (await readFile(join(assets, "copilot", "index.html"), "utf8")).replace("__CSRF_TOKEN__", token);
+                headers(res, "text/html; charset=utf-8");
+                res.end(html);
+            } else if (req.method === "GET" && route === "/copilot/api/model") {
+                json(res, 200, await readCopilotModel(await copilotModelPath(paths)));
+            } else if (req.method === "GET" && route === "/copilot/api/status") {
+                json(res, 200, await copilotStatus());
+            } else if (req.method === "GET" && route === "/copilot/classic") {
+                const path = await copilotModelPath(paths);
+                let generated;
+                try {
+                    generated = await readFile(join(dirname(path), "dashboard.html"), "utf8");
+                } catch (error) {
+                    if (error.code !== "ENOENT") throw error;
+                    throw new CanvasRequestError("dashboard_missing", 404, "The classic Copilot dashboard is missing. Run the dashboard refresh.");
+                }
+                headers(res, "text/html; charset=utf-8", true);
+                res.end(generated.replace("<body>", '<body><div style="padding:10px 28px"><a href="./">Back to adoption canvas &larr;</a></div>'));
+            } else if (req.method === "GET" && route === "/copilot/events") {
+                headers(res, "text/event-stream; charset=utf-8");
+                res.setHeader("Connection", "keep-alive");
+                res.write(`event: status\ndata: ${JSON.stringify(await copilotStatus())}\n\n`);
+                copilotClients.add(res);
+                req.on("close", () => copilotClients.delete(res));
+            } else if (req.method === "GET" && route === "/") {
                 const html = (await readFile(join(assets, "index.html"), "utf8")).replace("__CSRF_TOKEN__", token);
                 headers(res, "text/html; charset=utf-8");
                 res.end(html);
@@ -333,7 +380,7 @@ export async function startCanvasServer({ paths = pulsePaths(), refresh, port = 
                 res.write(`event: status\ndata: ${JSON.stringify(await statusPayload())}\n\n`);
                 clients.add(res);
                 req.on("close", () => clients.delete(res));
-            } else if (req.method === "POST" && route === "/api/refresh") {
+            } else if (req.method === "POST" && ["/api/refresh", "/copilot/api/refresh"].includes(route)) {
                 guard(req, "refresh_forbidden");
                 const input = await readJsonBody(req, 256, "refresh_input");
                 if (!isObject(input) || Object.keys(input).length) {
@@ -365,6 +412,8 @@ export async function startCanvasServer({ paths = pulsePaths(), refresh, port = 
 
     let lastRevision = (await revisions()).combined;
     let lastStatus = null;
+    let lastCopilotRevision = await revisionOf(await copilotModelPath(paths));
+    let lastCopilotStatus = null;
     let polling = false;
     let failing = false;
     const poll = setInterval(async () => {
@@ -372,6 +421,14 @@ export async function startCanvasServer({ paths = pulsePaths(), refresh, port = 
         polling = true;
         try {
             const payload = await statusPayload();
+            const copilot = await copilotStatus();
+            for (const client of copilotClients) {
+                if (copilot.revision !== lastCopilotRevision) client.write(`event: model\ndata: ${JSON.stringify({ revision: copilot.revision })}\n\n`);
+                if (JSON.stringify(copilot) !== lastCopilotStatus) client.write(`event: status\ndata: ${JSON.stringify(copilot)}\n\n`);
+                client.write(": keepalive\n\n");
+            }
+            lastCopilotRevision = copilot.revision;
+            lastCopilotStatus = JSON.stringify(copilot);
             if (failing) {
                 // Re-send status after a failed poll so clients can clear the error they were shown.
                 failing = false;
@@ -390,6 +447,7 @@ export async function startCanvasServer({ paths = pulsePaths(), refresh, port = 
         } catch (error) {
             failing = true;
             broadcast("error", { error: `Cannot check the local snapshot: ${error.message}` });
+            for (const client of copilotClients) client.write(`event: error\ndata: ${JSON.stringify({ error: `Cannot check Copilot: ${error.message}` })}\n\n`);
         } finally {
             polling = false;
         }
@@ -402,6 +460,8 @@ export async function startCanvasServer({ paths = pulsePaths(), refresh, port = 
             clearInterval(poll);
             for (const client of clients) client.end();
             clients.clear();
+            for (const client of copilotClients) client.end();
+            copilotClients.clear();
             const closed = new Promise((resolvePromise, reject) => server.close(error => error ? reject(error) : resolvePromise()));
             server.closeAllConnections?.();
             await closed;

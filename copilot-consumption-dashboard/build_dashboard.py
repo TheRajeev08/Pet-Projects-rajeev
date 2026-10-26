@@ -247,12 +247,13 @@ def load_raw(day):
 # windows that do not move daily, so a run that skipped them reuses the last result rather than
 # publishing a model with no enterprises at all.
 ENTERPRISE_QUERIES = ("13", "14", "15")
+SLOW_QUERIES = ENTERPRISE_QUERIES + ("16", "17")
 
 
 def carry_forward(day, raw, meta):
-    """Fill absent enterprise queries from the most recent earlier day. Returns {qid: source day}."""
+    """Fill absent enterprise, weekly and monthly sources from the most recent earlier day."""
     carried = {}
-    for qid in ENTERPRISE_QUERIES:
+    for qid in SLOW_QUERIES:
         if qid in raw:
             continue
         for d in prior_days(day):
@@ -313,7 +314,7 @@ def arr_series(row, dates):
 def build(day, raw, meta):
     sf = {r["Id"]: r for r in raw.get("01", [])}
     snap = {r["id"]: r for r in raw.get("02", [])}
-    by = {q: {r["id"]: r for r in raw.get(q, []) if r.get("id")} for q in ("03", "04", "05", "06", "07", "09")}
+    by = {q: {r["id"]: r for r in raw.get(q, []) if r.get("id")} for q in ("03", "04", "05", "06", "07", "09", "16", "17")}
     integ, models = {}, {}
     for r in raw.get("08", []):
         integ.setdefault(r["id"], []).append(r)
@@ -327,7 +328,7 @@ def build(day, raw, meta):
 
     asof = {}
     arr_dates = sorted({period(p["date"]) for r in raw.get("09", []) for p in chunk(r["s"], r["cols"])})
-    for q in ("03", "04", "06", "07", "08", "10", "12"):
+    for q in ("03", "04", "06", "07", "08", "10", "12", "16", "17"):
         rows = raw.get(q) or []
         if rows and rows[0].get("asof"):
             asof[q] = rows[0]["asof"][:10]
@@ -356,6 +357,7 @@ def build(day, raw, meta):
             "sf_url_id": aid,
         }
         # active users
+        add_forecast_whitespace(a, by["16"].get(aid, {}), by["17"].get(aid, {}))
         u = chunk(by["03"].get(aid, {}).get("s"), by["03"].get(aid, {}).get("cols", "wk,a7,a28"))
         a["a7"], a["a28"] = weekly(u, "a7"), weekly(u, "a28")
         # health
@@ -432,6 +434,37 @@ def build(day, raw, meta):
     return {"generated_at": dt.datetime.now().isoformat(timespec="minutes"), "data_date": day, "asof": asof,
             "sources": meta, "accounts": accounts, "portfolio": portfolio, "orphans": orphans,
             "enterprises": enterprises}
+
+def add_forecast_whitespace(account, forecast, whitespace):
+    numbers = {
+        "ubb_license_users": "license_users", "ubb_week_users": "ubb_users",
+        "ubb_adoption_rate": "ubb_adoption_rate", "forecast_bill": "forecast_bill",
+        "forecast_bill_low": "forecast_bill_low", "forecast_bill_high": "forecast_bill_high",
+        "included_pool": "pool", "forecast_pool_ratio": "forecast_pool_ratio",
+        "wow_ubb_users": "wow_ubb_users",
+    }
+    account.update({key: num(forecast.get(source)) for key, source in numbers.items()})
+    account.update({key: forecast.get(source) or None for key, source in {
+        "ubb_adoption_band": "ubb_adoption_band", "entitlement_status": "entitlement_status",
+        "utilization_band": "utilization_band", "ubb_insight": "insight",
+    }.items()})
+    bill, pool = account["forecast_bill"], account["included_pool"]
+    account["forecast_above_pool"] = max(0, bill - pool) if bill is not None and pool is not None else None
+    account.update({key: num(whitespace.get(source)) for key, source in {
+        "ws_headcount": "headcount", "ws_potential_seats": "potential_seats",
+        "ws_assigned_seats": "assigned_seats", "ws_tam_annual": "tam_annual", "ws_som_annual": "som_annual",
+        "ghe_potential_seats": "ghe_potential_seats", "ghe_som_annual": "ghe_som_annual",
+        "ghas_potential_seats": "ghas_potential_seats", "ghas_som_annual": "ghas_som_annual",
+    }.items()})
+    account.update({key: whitespace.get(source) or None for key, source in {
+        "ws_play": "play", "ws_play_reason": "play_reason", "ws_play_context": "play_context",
+        "ws_estimate_source": "seat_estimate_source",
+    }.items()})
+    potential = account["ws_potential_seats"]
+    account["ws_whitespace_seats"] = max(0, potential - (account["ws_assigned_seats"] or 0)) if potential is not None else None
+    if account["ws_estimate_source"] == "rejected_as_implausible":
+        for key in ("ws_potential_seats", "ws_whitespace_seats", "ws_tam_annual", "ws_som_annual"):
+            account[key] = None
 
 
 NAME_SUFFIXES = (
@@ -598,6 +631,17 @@ def build_portfolio(accounts, rows10):
             d = mdl.setdefault(m["model"], {"l7": 0, "p7": 0, "l28": 0, "accounts": 0})
             d["l7"] += m["l7"]; d["p7"] += m["p7"]; d["l28"] += m["l28"]; d["accounts"] += 1
     p["models"] = dict(sorted(mdl.items(), key=lambda kv: -kv[1]["l28"]))
+    for key in ("entitlement_status", "ubb_insight"):
+        counts = {}
+        for account in accounts:
+            value = account.get(key)
+            if value:
+                counts[value] = counts.get(value, 0) + 1
+        p[key + "_counts"] = counts
+    for key in ("ws_potential_seats", "ws_whitespace_seats", "ws_som_annual",
+                "assigned", "active_28d", "engaged_1d28"):
+        values = [a.get(key) for a in accounts if a.get(key) is not None]
+        p["total_" + key] = sum(values) if values else None
     return p
 
 
@@ -688,6 +732,13 @@ def previous_snapshot(day):
 
 
 DEFINITIONS = {
+    "forecast_above_pool": "Projected above included pool: max(0, forecast bill minus included pool); not invoiced overage",
+    "forecast_bill": "UBB month-end forecast; show its low-high range only for positive forecasts",
+    "ubb_week_users": "Users with UBB activity; ubb_license_users means licensed users",
+    "ws_whitespace_seats": "Model estimate · parent-level: max(0, potential seats minus assigned seats, with missing assigned treated as zero). Direct owned-account matches only",
+    "ws_som_annual": "Model estimate · parent-level annual Copilot serviceable obtainable market. Rejected implausible estimates are withheld",
+    "installed_1d28": "Installed IDE telemetry over 28 days; partial coverage, not a step in the adoption funnel",
+    "engaged_1d28": "Users engaged at least one day over the last 28 days",
     "consuming": "Any Copilot active users, seats assigned, or UBB spend in the last 90 days, Copilot billed last month, or UBB on an unowned look-alike account",
     "linked_usage": "UBB spend (28d) on Salesforce accounts with no real owner (e.g. Data Syncer, auto-created from a GitHub enterprise slug) whose name matches this account. Shown for context; not added to this account's totals",
     "active_this_week": "Active users > 0 or UBB gross spend > 0 in the latest 7 days",
@@ -726,6 +777,12 @@ def add_flags(model):
         a["health_prev"] = hc[1] if len(hc) > 1 else None
         a["health_moved"] = bool(a.get("health_cat") and a["health_prev"] and a["health_cat"] != a["health_prev"])
     model["definitions"] = DEFINITIONS
+    model["new_metrics"] = [{"key": key, "since": "2026-10-26"} for key in (
+        "forecast_bill", "forecast_bill_low", "forecast_bill_high", "included_pool", "forecast_pool_ratio",
+        "forecast_above_pool", "entitlement_status", "utilization_band", "ubb_insight",
+        "ubb_license_users", "ubb_week_users", "ubb_adoption_rate", "ubb_adoption_band",
+        "ws_potential_seats", "ws_whitespace_seats", "ws_som_annual", "ws_play",
+        "engaged_1d28", "installed_1d28", "mover")]
 
 
 SNAP_FIELDS = ("id", "name", "consuming", "active_this_week", "active_7d", "active_28d", "assigned", "contracted_seats", "utilization",
@@ -759,7 +816,7 @@ def main():
 
     day, raw, meta = load_raw(args.date)
     carried = carry_forward(day, raw, meta)
-    missing = [q for q in ("01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12", "13", "14", "15") if q not in raw]
+    missing = [f"{q:02d}" for q in range(1, 18) if f"{q:02d}" not in raw]
     if "01" in missing:
         sys.exit("Query 01 (owned accounts) is required.")
     model = build(day, raw, meta)

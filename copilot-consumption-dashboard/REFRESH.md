@@ -8,7 +8,7 @@ Config, data and output live in `~/CopilotConsumptionDashboard/`, outside the re
    ```bash
    python3 refresh.py render
    ```
-   This prints 15 blocks like `=== 07 · query_kusto · database=rev_source ===` followed by the query text. If it reports missing config, stop and tell the user to create `~/CopilotConsumptionDashboard/config.json` from `config.example.json`.
+   This prints one block per file in `queries/` (17 today), like `=== 07 · query_kusto · database=rev_source ===`, followed by the query text. If it reports missing config, stop and tell the user to create `~/CopilotConsumptionDashboard/config.json` from `config.example.json`.
 
 2. **Run every query verbatim**
    - `query_salesforce` blocks → `revenue-mcp-server-query_salesforce` with the SOQL exactly as printed.

@@ -214,10 +214,10 @@ export function clipQuery(text) {
 }
 
 /** Canvas location: "#/<view>[/account/<id>][?q=<search>]". */
-export function hashFor({ view = "overview", account = null, query = "" } = {}) {
+export function hashFor({ view = "overview", subview = null, account = null, query = "" } = {}) {
     const tab = VIEWS.includes(view) ? view : "overview";
     const search = clipQuery(query);
-    return `#/${tab}${account ? `/account/${encodeURIComponent(account)}` : ""}${search ? `?q=${encodeURIComponent(search)}` : ""}`;
+    return `#/${tab}${tab === "copilot" && subview === "seats" ? "/seats" : ""}${account ? `/account/${encodeURIComponent(account)}` : ""}${search ? `?q=${encodeURIComponent(search)}` : ""}`;
 }
 
 /** Inverse of hashFor. Unknown views fall back to the overview, and malformed parts are dropped. */
@@ -226,6 +226,8 @@ export function parseHash(hash) {
     const mark = raw.indexOf("?");
     const parts = (mark < 0 ? raw : raw.slice(0, mark)).split("/");
     const view = VIEWS.includes(parts[0]) ? parts[0] : "overview";
+    const seats = view === "copilot" && parts[1] === "seats";
+    if (seats) parts.splice(1, 1);
     let account = null;
     if (parts[1] === "account" && parts.length > 2) {
         try {
@@ -242,7 +244,7 @@ export function parseHash(hash) {
             query = "";
         }
     }
-    return { view, account, query };
+    return { view, account, query, ...(seats ? { subview: "seats" } : {}) };
 }
 
 /** Applies locally recorded done/dismissed decisions without mutating the model. */

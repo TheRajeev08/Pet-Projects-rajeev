@@ -512,20 +512,20 @@ describe("views.mjs", () => {
         const none = renderView(model, { view: "overview", now: NOW, query: '<x> & "y"' });
         assert.ok(none.includes("No accounts match “&lt;x&gt; &amp; &quot;y&quot;”."));
         assert.ok(none.includes('value="&lt;x&gt; &amp; &quot;y&quot;"'));
-        assert.ok(renderView(model, { view: "copilot", now: NOW, query: "zzz" }).includes("No Copilot accounts match “zzz”."));
+        assert.ok(renderView(model, { view: "copilot", subview: "seats", now: NOW, query: "zzz" }).includes("No Copilot accounts match “zzz”."));
         model.accounts[0].products.ghcp = {};
-        assert.ok(renderView(model, { view: "copilot", now: NOW }).includes("No accounts with Copilot yet."));
+        assert.ok(renderView(model, { view: "copilot", subview: "seats", now: NOW }).includes("No accounts with Copilot yet."));
     });
 
     test("the Copilot view shows health chips and never reads an unreported funnel step as zero", () => {
-        const html = renderView(syntheticModel(), { view: "copilot", now: NOW });
+        const html = renderView(syntheticModel(), { view: "copilot", subview: "seats", now: NOW });
         assert.ok(html.includes('<span class="health Red" title="2 accounts with Red Copilot health">2 Red</span>'
             + '<span class="health Green" title="1 account with Green Copilot health">1 Green</span>'));
         const funnel = section(html, "h-funnel");
         assert.deepEqual(funnelStep(funnel, "Assigned"), ["10", ""]);
-        assert.deepEqual(funnelStep(funnel, "Installed"), [DASH, ""]);
-        assert.deepEqual(funnelStep(funnel, "Active"), ["4", "40%"]);
-        assert.deepEqual(funnelStep(funnel, "Engaged"), ["3", "30%"]);
+        assert.ok(!funnel.includes("Installed"));
+        assert.deepEqual(funnelStep(funnel, "Active 28d"), ["4", "40%"]);
+        assert.deepEqual(funnelStep(funnel, "Engaged 28d"), ["3", "30%"]);
         assert.ok(funnel.includes("A dash means not reported."));
         assert.ok(section(html, "h-mix").includes('<span class="health Red">Red 2</span>'));
     });
@@ -537,8 +537,8 @@ describe("views.mjs", () => {
         assert.ok(html.includes('<a class="button subtle tiny" href="https://crm.example.invalid/t-1" target="_blank" rel="noopener noreferrer">Open in Salesforce</a>'));
         assert.ok(html.includes('Actions <span class="count-text">2</span>'));
         assert.deepEqual(actionIds(html), ["a-5", "a-1", "a-3"]);
-        assert.deepEqual(funnelStep(html, "Installed"), [DASH, ""]);
-        assert.deepEqual(funnelStep(html, "Active"), ["4", ""]);
+        assert.ok(html.includes("Installed IDE users 28d (partial)"));
+        assert.deepEqual(funnelStep(html, "Active 28d"), ["4", ""]);
         assert.ok(html.includes('<span style="width:40.00%"></span></span><span class="funnel-value">4</span>'));
         assert.ok(renderDrawer(model, { account: "nope" }).includes('<h2 id="drawer-title">Account not found</h2>'));
         model.accounts[1].sfdc_url = "javascript:alert(1)";
@@ -663,15 +663,15 @@ describe("Python engine → canvas contract", { skip: NO_PYTHON }, () => {
     test("the Copilot view and drawer show a dash for unreported funnel steps", () => {
         const account = model.accounts.find(item => typeof item.products.ghcp.funnel?.assigned === "number");
         const { funnel } = account.products.ghcp;
-        const view = renderView(model, { view: "copilot", now: NOW });
+        const view = renderView(model, { view: "copilot", subview: "seats", now: NOW });
         const steps = section(view, "h-funnel");
-        assert.deepEqual(funnelStep(steps, "Installed"), [DASH, ""]);
-        assert.deepEqual(funnelStep(steps, "Active"), [DASH, ""]);
-        assert.deepEqual(funnelStep(steps, "Engaged"), [fmtInt(funnel.engaged_1d28), `${((funnel.engaged_1d28 / funnel.assigned) * 100).toFixed(0)}%`]);
+        assert.ok(!steps.includes("Installed"));
+        assert.deepEqual(funnelStep(steps, "Active 28d"), [DASH, ""]);
+        assert.deepEqual(funnelStep(steps, "Engaged 28d"), [fmtInt(funnel.engaged_1d28), `${((funnel.engaged_1d28 / funnel.assigned) * 100).toFixed(0)}%`]);
         const drawer = renderDrawer(model, { account: account.id });
         assert.deepEqual(funnelStep(drawer, "Assigned"), [fmtInt(funnel.assigned), ""]);
-        assert.deepEqual(funnelStep(drawer, "Installed"), [DASH, ""]);
-        assert.deepEqual(funnelStep(drawer, "Active"), [DASH, ""]);
+        assert.ok(drawer.includes("Installed IDE users 28d (partial)"));
+        assert.deepEqual(funnelStep(drawer, "Active 28d"), [DASH, ""]);
         const red = model.kpis.ghcp.categories.Red;
         assert.ok(view.includes(`<span class="health Red" title="${red} ${red === 1 ? "account" : "accounts"} with Red Copilot health">${red} Red</span>`));
     });

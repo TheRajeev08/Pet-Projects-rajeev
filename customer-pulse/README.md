@@ -13,13 +13,15 @@ A daily automation refreshes the data, emails you a short digest of what is new,
 | Tab | Shows |
 | --- | --- |
 | **Overview** | Headline numbers, open actions (High first), recent seat changes, upcoming renewals, a card per product, and every account with its seats and most urgent item. |
-| **Copilot** | Contracted, assigned and at-risk seats, the health mix and usage funnel, and per account: plan, health, 30-day GRR, engaged users and billing. Also GHE accounts without Copilot. |
+| **Copilot** | Embedded adoption dashboard: account plays, usage, surfaces, models, Impact, forecasts and modeled whitespace. **Seats & actions** keeps Pulse's seat table, health mix, usage funnel, actions and changes. |
 | **GHE** | Contracted seats, metered and billable users, and adoption per account, plus accounts without GHE. |
 | **GHAS** | Contracted seats, active committers and utilization, code and secret scanning coverage, licensing model and Code Quality, plus GHE accounts without GHAS. |
 | **Signals** | Reserved for conversation, news and public-web signals (see [Roadmap](#roadmap)). |
 | **Data** | Each source's freshness, how seat changes are detected, the action rules and every threshold. |
 
 Each product tab also lists that product's actions and seat changes. Click any account to open its detail panel: seats by product and type, its actions, its seat changes over the history window, Copilot health and usage, and account context such as billing and support.
+
+The Copilot tab reads `model.json` and `dashboard.html` from `copilot_home` in Pulse config (default `~/CopilotConsumptionDashboard`). It embeds a same-origin dashboard at `/copilot/`; a fallback link opens it in its own tab. The account panel's **Open in Copilot dashboard** link selects that account in the embedded view. The standalone Copilot canvas is not replaced. All refresh buttons use Pulse's one configured refresh coordinator; no automation id is baked into the frontend.
 
 Mark an action **Done** or **Dismiss** it once handled. The choice is stored locally (never in Salesforce), hides the action unless you tick *Show done*, and can be undone with **Reopen**.
 

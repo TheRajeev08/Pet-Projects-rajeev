@@ -34,6 +34,8 @@ const state = {
     statusError: null,
     view: "overview",
     account: null,
+    subview: null,
+    copilotAccount: null,
     query: "",
     sort: {},
     expanded: new Set(),
@@ -115,6 +117,8 @@ function uiState() {
     return {
         view: state.view,
         account: state.account,
+        subview: state.subview,
+        copilotAccount: state.copilotAccount,
         query: state.query,
         sort: state.sort,
         expanded: state.expanded,
@@ -339,6 +343,7 @@ function setHistory(hash, mode, data = null) {
 function apply(next) {
     const viewChanged = next.view !== state.view;
     state.view = next.view;
+    state.subview = next.subview || null;
     state.account = next.account;
     state.query = next.query;
     if (viewChanged) window.scrollTo({ top: 0, left: 0, behavior: "instant" });
@@ -357,14 +362,14 @@ function route() {
 function openAccount(id, trigger) {
     if (!id) return;
     if (!drawerOpen) opener = describe(trigger);
-    const next = { view: state.view, account: id, query: state.query };
+    const next = { view: state.view, subview: state.subview, account: id, query: state.query };
     setHistory(hashFor(next), state.account ? "replace" : "push", { drawer: true });
     apply(next);
 }
 
 function closeDrawer() {
     if (!state.account || closingTimer) return;
-    const next = { view: state.view, account: null, query: state.query };
+    const next = { view: state.view, subview: state.subview, account: null, query: state.query };
     if (history.state?.drawer) {
         // Return to the entry the drawer was opened from; fall back if the host swallows the navigation.
         closingTimer = setTimeout(() => {
@@ -400,7 +405,7 @@ function onSearch(input) {
     const query = clipQuery(input.value);
     if (query === state.query) return;
     state.query = query;
-    setHistory(hashFor({ view: state.view, account: state.account, query }), "replace", history.state);
+    setHistory(hashFor({ view: state.view, subview: state.subview, account: state.account, query }), "replace", history.state);
     if (!state.model || !swapSearchRegion(input)) render();
 }
 
@@ -564,7 +569,7 @@ async function changeAction(id, next, { button = null, undoable = true } = {}) {
 
 // Events --------------------------------------------------------------------------------------------
 
-const CLICKABLE = "[data-account],[data-close],[data-action],[data-command],[data-filter],[data-more],[data-sort],[data-undo],[data-toast-close]";
+const CLICKABLE = "[data-copilot-account],[data-account],[data-close],[data-action],[data-command],[data-filter],[data-more],[data-sort],[data-undo],[data-toast-close]";
 const KINDS = ["all", "risk", "opportunity"];
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), summary, [tabindex]:not([tabindex="-1"])';
 
@@ -602,7 +607,13 @@ function toggleMore(button) {
 document.addEventListener("click", event => {
     const target = event.target instanceof Element ? event.target.closest(CLICKABLE) : null;
     if (!target || target.closest("[inert]")) return;
-    if (target.hasAttribute("data-account")) {
+    if (target.hasAttribute("data-copilot-account")) {
+        event.preventDefault();
+        state.copilotAccount = target.getAttribute("data-copilot-account");
+        const next = { view: "copilot", account: null, query: "" };
+        setHistory(hashFor(next), "push");
+        apply(next);
+    } else if (target.hasAttribute("data-account")) {
         event.preventDefault();
         openAccount(target.getAttribute("data-account"), target);
     } else if (target.hasAttribute("data-close")) {

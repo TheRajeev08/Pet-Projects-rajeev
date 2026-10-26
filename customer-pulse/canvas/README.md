@@ -17,6 +17,8 @@ Then open the **Customer Pulse** canvas. It reads `~/CustomerPulse/model.json` (
 - **Actions:** mark them Done or Dismiss them; Undo and Reopen bring them back. Choices are saved in `~/CustomerPulse/state/actioned.json` and never sent anywhere.
 - **Refresh:** asks Copilot to run your daily automation now, using `workflow_id` from `~/CustomerPulse/config.json`. The canvas never runs queries itself and shows the new data as soon as the automation rebuilds it.
 - **Data freshness:** a notice appears when a source wasn't refreshed today or a partial load was held back. The Data tab has the details.
+- **Copilot:** Adoption dashboard is the default sub-view, served in a same-origin iframe at `copilot/?embed=1`. Only that query parameter hides the inner brand header; navigation stays available. `#/copilot/seats` opens Pulse's Seats & actions view. A fallback link opens `/copilot/` in its own tab, and account drawer links select an account in the embedded dashboard.
+- **Copilot data:** `copilot_home` in Pulse config selects its model directory (default `~/CopilotConsumptionDashboard`; the model's `copilot.model_path` is a fallback). `/copilot/api/model`, `/copilot/api/status` and `/copilot/events` read this model; `/copilot/api/refresh` shares Pulse's coordinator and write guards. `/copilot/classic` retains offline Ask and a relative Back link. Only this generated classic route allows inline scripts in its CSP.
 
 Copilot can also drive the canvas through three actions:
 
@@ -58,6 +60,7 @@ Run the tests from the repository root:
 
 ```bash
 node --test customer-pulse/canvas/tests/
+node --test customer-pulse/canvas/copilot/tests/
 ```
 
 Use synthetic data only. This repository is public.
