@@ -732,6 +732,20 @@ SNAP_FIELDS = ("id", "name", "consuming", "active_this_week", "active_7d", "acti
                "at_risk", "health", "health_cat", "gross_7d", "gross_28d", "mtd_gross", "top_surface", "top_model")
 
 
+def atomic_write(path, text):
+    """Write through a temp file and rename it, so the canvas never reads a half-written file."""
+    tmp = f"{path}.{os.getpid()}.tmp"
+    try:
+        with open(tmp, "w") as f:
+            f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+
+
 def slim(model):
     return {"data_date": model["data_date"], "accounts": [{k: a.get(k) for k in SNAP_FIELDS} for a in model["accounts"]]}
 
@@ -757,18 +771,16 @@ def main():
     model["changes"] = changes(model, prev)
 
     os.makedirs(os.path.join(DATA, "snapshots"), exist_ok=True)
-    with open(os.path.join(DATA, "snapshots", f"{day}.json"), "w") as f:
-        json.dump(slim(model), f)
+    atomic_write(os.path.join(DATA, "snapshots", f"{day}.json"), json.dumps(slim(model)))
 
     with open(os.path.join(ROOT, "template.html")) as f:
         tpl = f.read()
-    with open(os.path.join(os.path.dirname(args.out), "model.json"), "w") as f:
-        json.dump(model, f, separators=(",", ":"))
-    blob = json.dumps(model, separators=(",", ":")).replace("</", "<\\/")
+    compact = json.dumps(model, separators=(",", ":"))
+    atomic_write(os.path.join(os.path.dirname(args.out), "model.json"), compact)
+    blob = compact.replace("</", "<\\/")
     with open(os.path.join(ROOT, "ask_engine.js")) as f:
         engine = f.read().replace("</", "<\\/")
-    with open(args.out, "w") as f:
-        f.write(tpl.replace("/*__ASK_ENGINE__*/", engine).replace("/*__DATA__*/null", blob))
+    atomic_write(args.out, tpl.replace("/*__ASK_ENGINE__*/", engine).replace("/*__DATA__*/null", blob))
 
     p = model["portfolio"]
     print(f"Dashboard written: {args.out}")

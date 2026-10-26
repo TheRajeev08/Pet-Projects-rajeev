@@ -1,0 +1,12 @@
+// qid:p06 db:c360 — latest account attributes for owned accounts: c360 entity (ARR, renewal, adoption, health, product flags) joined to the rev_source account dim
+{{OWNED_LET}}
+let dim = database("rev_source").salesforce_account_dim
+    | where salesforce_account_id in (owned)
+    | project salesforce_account_id, salesforce_account_name, account_type, salesforce_parent_account_id, salesforce_parent_account_name, billing_country, industry, business_segment, business_line, managed_account_type, g2k, is_test_account;
+let c = entity_salesforce_account
+    | where measurement_date > ago(10d) and entity_id in (owned)
+    | summarize arg_max(measurement_date, sales_segment, next_renewal_date, ghas_enabled, ghas_licensing_model, final_ghas_plan, latest_total_arr, latest_ghe_arr, latest_advanced_security_arr, latest_license_seats, latest_advanced_security_seats, latest_license_adoption_pct, latest_ghas_current_active_committers, latest_ghas_license_adoption_pct, latest_num_monthly_engaged_users, latest_committers_1d90, latest_open_renewal_total_expected_license_arr, latest_open_renewal_license_net_change_in_arr, latest_open_pipeline_license_net_change_in_arr, has_ghe_license, has_ghas_license, has_copilot, has_actions, has_codespaces, has_ghec_metered, has_cloud_orgs, has_server_orgs, latest_actions_billed_dollars_ltm, latest_ghas_billed_dollars_ltm, latest_ghec_billed_dollars_ltm, latest_copilot_billed_dollars_ltm, latest_number_copilot_assigned_users, latest_number_copilot_installed_authenticated_1d28_users, latest_number_copilot_active_1d28_users, latest_number_copilot_engaged_1d28_users, created_tickets_past28days, latest_rounded_avg_support_experience_csat_ltm, ghsp_billed_dollars_latest_complete_month, ghcs_billed_dollars_latest_complete_month) by salesforce_account_id = entity_id;
+dim
+| join kind=fullouter c on salesforce_account_id
+| extend salesforce_account_id = coalesce(salesforce_account_id, salesforce_account_id1)
+| project-away salesforce_account_id1

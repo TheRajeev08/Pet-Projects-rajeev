@@ -1,0 +1,30 @@
+// qid:p04 db:rev_source — Copilot per owned account: daily health over {{DAYS}} days (assigned, at-risk), latest health attributes, and contracted Copilot seats from the monthly product fact, plus global row and seat totals
+{{OWNED_LET}}
+let d0 = startofday(ago({{DAYS}}d));
+let h = salesforce_account_daily_copilot_health_score_fact
+    | where measurement_date >= d0 and salesforce_account_id in (owned);
+let health = h
+    | summarize assigned = max(assigned_users), at_risk = max(users_at_risk) by salesforce_account_id, measurement_date
+    | summarize pts = make_list(strcat_delim("|", format_datetime(measurement_date, "yyyyMMdd"), assigned, at_risk), 1000) by salesforce_account_id
+    | extend series = "health";
+let hlast = h
+    | summarize arg_max(measurement_date, assigned_users, users_at_risk, users_w_copilot_mau_risk, users_w_intracohort_90d_usar_risk, users_w_no_activity_l180d_risk, users_w_pru_mau_retention_risk, grr_30day, high_watermark_number_copilot_assigned_users_180days, retention_180day_high_watermark, product_health_score, commercial_health_score, copilot_health_score, copilot_health_score_category) by salesforce_account_id
+    | project salesforce_account_id, series = "health_latest", pts = pack_array(strcat_delim("|", format_datetime(measurement_date, "yyyyMMdd"), assigned_users, users_at_risk, users_w_copilot_mau_risk, users_w_intracohort_90d_usar_risk, users_w_no_activity_l180d_risk, users_w_pru_mau_retention_risk, round(grr_30day, 4), high_watermark_number_copilot_assigned_users_180days, round(retention_180day_high_watermark, 4), round(product_health_score, 2), round(commercial_health_score, 2), round(copilot_health_score, 2), copilot_health_score_category));
+let seats = salesforce_account_monthly_product_arr_seats_fact
+    | where measurement_date >= ago(75d) and salesforce_account_id in (owned)
+    | summarize biz = sum(copilot_business_seats), ent = sum(copilot_enterprise_seats), sa = sum(copilot_standalone_seats) by salesforce_account_id, measurement_date
+    | summarize pts = make_list(strcat_delim("|", format_datetime(measurement_date, "yyyyMMdd"), biz, ent, sa), 1000), mx = max(biz + ent + sa) by salesforce_account_id
+    | where mx > 0
+    | project salesforce_account_id, pts, series = "seats";
+let meta = salesforce_account_daily_copilot_health_score_fact
+    | where measurement_date >= d0
+    | summarize n = count(), s = sum(assigned_users) by measurement_date
+    | summarize pts = make_list(strcat_delim("|", format_datetime(measurement_date, "yyyyMMdd"), n, s), 1000)
+    | extend salesforce_account_id = "__meta__", series = "health_rows";
+let seatmeta = salesforce_account_monthly_product_arr_seats_fact
+    | where measurement_date >= ago(75d)
+    | summarize n = count(), s = sum(coalesce(copilot_business_seats, 0.0) + coalesce(copilot_enterprise_seats, 0.0) + coalesce(copilot_standalone_seats, 0.0)) by measurement_date
+    | summarize pts = make_list(strcat_delim("|", format_datetime(measurement_date, "yyyyMMdd"), n, s), 1000)
+    | extend salesforce_account_id = "__meta__", series = "seat_totals";
+union health, hlast, seats, meta, seatmeta
+| project salesforce_account_id, series, pts

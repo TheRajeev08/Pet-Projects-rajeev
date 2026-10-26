@@ -1,0 +1,1 @@
+SELECT Id, Name, Type, Industry, BillingCountry, Parent.Name, CreatedDate, LastActivityDate FROM Account WHERE OwnerId = '{{OWNER_ID}}' ORDER BY Name

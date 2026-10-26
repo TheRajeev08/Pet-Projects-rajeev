@@ -1,0 +1,19 @@
+// qid:p02 db:service_sales_analytics — contracted seats and ARR per owned account × product_type, run-length encoded over {{DAYS}} days, plus global daily row counts. Each point is a "|"-delimited string so empty values keep their position
+{{OWNED_LET}}
+let d0 = startofday(ago({{DAYS}}d));
+let daily = product_arr_v2
+    | where day >= d0 and type == "Net ARR" and product_type != "Support" and account_id in (owned)
+    | summarize seats = sum(iff(license_seats > 0, license_seats, quantity)), arr = round(sum(license_arr), 0), skus = strcat_array(array_sort_asc(make_set(replace_string(product, "|", "/"), 16)), "; ") by account_id, product_type, day;
+let runs = daily
+    | order by account_id asc, product_type asc, day asc
+    | extend brk = iff(account_id != prev(account_id) or product_type != prev(product_type) or seats != prev(seats) or arr != prev(arr) or skus != prev(skus) or day != prev(day) + 1d, 1, 0)
+    | extend run = row_cumsum(brk)
+    | summarize s = min(day), e = max(day), seats = take_any(seats), arr = take_any(arr), skus = take_any(skus) by account_id, product_type, run
+    | summarize runs = make_list(strcat_delim("|", product_type, format_datetime(s, "yyyyMMdd"), format_datetime(e, "yyyyMMdd"), seats, arr, skus), 4096) by account_id;
+let meta = product_arr_v2
+    | where day >= d0 and type == "Net ARR"
+    | summarize n = count(), s = round(sum(iff(license_seats > 0, license_seats, quantity)), 0) by day
+    | summarize runs = make_list(strcat_delim("|", "__rows__", format_datetime(day, "yyyyMMdd"), format_datetime(day, "yyyyMMdd"), n, s, ""), 4096)
+    | extend account_id = "__meta__";
+union runs, meta
+| project account_id, runs

@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="csrf-token" content="__CSRF_TOKEN__">
+    <title>Customer Pulse</title>
+    <link rel="stylesheet" href="/style.css">
+    <script type="module" src="/app.js"></script>
+</head>
+<body>
+    <div id="app" class="shell">
+        <header class="topbar" id="topbar">
+            <div class="brand"><span class="mark" aria-hidden="true">P</span><div class="brand-text"><span class="product-name">Customer Pulse</span><span class="freshness">Loading the snapshot</span></div></div>
+        </header>
+        <nav class="nav" id="nav" aria-label="Dashboard views"></nav>
+        <div class="notices" id="notices" aria-live="polite"></div>
+        <main id="main" tabindex="-1">
+            <div class="loading" role="status" aria-label="Loading the snapshot">
+                <div class="line short"></div><div class="line long"></div>
+                <div class="blocks"><div></div><div></div><div></div></div>
+            </div>
+        </main>
+        <footer class="footer">
+            <span>Private snapshot of your Salesforce-owned accounts, stored on this computer.</span>
+            <span>Actions are prompts for your judgment. Nothing is written back to Salesforce.</span>
+        </footer>
+    </div>
+    <div id="drawer-host"></div>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+</body>
+</html>
