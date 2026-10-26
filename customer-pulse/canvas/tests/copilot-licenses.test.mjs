@@ -235,9 +235,9 @@ test("desk adoption strip clarifies dashboard readings while retaining cutoff gu
     });
     vm.runInContext(source.slice(source.indexOf("function adoptionFunnel("), source.indexOf("function forecastWhitespace(")), context);
     const html = vm.runInContext("adoptionFunnel()", context);
-    assert.match(html, /class="fact-strip adoption-funnel"/);
+    assert.match(html, /class="fact-strip fact-strip-three adoption-funnel"/);
     const css = readFileSync(new URL("../copilot/style.css", import.meta.url), "utf8");
-    assert.match(css, /\.adoption-funnel \{ grid-template-columns: repeat\(3, minmax\(0, 1fr\)\); \}/);
+    assert.match(css, /\.fact-strip\.fact-strip-three \{ grid-template-columns: repeat\(3, minmax\(0, 1fr\)\); \}/);
     assert.match(css, /@media \(max-width: 740px\)[\s\S]*\.fact-strip \{ grid-template-columns: repeat\(2, minmax\(0, 1fr\)\); \}/);
     assert.match(html, /Dashboard source\. Portfolio uses Pulse's dated license figures, so Licenses and Assigned can differ for a few accounts\./);
     assert.match(html, /Source cutoffs differ; a dash means not reported\./);

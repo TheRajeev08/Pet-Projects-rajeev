@@ -119,7 +119,7 @@ function adoptionFunnel(account = null) {
     const value = (key, qid) => !hasSources(m, qid) ? null : account
         ? account[key] : totals[key].value;
     const steps = [["assigned", "Assigned", "06"], ["active_28d", "Active 28d", "03"], ["engaged_1d28", "Engaged 28d", "02"]];
-    return `<div class="fact-strip adoption-funnel" aria-label="Adoption funnel">${steps.map(([key, text, qid]) =>
+    return `<div class="fact-strip fact-strip-three adoption-funnel" aria-label="Adoption funnel">${steps.map(([key, text, qid]) =>
         `<div class="fact"><small>${metricName(key, text)}</small><strong>${num(value(key, qid))}</strong>`
         + (!account ? `<span class="meta">${totals[key].n} of ${totals[key].of} reporting</span>` : "") + "</div>").join("")}</div>` +
         (account ? `<p class="meta">Installed IDE users 28d (partial telemetry): ${num(dataValue(account, "installed_1d28", "02"))}. Not a funnel step.</p>` : "") +
@@ -169,7 +169,7 @@ function portfolioForecast() {
             (hasSources(m, "16") ? detailTable(["Category", "Accounts"], Object.entries(p[`${key}_counts`] || {})
                 .map(([text, count]) => [H(text), num(count)]), "No forecast categories reported") : "<p>&mdash;</p>") + "</div>").join("")}</div>` +
         `<h3>Model estimate &middot; parent-level</h3><p class="meta">Direct owned-account matches; sums of model estimates, not reconciled enterprise totals.</p>` +
-        `<div class="fact-strip">${[["ws_potential_seats", "Potential seats"], ["ws_whitespace_seats", "Whitespace seats"], ["ws_som_annual", "Annual SOM"]].map(([key, text]) =>
+        `<div class="fact-strip fact-strip-three">${[["ws_potential_seats", "Potential seats"], ["ws_whitespace_seats", "Whitespace seats"], ["ws_som_annual", "Annual SOM"]].map(([key, text]) =>
             `<div class="fact"><small>${metricName(key, text)}</small><strong>${(key === "ws_som_annual" ? money : num)(hasSources(m, "17") ? p[`total_${key}`] : null)}</strong></div>`).join("")}</div></section>`;
 }
 
