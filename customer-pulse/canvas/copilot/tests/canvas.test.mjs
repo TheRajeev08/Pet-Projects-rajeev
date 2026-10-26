@@ -71,6 +71,7 @@ test("three-cell strips share full-width responsive layout without orphan cells 
     }
     assert.match(css, /\.fact-strip\.fact-strip-three \{ grid-template-columns: repeat\(3, minmax\(0, 1fr\)\); \}/);
     assert.match(css, /\.fact-strip \+ \.fact-strip \{ margin-top: 14px; \}/);
+    assert.match(css, /\.details-grid \+ h3 \{ margin-top: 24px; \}/);
     assert.match(css, /\.fact:last-child:nth-child\(odd\) \{ grid-column: 1 \/ -1; \}/);
     assert.match(css, /\.fact-strip-three > \.fact \{ border-bottom: 0; border-right: 1px solid var\(--line\); grid-column: auto; \}/);
     assert.match(css, /\.fact-strip-three > \.fact:last-child \{ border-right: 0; grid-column: auto; \}/);
