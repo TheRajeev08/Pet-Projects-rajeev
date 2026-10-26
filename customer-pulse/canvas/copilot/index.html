@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="csrf-token" content="__CSRF_TOKEN__">
+    <title>Copilot adoption | My territory</title>
+    <link rel="stylesheet" href="./style.css">
+    <script type="module" src="./app.js"></script>
+</head>
+<body>
+    <div class="shell">
+        <header class="topbar">
+            <div class="identity">
+                <span class="identity-mark" aria-hidden="true">C</span>
+                <div class="identity-copy"><span>My Salesforce territory</span><strong>Copilot adoption</strong></div>
+            </div>
+            <div class="topbar-controls">
+                <span class="freshness" id="freshness">Loading local snapshot</span>
+                <button type="button" class="button subtle" data-action="reload" title="Re-read the saved local dashboard data">Reload data</button>
+                <button type="button" class="button primary" data-action="refresh" id="refresh-button" title="Start the existing live refresh automation">Refresh live</button>
+            </div>
+        </header>
+        <nav class="navigation" id="navigation" aria-label="Canvas views">
+            <button type="button" data-view="desk">Adoption desk</button>
+            <button type="button" data-view="accounts">All accounts</button>
+            <button type="button" data-view="trends">Trends &amp; mix</button>
+            <button type="button" data-view="impact">Impact</button>
+            <button type="button" data-view="changes">What changed</button>
+            <button type="button" data-view="notes">Ask &amp; data notes</button>
+        </nav>
+        <div class="notices" id="notices" aria-live="polite"></div>
+        <main id="app" tabindex="-1">
+            <div class="loading-view" role="status" aria-label="Loading dashboard">
+                <div class="loading-line long"></div><div class="loading-line"></div>
+                <div class="loading-row"><div></div><div></div><div></div></div>
+            </div>
+        </main>
+        <footer class="footer">
+            <span>Private, local dashboard data. Recommendations are prompts for your judgment, not CRM actions.</span>
+            <span>UBB dollars are usage-side list value, not invoiced revenue.</span>
+        </footer>
+    </div>
+</body>
+</html>

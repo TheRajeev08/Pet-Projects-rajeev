@@ -56,27 +56,29 @@ def cmd_render(_):
         print()
 
 
+def session_log(session):
+    """The events log of the one session that ran the queries.
+
+    Only that session is read: scanning every recent session would mix in results from other
+    runs (another refresh, a manual session), so a missing session is an error, not a fallback.
+    """
+    session = session or os.environ.get("COPILOT_AGENT_SESSION_ID")
+    if not session:
+        sys.exit("No Copilot session to collect from. Run this inside the session that ran the queries, "
+                 "or pass --session <id>.")
+    path = os.path.join(STATE, session, "events.jsonl")
+    if not os.path.exists(path):
+        sys.exit(f"No session log at {path}. Pass --session <id> for the session that ran the queries.")
+    return path
+
+
 def iter_events(session):
-    files = []
-    if session:
-        files = [os.path.join(STATE, session, "events.jsonl")]
-    else:
-        env = os.environ.get("COPILOT_AGENT_SESSION_ID")
-        if env and os.path.exists(os.path.join(STATE, env, "events.jsonl")):
-            files = [os.path.join(STATE, env, "events.jsonl")]
-        else:
-            cutoff = dt.datetime.now().timestamp() - 12 * 3600
-            files = [p for p in glob.glob(os.path.join(STATE, "*", "events.jsonl")) if os.path.getmtime(p) > cutoff]
-            files.sort(key=os.path.getmtime)
-    for path in files:
-        if not os.path.exists(path):
-            continue
-        with open(path) as f:
-            for line in f:
-                try:
-                    yield json.loads(line)
-                except json.JSONDecodeError:
-                    continue
+    with open(session_log(session)) as f:
+        for line in f:
+            try:
+                yield json.loads(line)
+            except json.JSONDecodeError:
+                continue
 
 
 def cmd_collect(args):

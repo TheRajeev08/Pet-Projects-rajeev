@@ -1,0 +1,8 @@
+let owned = union
+    (database("rev_source").salesforce_account_monthly_product_arr_seats_fact | where sales_owner_id == "{{OWNER_ID}}" and measurement_date > ago(45d) | distinct salesforce_account_id),
+    (database("rev_source").salesforce_account_ghe_volume_unique_billable_users_fact | where sales_owner_id == "{{OWNER_ID}}" and measurement_date > ago(45d) | distinct salesforce_account_id),
+    (database("rev_source").salesforce_account_ghe_metered_users_fact | where sales_owner_id == "{{OWNER_ID}}" and usage_date > ago(45d) | distinct salesforce_account_id),
+    (database("rev_source").salesforce_account_daily_copilot_health_score_fact | where sales_owner_id == "{{OWNER_ID}}" and measurement_date > ago(45d) | distinct salesforce_account_id),
+    (database("rev_source").salesforce_account_daily_code_quality_fact | where sales_owner_id == "{{OWNER_ID}}" and measurement_date > ago(45d) | distinct salesforce_account_id),
+    (database("c360").entity_salesforce_account | where measurement_date > ago(10d) and sales_owner == "{{OWNER_NAME}}" | distinct salesforce_account_id = entity_id)
+    | distinct salesforce_account_id;

@@ -65,6 +65,17 @@ Requires Python 3.9+ (stdlib only). Node is needed only to run the tests.
 
 ## Data sources and caveats
 
+Customer Pulse embeds the adoption frontend at `/copilot/`, with the offline Ask dashboard at `/copilot/classic`. The standalone canvas remains installed and unchanged. Refreshes in Pulse use its single configured automation.
+
+Queries **16** (weekly UBB forecast) and **17** (monthly whitespace model) add flat account fields for Ask and a **Forecast & whitespace** section in the embedded account view. Trends includes entitlement/insight counts and estimated potential seats, whitespace seats and annual SOM. New facts are badged for 30 days from `new_metrics[].since`.
+
+- **Forecast:** bill, low-high range (positive forecasts only), included pool, ratio, entitlement status, utilization band, insight and UBB adoption band. "Projected above included pool" is `max(0, forecast_bill - included_pool)`, not invoiced overage. User counts are labelled neutrally as licensed users and users with UBB activity.
+- **Whitespace:** direct account-id matches only, deduplicated; unmatched parent ids are excluded. All figures are **Model estimate · parent-level**, not reconciled enterprise totals. Whitespace is `max(0, potential - coalesce(assigned, 0))`; implausible estimates are withheld. GHE/GHAS estimates are available to SQL Ask only, not displayed.
+- **Adoption:** assigned → active 28d → engaged 28d. Installed IDE telemetry is partial and shown separately, never as a funnel step. A Mover chip identifies flagged accounts.
+- Missing sources or account rows remain unknown, not zero. Weekly/monthly and enterprise sources carry forward with their original date when not collected.
+- Ask supports "most whitespace seats", "potential seats", "SOM" and "projected to exceed pool"; bare "whitespace" still means accounts not using Copilot.
+- Copilot CLI, the app, Claude Code and Codex are covered through UBB integrations. Lack of a row does not prove non-use.
+
 - **rev_source:** daily Copilot health score, daily UBB burn rate, UBB revenue by integration/model, monthly product ARR and seats.
 - **c360 (experimental):** account entity (ARR, billing, renewal, CSM), seat/engagement snapshot, IDE telemetry, MAU retention.
 - **Salesforce:** owned accounts. This is the source of truth for ownership. Accounts attributed to you in the warehouse but not owned in Salesforce are listed separately.

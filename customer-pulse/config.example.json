@@ -1,0 +1,23 @@
+{
+  "owner_sfdc_id": "005XXXXXXXXXXXXXXX",
+  "owner_name": "Your Name As Shown In Salesforce",
+  "digest_to": "you@example.com",
+  "gong_email": "you@example.com",
+  "signals": {
+    "top_n": 50,
+    "web_accounts_per_day": 10,
+    "daily_tool_budget": 25,
+    "zoominfo_enabled": false,
+    "retention_days": 180,
+    "evidence_max": 300
+  },
+  "sf_target_org": "pulse-github",
+  "workflow_id": null,
+  "copilot_home": "~/CopilotConsumptionDashboard",
+  "history_days": 35,
+  "thresholds": {
+    "renewal_days": 120,
+    "contracted_high_abs": 10,
+    "contracted_high_pct": 0.10
+  }
+}

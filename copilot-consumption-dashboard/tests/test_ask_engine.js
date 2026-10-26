@@ -39,6 +39,24 @@ const D = {
   ],
 };
 const e = AskEngine(D);
+const estimates = {
+  missing_sources: [], accounts: [
+    acct({ name: "Orchid Example", ws_whitespace_seats: 30, ws_potential_seats: 50, ws_som_annual: 600,
+      entitlement_status: "Projected to Exceed Included Pool", forecast_above_pool: 20 }),
+    acct({ name: "Maple Example", consuming: false, ws_whitespace_seats: 70, ws_potential_seats: 70, ws_som_annual: 1400 }),
+    acct({ name: "Cedar Example", consuming: false, ws_estimate_source: "rejected_as_implausible" }),
+    acct({ name: "Pine Example", consuming: false }),
+  ],
+};
+const estimateEngine = AskEngine(estimates);
+assert.equal(estimateEngine.ask("most whitespace seats").rows[0].name, "Maple Example");
+assert.equal(estimateEngine.ask("top 1 by potential seats").rows[0].name, "Maple Example");
+assert.equal(estimateEngine.ask("top 1 by SOM").rows[0].name, "Maple Example");
+assert.deepEqual(estimateEngine.ask("projected to exceed pool").rows.map(a => a.name), ["Orchid Example"]);
+assert.deepEqual(estimateEngine.ask("whitespace").rows.map(a => a.name).sort(), ["Cedar Example", "Maple Example", "Pine Example"]);
+assert.deepEqual(estimateEngine.ask("accounts with fewer than 40 whitespace seats").rows.map(a => a.name), ["Orchid Example"]);
+assert.deepEqual(AskEngine({ ...estimates, missing_sources: ["16"] }).ask("projected to exceed pool").rows, []);
+assert.deepEqual(AskEngine({ ...estimates, missing_sources: ["17"] }).ask("accounts with fewer than 40 whitespace seats").rows, []);
 const names = r => (r.rows || []).map(a => a.name).sort();
 let n = 0;
 function t(q, check) { const r = e.ask(q); try { check(r); n++; } catch (err) { console.error("FAIL:", q, "\n ", r.type, r.interpreted, r.answer); throw err; } }

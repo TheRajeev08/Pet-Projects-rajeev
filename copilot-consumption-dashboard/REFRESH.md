@@ -8,7 +8,7 @@ Config, data and output live in `~/CopilotConsumptionDashboard/`, outside the re
    ```bash
    python3 refresh.py render
    ```
-   This prints 15 blocks like `=== 07 · query_kusto · database=rev_source ===` followed by the query text. If it reports missing config, stop and tell the user to create `~/CopilotConsumptionDashboard/config.json` from `config.example.json`.
+   This prints one block per file in `queries/` (17 today), like `=== 07 · query_kusto · database=rev_source ===`, followed by the query text. If it reports missing config, stop and tell the user to create `~/CopilotConsumptionDashboard/config.json` from `config.example.json`.
 
 2. **Run every query verbatim**
    - `query_salesforce` blocks → `revenue-mcp-server-query_salesforce` with the SOQL exactly as printed.
@@ -21,6 +21,8 @@ Config, data and output live in `~/CopilotConsumptionDashboard/`, outside the re
    python3 refresh.py collect
    ```
    Exit code 2 means some queries weren't found (it lists the IDs). Re-run just those queries verbatim, then run `collect` again.
+
+   `collect` reads only this session's log (from `COPILOT_AGENT_SESSION_ID`) and never falls back to other sessions. When running it outside the session that ran the queries, pass `--session <id>`.
 
 4. **Fetch Copilot Impact and feature settings per enterprise**
    ```bash

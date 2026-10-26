@@ -1,0 +1,20 @@
+// qid:p05 db:c360 — GHAS active committers per owned account (daily over {{DAYS}} days), latest Code Quality usage, plus committer global row counts
+{{OWNED_LET}}
+let d0 = startofday(ago({{DAYS}}d));
+let ghas = fact_ghas_committers
+    | where day >= d0 and entity_type == "Salesforce Account" and entity_id in (owned)
+    | summarize cur = max(ghas_current_active_committers), cs = max(active_code_scanning_committers), ss = max(active_secret_scanning_committers) by entity_id, day
+    | summarize pts = make_list(strcat_delim("|", format_datetime(day, "yyyyMMdd"), cur, cs, ss), 1000) by salesforce_account_id = entity_id
+    | extend series = "ghas";
+let cq = database("rev_source").salesforce_account_daily_code_quality_fact
+    | where measurement_date >= d0 and salesforce_account_id in (owned)
+    | summarize arg_max(measurement_date, code_quality_active_committers, code_quality_repos_enabled_active, code_quality_repos_enabled_waiting, total_repos, autofixes_generated_l30d, prs_fixed_with_autofix_l30d, prs_fixed_l30d, prs_not_fixed_l30d) by salesforce_account_id
+    | where code_quality_active_committers > 0 or code_quality_repos_enabled_active > 0 or code_quality_repos_enabled_waiting > 0
+    | project salesforce_account_id, series = "code_quality", pts = pack_array(strcat_delim("|", format_datetime(measurement_date, "yyyyMMdd"), code_quality_active_committers, code_quality_repos_enabled_active, code_quality_repos_enabled_waiting, total_repos, autofixes_generated_l30d, prs_fixed_with_autofix_l30d, prs_fixed_l30d, prs_not_fixed_l30d));
+let meta = fact_ghas_committers
+    | where day >= d0 and entity_type == "Salesforce Account"
+    | summarize n = count(), s = sum(ghas_current_active_committers) by day
+    | summarize pts = make_list(strcat_delim("|", format_datetime(day, "yyyyMMdd"), n, s), 1000)
+    | extend salesforce_account_id = "__meta__", series = "ghas_rows";
+union ghas, cq, meta
+| project salesforce_account_id, series, pts

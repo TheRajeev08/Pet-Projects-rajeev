@@ -1,0 +1,30 @@
+// qid:p03 db:rev_source — GHE consumption per owned account over {{DAYS}} days: metered users (daily), volume unique billable users (snapshots), GHEC MEU/MAU (rolling 28d), plus metered and volume global row counts
+{{OWNED_LET}}
+let d0 = startofday(ago({{DAYS}}d));
+let metered = salesforce_account_ghe_metered_users_fact
+    | where usage_date >= d0 and salesforce_account_id in (owned)
+    | summarize consumed = sum(consumed_licenses), cloud = sum(billable_cloud_licenses), server = sum(billable_server_only_licenses), users = sum(num_metered_users) by salesforce_account_id, usage_date
+    | summarize pts = make_list(strcat_delim("|", format_datetime(usage_date, "yyyyMMdd"), consumed, cloud, server, users), 1000) by salesforce_account_id
+    | extend series = "metered";
+let volume = salesforce_account_ghe_volume_unique_billable_users_fact
+    | where measurement_date >= d0 and salesforce_account_id in (owned)
+    | summarize ubu = sum(unique_billable_users) by salesforce_account_id, measurement_date
+    | summarize pts = make_list(strcat_delim("|", format_datetime(measurement_date, "yyyyMMdd"), ubu), 1000) by salesforce_account_id
+    | extend series = "volume";
+let engaged = salesforce_account_user_engagement_facts
+    | where measurement_period_end_date >= d0 and salesforce_account_id in (owned)
+    | summarize meu = max(ghec_meu_monthly_engaged_users), mau = max(ghec_mau_monthly_active_users) by salesforce_account_id, measurement_period_end_date
+    | summarize pts = make_list(strcat_delim("|", format_datetime(measurement_period_end_date, "yyyyMMdd"), meu, mau), 1000) by salesforce_account_id
+    | extend series = "engagement";
+let meta = salesforce_account_ghe_metered_users_fact
+    | where usage_date >= d0
+    | summarize n = count(), s = sum(consumed_licenses) by usage_date
+    | summarize pts = make_list(strcat_delim("|", format_datetime(usage_date, "yyyyMMdd"), n, s), 1000)
+    | extend salesforce_account_id = "__meta__", series = "metered_rows";
+let vmeta = salesforce_account_ghe_volume_unique_billable_users_fact
+    | where measurement_date >= d0
+    | summarize n = count(), s = sum(unique_billable_users) by measurement_date
+    | summarize pts = make_list(strcat_delim("|", format_datetime(measurement_date, "yyyyMMdd"), n, s), 1000)
+    | extend salesforce_account_id = "__meta__", series = "volume_rows";
+union metered, volume, engaged, meta, vmeta
+| project salesforce_account_id, series, pts

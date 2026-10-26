@@ -1,0 +1,10 @@
+// qid:16 db:rev_source — Copilot UBB month-end forecast, included-pool status and adoption insight (latest week, one row per account)
+let wk = toscalar(salesforce_account_weekly_ubb_summary_fact | where week_end_date > ago(30d) | summarize max(week_end_date));
+salesforce_account_weekly_ubb_summary_fact
+| where sales_owner_id == "{{OWNER_ID}}" and week_end_date == wk
+| summarize arg_max(stamp, *) by salesforce_account_id
+| project id = salesforce_account_id, license_users = license_users_on_account, ubb_users = ubb_users_on_account, ubb_adoption_rate = round(ubb_adoption_rate, 3), ubb_adoption_band,
+    forecast_bill = round(forecast_predicted_month_full_bill, 2), forecast_bill_low = round(forecast_predicted_month_full_bill_lower, 2), forecast_bill_high = round(forecast_predicted_month_full_bill_upper, 2),
+    pool = coalesce(standard_pool_in_dollar, 0.0) + coalesce(promo_pool_in_dollar, 0.0), forecast_pool_ratio = round(forecast_pool_ratio, 3),
+    entitlement_status = projected_entitlement_status, utilization_band, insight = account_insight_category,
+    wow_ubb_users = wow_delta_ubb_users_on_account, asof = wk

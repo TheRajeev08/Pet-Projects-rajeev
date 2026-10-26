@@ -30,6 +30,11 @@ The dashboard's "Ask" box uses these same definitions. Don't invent your own.
 | stopped this week | `active_last_week = 1 AND active_this_week = 0` |
 | using Copilot / consuming | `accounts.consuming = 1` (90-day window) |
 | not using Copilot / whitespace | `consuming = 0` |
+| whitespace seats / potential seats / SOM | `ws_whitespace_seats` / `ws_potential_seats` / `ws_som_annual` across all owned accounts, including non-consuming; label **Model estimate · parent-level** |
+| projected to exceed pool | `entitlement_status = 'Projected to Exceed Included Pool'`; `forecast_above_pool` is projected above included pool, not invoiced overage |
+| UBB forecast and range | `forecast_bill`, `forecast_bill_low`, `forecast_bill_high`; show range only for positive forecast |
+| UBB adoption | `ubb_adoption_band`, `ubb_adoption_rate`, `ubb_week_users` (users with UBB activity), `ubb_license_users` (licensed users) |
+| adoption funnel | `assigned` → `active_28d` → `engaged_1d28`; `installed_1d28` is partial IDE telemetry, not a funnel step |
 | declining / growing | `declining` / `growing` (4-week trend of weekly actives, ±10%) |
 | low utilisation | `low_utilization`; utilisation = 28d active ÷ assigned |
 | renewing soon | `renewing_in_days BETWEEN 0 AND N` (default 90) |
@@ -48,6 +53,8 @@ Unless the user asks otherwise, scope questions about "accounts" to consuming ac
 ## Tips
 
 - Spend (`gross_*`, `ubb_*`) is **usage-side list value**, not invoiced revenue. Say so if the user treats it as revenue.
+- Missing q16/q17 account values are unknown, never zero. Check `missing_sources` and source dates; weekly/monthly sources can be carried forward.
+- Exclude `ws_estimate_source = 'rejected_as_implausible'` from seat/SOM estimates. Whitespace uses potential minus assigned (missing assigned means zero), clamped at zero. Never infer GHE/GHAS opportunity from these Copilot views.
 - Show money as `$1,234`, percentages as `45%`, and sort results meaningfully.
 - Offer the dashboard link at the end: `~/CopilotConsumptionDashboard/dashboard.html`.
 - If `ask.py` says there's no data, tell the user to run the daily refresh (`copilot-consumption-dashboard/REFRESH.md`).
