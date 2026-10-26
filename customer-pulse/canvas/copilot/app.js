@@ -119,7 +119,7 @@ function adoptionFunnel(account = null) {
     const value = (key, qid) => !hasSources(m, qid) ? null : account
         ? account[key] : totals[key].value;
     const steps = [["assigned", "Assigned", "06"], ["active_28d", "Active 28d", "03"], ["engaged_1d28", "Engaged 28d", "02"]];
-    return `<div class="fact-strip" aria-label="Adoption funnel">${steps.map(([key, text, qid]) =>
+    return `<div class="fact-strip adoption-funnel" aria-label="Adoption funnel">${steps.map(([key, text, qid]) =>
         `<div class="fact"><small>${metricName(key, text)}</small><strong>${num(value(key, qid))}</strong>`
         + (!account ? `<span class="meta">${totals[key].n} of ${totals[key].of} reporting</span>` : "") + "</div>").join("")}</div>` +
         (account ? `<p class="meta">Installed IDE users 28d (partial telemetry): ${num(dataValue(account, "installed_1d28", "02"))}. Not a funnel step.</p>` : "") +

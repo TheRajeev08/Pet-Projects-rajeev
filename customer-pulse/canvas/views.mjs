@@ -581,17 +581,18 @@ function copilotTable(model, ui, rows, windowDays) {
         const priority = entry?.top ? tag(entry.top) : "";
         const actions = entry?.actions ? `<span>${entry.actions} ${plural(entry.actions, "action")}</span>` : "";
         const renewal = account.renewal
-            ? `<span${cp(account).flags.renewing_90 ? ' class="renewing-soon"' : ""}>Renews ${esc(fmtDay(account.renewal, { year: true }))}`
-                + `${isNumber(account.renewing_in_days) ? ` · ${fmtInt(account.renewing_in_days)} days` : ""}</span>` : "";
+            ? `<span class="compact-renewal${cp(account).flags.renewing_90 ? " renewing-soon" : ""}"><span class="signal-unit">Renews ${esc(fmtDay(account.renewal, { year: true }))}</span>`
+                + `${isNumber(account.renewing_in_days) ? ` <span class="signal-unit">(${fmtInt(account.renewing_in_days)} ${plural(account.renewing_in_days, "day")})</span>` : ""}</span>` : "";
         return priority || actions || renewal
-            ? `<span class="compact-signals">${priority}${actions}${renewal}</span>` : "";
+            ? `<span class="compact-signals">${priority || actions ? `<span class="compact-attention">${priority}${actions}</span>` : ""}${renewal}</span>` : "";
     };
     const columns = [
         { key: "name", label: "Customer", value: account => account.name, cell: account =>
             `${accountLink(model, account.id, account.name)}<span class="sub enterprise-slug">${esc(cp(account).slug || "Enterprise not linked")}</span>`
                 + (cp(account).reconciliationOnly ? '<span class="sub">Reconciliation only</span>' : "") + compactSignals(account) },
         { key: "licenses", label: "Licenses", numeric: true, value: account => cp(account).licenses, cell: account =>
-            `<span title="As of ${esc(fmtDay(cp(account).licensesAsOf, { year: true }))}">${measureCell(account.products.ghcp, "contracted", windowDays)}</span><span class="sub">${esc(planSplit(cp(account)))}</span>`
+            `<span title="As of ${esc(fmtDay(cp(account).licensesAsOf, { year: true }))}">${measureCell(account.products.ghcp, "contracted", windowDays)}</span>`
+            + `<span class="sub license-plans"><span class="license-plan">Business ${fmtInt(cp(account).business)}</span><span class="plan-separator" aria-hidden="true"> · </span><span class="license-plan">Enterprise ${fmtInt(cp(account).enterprise)}</span></span>`
             + (cp(account).flags.source_mismatch ? `<span class="source-mismatch" title="${esc(mismatchNote(cp(account)))}">Sources differ<span class="sub">Pulse ${fmtInt(cp(account).licenses)} / dashboard ${fmtInt(cp(account).dashboardLicenses)}</span></span>` : "") },
         { key: "assigned", label: "Assigned", numeric: true, value: account => cp(account).assigned, cell: account => {
             const row = cp(account);

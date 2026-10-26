@@ -589,6 +589,9 @@ tbody tr:hover > * { background: var(--hover-row); }
 .copilot-customers tfoot > tr > * { border-top: 1px solid var(--line); border-bottom: 0; background: var(--surface); font-weight: 700; }
 .copilot-customers .sub { margin-top: 3px; }
 .copilot-customers .compact-signals { display: none; }
+.copilot-customers .license-plan, .copilot-customers .signal-unit { display: inline-block; white-space: nowrap; overflow-wrap: normal; }
+.copilot-customers .compact-attention { display: inline-flex; align-items: baseline; gap: 6px; white-space: nowrap; }
+.copilot-customers .compact-renewal { display: flex; flex-wrap: wrap; gap: 2px 4px; flex-basis: 100%; }
 .enterprise-slug { overflow-wrap: anywhere; }
 .source-mismatch { display: block; margin-top: 5px; color: var(--caution); font-size: 11px; font-weight: 650; }
 .usage-bar { display: block; height: 4px; margin-top: 6px; background: var(--surface-strong); border-radius: 2px; }
@@ -599,7 +602,8 @@ tbody tr:hover > * { background: var(--hover-row); }
 @container (max-width: 950px) {
     .copilot-customers .col-renewal, .copilot-customers .col-attention { display: none; }
     .copilot-customers .compact-signals { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 6px; margin-top: 6px; font-size: 11px; color: var(--muted); }
-    .copilot-customers .compact-signals > :last-child:not(:first-child) { flex-basis: 100%; }
+    .copilot-customers .license-plan { display: block; }
+    .copilot-customers .plan-separator { display: none; }
     .copilot-customers .col-name { width: 23%; }
     .copilot-customers .col-licenses { width: 23%; }
     .copilot-customers .col-assigned, .copilot-customers .col-active28, .copilot-customers .col-engaged28 { width: 14%; }
