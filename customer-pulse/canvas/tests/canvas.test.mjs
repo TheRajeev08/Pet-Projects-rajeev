@@ -525,8 +525,8 @@ describe("views.mjs", () => {
         const funnel = section(html, "h-funnel");
         assert.deepEqual(funnelStep(funnel, "Assigned"), ["10", ""]);
         assert.ok(!funnel.includes("Installed"));
-        assert.deepEqual(funnelStep(funnel, "Active 28d"), ["4", "40%"]);
-        assert.deepEqual(funnelStep(funnel, "Engaged 28d"), ["3", "30%"]);
+        assert.deepEqual(funnelStep(funnel, "Active 28d"), ["4", ""]);
+        assert.deepEqual(funnelStep(funnel, "Engaged 28d"), ["3", ""]);
         assert.ok(funnel.includes("A dash means not reported."));
         assert.ok(section(html, "h-mix").includes('<span class="health Red">Red 2</span>'));
     });
@@ -668,7 +668,8 @@ describe("Python engine → canvas contract", { skip: NO_PYTHON }, () => {
         const steps = section(view, "h-funnel");
         assert.ok(!steps.includes("Installed"));
         assert.deepEqual(funnelStep(steps, "Active 28d"), [DASH, ""]);
-        assert.deepEqual(funnelStep(steps, "Engaged 28d"), [fmtInt(funnel.engaged_1d28), `${((funnel.engaged_1d28 / funnel.assigned) * 100).toFixed(0)}%`]);
+        const licenseTotal = model.accounts.filter(account => hasProduct(account, "ghcp")).reduce((sum, account) => sum + (account.products.ghcp.contracted || 0), 0);
+        assert.deepEqual(funnelStep(steps, "Engaged 28d"), [fmtInt(funnel.engaged_1d28), `${((funnel.engaged_1d28 / licenseTotal) * 100).toFixed(0)}%`]);
         const drawer = renderDrawer(model, { account: account.id });
         assert.deepEqual(funnelStep(drawer, "Assigned"), [fmtInt(funnel.assigned), ""]);
         assert.ok(drawer.includes("Installed IDE users 28d (partial)"));

@@ -4,7 +4,7 @@ import { createServer } from "node:http";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { ACTION_STATES, isObject, validateModel, withActionStates } from "./model.mjs";
+import { ACTION_STATES, copilotLicenses, isObject, validateModel, withActionStates } from "./model.mjs";
 import { validateModel as validateCopilotModel } from "./copilot/insights.mjs";
 
 const assets = dirname(fileURLToPath(import.meta.url));
@@ -383,6 +383,18 @@ export async function startCanvasServer({ paths = pulsePaths(), refresh, port = 
                 });
             } else if (req.method === "GET" && route === "/api/status") {
                 json(res, 200, await statusPayload());
+            } else if (req.method === "GET" && route === "/api/copilot-licenses") {
+                const [{ model }, items] = await Promise.all([readModel(paths.model), readActionStates(paths.actioned)]);
+                let copilot = null;
+                let note = null;
+                try {
+                    copilot = (await readCopilotModel(await copilotModelPath(paths))).model;
+                } catch (error) {
+                    if (!(error instanceof CanvasRequestError)) throw error;
+                    note = `Copilot dashboard reconciliation unavailable (${error.code}). Showing Pulse figures only.`;
+                }
+                const result = copilotLicenses(withActionStates(model, items), copilot);
+                json(res, 200, { ...result, ...(note ? { note } : {}) });
             } else if (req.method === "GET" && route === "/events") {
                 headers(res, "text/event-stream; charset=utf-8");
                 res.setHeader("Connection", "keep-alive");

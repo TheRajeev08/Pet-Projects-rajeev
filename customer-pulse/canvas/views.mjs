@@ -3,6 +3,7 @@ import {
     FAMILY_LABELS, PRIORITIES, SOURCE_STATES, TYPE_LABELS, VIEWS, accountIndex, actionsFor, attentionIndex, dayAge,
     eventsFor, hasProduct, isClosed, isDay, isNumber, isObject, priorityRank, productSeats, seriesChange, seriesPoints,
     whitespace, SIGNAL_PRIORITIES, SIGNAL_SOURCES, isVerifiedSignal, signalsFor,
+    copilotLicenses, copilotRowTotals, copilotRowsFor, copilotFilterCounts,
 } from "./model.mjs";
 
 export const ROW_LIMIT = 50;
@@ -332,26 +333,26 @@ function compareValues(a, b, dir) {
 }
 
 /** Sortable table. Columns: {key, label, numeric, value(row), cell(row), title}. The first column is the row header. */
-function table(ui, { id, columns, rows, defaultSort = "attention", defaultDir = 1, noun = "accounts", empty }) {
+function table(ui, { id, columns, rows, defaultSort = "attention", defaultDir = 1, noun = "accounts", empty, full = false, footer = "" }) {
     if (!rows.length) return `<p class="empty">${empty}</p>`;
     const sort = ui.sort?.[id] || { key: defaultSort, dir: defaultDir };
     const column = columns.find(item => item.key === sort.key) || columns[0];
     const sorted = [...rows].sort((a, b) => compareValues(column.value(a), column.value(b), sort.dir)
         || String(a.name || "").localeCompare(String(b.name || "")));
     const expanded = Boolean(ui.expanded?.has(`table:${id}`));
-    const visible = expanded ? sorted : sorted.slice(0, ROW_LIMIT);
+    const visible = full || expanded ? sorted : sorted.slice(0, ROW_LIMIT);
     const head = columns.map(item => {
         const active = item.key === column.key;
         const aria = active ? ` aria-sort="${sort.dir === 1 ? "ascending" : "descending"}"` : "";
-        return `<th scope="col" class="${item.numeric ? "num" : ""}"${aria}${item.title ? ` title="${esc(item.title)}"` : ""}>`
+        return `<th scope="col" class="${item.numeric ? "num " : ""}col-${esc(item.key)}"${aria}${item.title ? ` title="${esc(item.title)}"` : ""}>`
             + `<button type="button" data-sort="${esc(item.key)}" data-table="${esc(id)}" data-focus-key="sort:${esc(id)}:${esc(item.key)}">${esc(item.label)}`
             + `${active ? `<span class="arrow" aria-hidden="true">${sort.dir === 1 ? "↑" : "↓"}</span>` : ""}</button></th>`;
     }).join("");
-    const body = visible.map(row => `<tr>${columns.map((item, index) => index === 0
-        ? `<th scope="row">${item.cell(row)}</th>`
-        : `<td class="${item.numeric ? "num" : ""}">${item.cell(row)}</td>`).join("")}</tr>`).join("");
-    const more = moreButton(`table:${id}`, sorted.length, ROW_LIMIT, expanded, noun);
-    return `<div class="table-wrap"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>${more}`;
+    const body = visible.map(row => `<tr${full ? ` tabindex="0" data-account="${esc(row.id)}" aria-label="Open ${esc(row.name)}"` : ""}>${columns.map((item, index) => index === 0
+        ? `<th scope="row"${full ? ` class="col-${esc(item.key)}"` : ""}>${item.cell(row)}</th>`
+        : `<td class="${item.numeric ? "num " : ""}col-${esc(item.key)}" data-label="${esc(item.label)}">${item.cell(row)}</td>`).join("")}</tr>`).join("");
+    const more = full ? "" : moreButton(`table:${id}`, sorted.length, ROW_LIMIT, expanded, noun);
+    return `<div class="table-wrap${full ? " copilot-customers" : ""}"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody>${footer}</table></div>${more}`;
 }
 
 function matches(account, query) {
@@ -552,26 +553,52 @@ function ghasTable(model, ui, rows, windowDays) {
     });
 }
 
+const licenseShare = (value, licenses) => isNumber(value) && licenses > 0 ? fmtPct(value / licenses) : DASH;
+const planSplit = row => `Business ${fmtInt(row.business)} · Enterprise ${fmtInt(row.enterprise)}`;
+const coverage = (totals, key) => {
+    const { n, of } = totals.reporting.metrics[key];
+    return n < of ? `${n} of ${of} reporting` : `${of} ${plural(of, "account")} reporting`;
+};
+const totalCell = (totals, key) => `${fmtInt(totals[key])}<span class="sub">${esc(coverage(totals, key))}</span>`;
+const mismatchNote = row => row.flags.source_mismatch
+    ? `Pulse ${fmtInt(row.licenses)} (${fmtDay(row.licensesAsOf)}); Copilot dashboard ${fmtInt(row.dashboardLicenses)} (${fmtDay(row.dashboardAsOf)}). Pulse wins.`
+    : "";
+
+function adoptionCell(row, key) {
+    const share = licenseShare(row[key], row.licenses);
+    const width = isNumber(row[key]) && row.licenses > 0 ? Math.min(100, Math.max(0, row[key] / row.licenses * 100)) : 0;
+    return `<span title="As of ${esc(fmtDay(row.usageAsOf, { year: true }))}">${fmtInt(row[key])}</span><span class="sub">${share}${share !== DASH ? " of licenses" : ""}</span>`
+        + (share !== DASH ? `<span class="usage-bar" aria-hidden="true"><span style="width:${width.toFixed(2)}%"></span></span>` : "");
+}
+
 function copilotTable(model, ui, rows, windowDays) {
-    const cp = account => account.products.ghcp;
-    const plan = account => {
-        const parts = [["Business", cp(account).business], ["Enterprise", cp(account).enterprise], ["Standalone", cp(account).standalone]].filter(([, value]) => value);
-        return parts.length ? parts.map(([name, value]) => `${esc(name)} ${fmtInt(value)}`).join("<br>") : DASH;
-    };
-    return table(ui, {
-        id: "ghcp", rows, empty: emptyTable(ui, "Copilot"), columns: [
-            nameColumn(model),
-            { key: "plan", label: "Plan", value: account => cp(account).enterprise ? "Enterprise" : cp(account).business ? "Business" : null, cell: plan },
-            { key: "contracted", label: "Contracted", numeric: true, value: account => cp(account).contracted, cell: account => measureCell(cp(account), "contracted", windowDays) },
-            { key: "assigned", label: "Assigned", numeric: true, value: account => cp(account).assigned, cell: account => measureCell(cp(account), "assigned", windowDays) },
-            { key: "at_risk", label: "At risk", numeric: true, title: "Assigned users flagged at risk", value: account => cp(account).at_risk, cell: account => measureCell(cp(account), "at_risk", windowDays, { invert: true }) },
-            { key: "category", label: "Health", value: account => ({ Red: 0, Yellow: 1, Green: 2 })[cp(account).health?.category] ?? null, cell: account => health(cp(account).health?.category) },
-            { key: "grr", label: "GRR 30d", numeric: true, title: "Gross revenue retention, 30 days", value: account => frac(cp(account).health?.grr_30d), cell: account => fmtPct(frac(cp(account).health?.grr_30d)) },
-            { key: "engaged", label: "Engaged", numeric: true, title: "Users engaged at least one day in 28", value: account => cp(account).funnel?.engaged_1d28 ?? null, cell: account => fmtInt(cp(account).funnel?.engaged_1d28) },
-            { key: "billed", label: "Billed LTM", numeric: true, value: account => cp(account).billed_ltm ?? null, cell: account => money(cp(account).billed_ltm) },
-            attentionColumn(model),
-        ],
-    });
+    const cp = account => account.copilot;
+    const totals = copilotRowTotals(rows.map(cp));
+    const columns = [
+        { key: "name", label: "Customer", value: account => account.name, cell: account =>
+            `${accountLink(model, account.id, account.name)}<span class="sub enterprise-slug">${esc(cp(account).slug || "Enterprise not linked")}</span>`
+                + (cp(account).reconciliationOnly ? '<span class="sub">Reconciliation only</span>' : "") },
+        { key: "licenses", label: "Licenses", numeric: true, value: account => cp(account).licenses, cell: account =>
+            `<span title="As of ${esc(fmtDay(cp(account).licensesAsOf, { year: true }))}">${measureCell(account.products.ghcp, "contracted", windowDays)}</span><span class="sub">${esc(planSplit(cp(account)))}</span>`
+            + (cp(account).flags.source_mismatch ? `<span class="source-mismatch" title="${esc(mismatchNote(cp(account)))}">Sources differ<span class="sub">Pulse ${fmtInt(cp(account).licenses)} / dashboard ${fmtInt(cp(account).dashboardLicenses)}</span></span>` : "") },
+        { key: "assigned", label: "Assigned", numeric: true, value: account => cp(account).assigned, cell: account => {
+            const row = cp(account);
+            const gap = isNumber(row.licenses) && isNumber(row.assigned) ? row.licenses - row.assigned : null;
+            return `<span title="As of ${esc(fmtDay(row.assignedAsOf, { year: true }))}">${fmtInt(row.assigned)}</span>${gap ? `<span class="sub"><span class="chip${gap < 0 ? " hot" : ""}">${gap > 0 ? `${fmtInt(gap)} unassigned` : `+${fmtInt(-gap)} over`}</span></span>` : ""}`;
+        } },
+        ...[["active28", "Active 28d"], ["engaged28", "Engaged 28d"]].map(([key, label]) =>
+            ({ key, label, numeric: true, title: `${label}: users with at least one day in the last 28 days; percentage of licenses`,
+                value: account => cp(account)[key], cell: account => adoptionCell(cp(account), key) })),
+        { key: "category", label: "Health", value: account => ({ Red: 0, Yellow: 1, Green: 2 })[account.products.ghcp.health?.category] ?? null,
+            cell: account => health(account.products.ghcp.health?.category) },
+        { ...renewalColumn, cell: account => `<span${cp(account).flags.renewing_90 ? ' class="renewing-soon"' : ""}>${renewalColumn.cell(account)}</span>` },
+        attentionColumn(model),
+    ];
+    const footer = `<tfoot><tr><th scope="row" class="col-name">Filtered total<span class="sub">${rows.length} customers</span></th>`
+        + ["licenses", "assigned", "active28", "engaged28"].map(key => `<td class="num col-${key}" data-label="${esc(columns.find(column => column.key === key).label)}">${totalCell(totals, key)}</td>`).join("")
+        + '<td class="col-category"></td><td class="col-renewal"></td><td class="col-attention"></td></tr></tfoot>';
+    return table(ui, { id: "ghcp", rows, columns, full: true, footer,
+        empty: ui.copilotFilter && ui.copilotFilter !== "all" ? "No customers match this filter. Choose All to see your Copilot customers." : emptyTable(ui, "Copilot") });
 }
 
 const emptyTable = (ui, product) => ui.query ? `No ${esc(product)} accounts match “${esc(ui.query)}”.` : `No accounts with ${esc(product)} yet.`;
@@ -586,19 +613,21 @@ function copilotMix(model) {
                 `<span class="seg ${category}" style="width:${((counts[category] / total) * 100).toFixed(2)}%"></span>`).join("") + "</div>"
             + `<p class="legend">${["Red", "Yellow", "Green"].map(category => `<span class="health ${category}">${category} ${counts[category] || 0}</span>`).join("")}</p>`
         : '<p class="empty">No Copilot health scores yet.</p>';
-    const steps = [["assigned", "Assigned"], ["active_1d28", "Active 28d"], ["engaged_1d28", "Engaged 28d"]];
+    const steps = [["licenses", "Licenses"], ["assigned", "Assigned"], ["active_1d28", "Active 28d"], ["engaged_1d28", "Engaged 28d"]];
+    const metric = (product, key) => key === "licenses" ? product.contracted : key === "assigned" ? product.assigned : product.funnel?.[key];
     // A step no account reports stays blank: missing data must never read as zero users.
-    const reporting = Object.fromEntries(steps.map(([key]) => [key, cp.filter(product => isNumber(product.funnel?.[key]))]));
-    const sums = Object.fromEntries(steps.map(([key]) => [key, reporting[key].length ? reporting[key].reduce((sum, product) => sum + product.funnel[key], 0) : null]));
-    const top = sums.assigned || Math.max(0, ...Object.values(sums).filter(isNumber));
+    const reporting = Object.fromEntries(steps.map(([key]) => [key, cp.filter(product => isNumber(metric(product, key)))]));
+    const sums = Object.fromEntries(steps.map(([key]) => [key, reporting[key].length ? reporting[key].reduce((sum, product) => sum + metric(product, key), 0) : null]));
+    const top = sums.licenses || Math.max(0, ...Object.values(sums).filter(isNumber));
     const funnel = top
         ? `<ol class="funnel">${steps.map(([key, label]) => {
             const value = sums[key];
             const share = isNumber(value) ? Math.max(0, Math.min(100, (value / top) * 100)) : 0;
             const partial = isNumber(value) && reporting[key].length < cp.length ? ` title="Reported by ${reporting[key].length} of ${cp.length} accounts"` : "";
             return `<li${partial}><span class="funnel-label">${label}</span><span class="funnel-bar"><span style="width:${share.toFixed(2)}%"></span></span>`
-                + `<span class="funnel-value">${fmtInt(value)}<span class="sub">${key === "assigned" || !isNumber(value) ? "" : `${share.toFixed(0)}%`}</span></span></li>`;
-        }).join("")}</ol><p class="note">Users with at least one day of activity in the last 28 days, summed across accounts. A dash means not reported.</p>`
+                + `<span class="funnel-value">${fmtInt(value)}<span class="sub">${key === "licenses" || !isNumber(value) || !(sums.licenses > 0) ? "" : `${(value / sums.licenses * 100).toFixed(0)}%`}</span></span></li>`;
+        }).join("")}</ol><p class="note">Percentages use licenses. Users with at least one day in the last 28 days, summed across accounts. A dash means not reported.</p>`
+            + `<p class="note">${reporting.active_1d28.length} of ${cp.length} reporting active · ${reporting.engaged_1d28.length} of ${cp.length} reporting engaged.</p>`
         : '<p class="empty">No Copilot usage funnel yet.</p>';
     return `<div class="columns even"><section class="panel" aria-labelledby="h-mix"><div class="panel-head"><h2 id="h-mix">Health mix</h2></div>${bar}</section>`
         + `<section class="panel" aria-labelledby="h-funnel"><div class="panel-head"><h2 id="h-funnel">Usage funnel</h2></div>${funnel}</section></div>`;
@@ -629,6 +658,53 @@ function renderProduct(model, ui, family) {
         + `<section class="panel" aria-labelledby="h-table-${key}"><div class="panel-head"><h2 id="h-table-${key}">${esc(FAMILY_LABELS[family])} accounts <span class="count-text">${rows.length}</span></h2>`
         + `<div class="panel-tools">${searchBox(ui, key)}</div></div><div data-region="${esc(family)}">${tableHtml}</div></section>`
         + whitespacePanel(model, ui, family) + note;
+}
+
+function copilotHead(model, ui) {
+    const views = [[null, "Portfolio"], ["desk", "Adoption desk"], ["accounts", "All accounts"], ["trends", "Trends"], ["changes", "Changes"], ["notes", "Notes"]];
+    const current = ui.subview === "seats" ? null : ui.subview || null;
+    return `<section class="page-head"><div><h1>GitHub Copilot</h1><p class="lede">${fmtInt(model.kpis?.ghcp?.accounts)} accounts with Copilot`
+        + ` <span class="chip">Snapshot ${esc(fmtDay(model.date))}</span></p></div></section>`
+        + `<div class="copilot-viewbar"><nav class="copilot-subnav segment-control" aria-label="Copilot views">${views.map(([view, label]) =>
+            `<a href="#/copilot${view ? `/${view}` : ""}" data-focus-key="copilot-view:${view || "portfolio"}"${current === view ? ' aria-current="page"' : ""}>${label}</a>`).join("")}</nav>`
+        + `<a class="full-screen" href="copilot/#/${current || "desk"}" target="_blank" rel="noopener noreferrer">Open full screen</a></div>`;
+}
+
+function renderCopilotPortfolio(model, ui) {
+    const data = ui.copilotLicenses || copilotLicenses(model);
+    const totals = data.totals;
+    const fallback = !ui.copilotLicenses;
+    const dates = key => [...new Set(data.rows.map(row => row[key]).filter(Boolean))].sort();
+    const dateRange = key => {
+        const days = dates(key);
+        return days.length ? `As of ${fmtDay(days[0])}${days.length > 1 ? ` – ${fmtDay(days.at(-1))}` : ""}` : "As-of date not reported";
+    };
+    const tile = (label, key, detail, dateKey) => `<div class="kpi"><span class="kpi-label">${label}</span><strong class="kpi-value">${fmtInt(totals[key])}</strong>`
+        + `<span class="kpi-sub">${detail}</span><span class="sub">${esc(coverage(totals, key))} · ${esc(dateRange(dateKey))}</span></div>`;
+    const licenseChange = model.kpis?.ghcp?.contracted;
+    const kpis = `<section class="kpi-strip copilot-kpis" aria-label="Copilot totals">`
+        + tile("Licenses", "licenses", `${esc(planSplit(totals))}${isNumber(licenseChange?.d7) ? ` ${delta(licenseChange.d7, { since: licenseChange.d7_since, inline: true })}` : ""}`, "licensesAsOf")
+        + tile("Assigned", "assigned", `${licenseShare(totals.assigned, totals.licenses)} of licenses`, "assignedAsOf")
+        + tile("Active devs 28d", "active28", `${licenseShare(totals.active28, totals.licenses)} of licenses`, "usageAsOf")
+        + tile("Engaged devs 28d", "engaged28", `${licenseShare(totals.engaged28, totals.licenses)} of licenses`, "usageAsOf")
+        + kpiTile("Health", healthChips(model.kpis?.ghcp?.categories)) + "</section>";
+    const searched = copilotRowsFor(data.rows, "all", ui.query);
+    const counts = copilotFilterCounts(searched);
+    const filter = ui.copilotFilter || "all";
+    const filtered = copilotRowsFor(data.rows, filter, ui.query);
+    const reconciliationOnly = data.rows.filter(row => row.reconciliationOnly).length;
+    const rows = filtered.map(row => ({ ...accountIndex(model).get(row.account_id), copilot: row }));
+    const filters = [["all", "All"], ["attention", "Needs attention"], ["unassigned", "Unassigned licenses"], ["engaged_lt_50", "Engaged under 50%"], ["renewing_90", "Renewing within 90 days"]];
+    return '<div class="copilot-page">' + copilotHead(model, ui) + kpis
+        + (ui.copilotLicensesLoading ? '<div class="copilot-loading" role="status"><span class="loading-bar" aria-hidden="true"></span>Loading license reconciliation…</div>' : "")
+        + (ui.copilotLicensesError ? `<p class="note" role="status">${esc(ui.copilotLicensesError)}</p>` : !fallback && data.note ? `<p class="note">${esc(data.note)}</p>` : "")
+        + (reconciliationOnly ? `<p class="note">${reconciliationOnly} additional ${plural(reconciliationOnly, "account")} shown for reconciliation: the dashboard reports licenses but Pulse has no current Copilot seats. Pulse remains authoritative.</p>` : "")
+        + `<section class="panel copilot-portfolio" aria-labelledby="h-table-copilot"><div class="panel-head"><h2 id="h-table-copilot">Customers <span class="count-text">${rows.length}</span></h2><div class="panel-tools">${searchBox(ui, "copilot")}</div></div>`
+        + `<div data-region="copilot"><div class="copilot-filters" role="group" aria-label="Customer filters">${filters.map(([key, label]) =>
+            `<button type="button" class="button tiny${filter === key ? " selected" : ""}" data-filter="copilot" data-value="${key}" aria-pressed="${filter === key}">${label} <span class="count">${counts[key]}</span></button>`).join("")}</div>`
+        + copilotTable(model, ui, rows, model.changes_window_days || 7) + "</div></section>"
+        + `<div class="columns"><div class="col-main">${actionsPanel(model, ui, { family: "ghcp", key: "copilot", title: "Actions" })}</div><div class="col-side">${changesPanel(model, ui, { family: "ghcp", key: "copilot" })}</div></div>`
+        + copilotMix(model) + whitespacePanel(model, ui, "ghcp") + "</div>";
 }
 
 function signalRow(model, signal, { showAccount = true } = {}) {
@@ -767,12 +843,9 @@ function embedFrame(ui, { name, title, src }) {
 
 export function renderView(model, ui = {}) {
     if (ui.view === "copilot") {
-        const nav = `<nav class="copilot-subnav" aria-label="Copilot views"><a href="#/copilot"${ui.subview !== "seats" ? ' aria-current="page"' : ""}>Adoption dashboard</a>`
-            + `<a href="#/copilot/seats"${ui.subview === "seats" ? ' aria-current="page"' : ""}>Seats &amp; actions</a>`
-            + '<a href="copilot/" target="_blank" rel="noopener noreferrer">Open Copilot dashboard in its own tab</a></nav>';
-        return nav + (ui.subview === "seats" ? renderProduct(model, ui, "ghcp")
-            : embedFrame(ui, { name: "copilot-dashboard", title: "Copilot adoption dashboard",
-                src: `copilot/?embed=1${ui.copilotAccount ? `#/account/${encodeURIComponent(ui.copilotAccount)}` : ""}` }));
+        if (!ui.subview || ui.subview === "seats") return renderCopilotPortfolio(model, ui);
+        return copilotHead(model, ui) + embedFrame(ui, { name: "copilot-dashboard", title: "Copilot adoption dashboard",
+            src: ui.embedSrc || `copilot/?embed=1${ui.account || ui.copilotAccount ? `&view=${ui.subview}` : ""}#/${ui.account || ui.copilotAccount ? `account/${encodeURIComponent(ui.account || ui.copilotAccount)}` : ui.subview}` });
     }
     if (ui.view === "impact") {
         return '<nav class="copilot-subnav" aria-label="Impact views"><a href="copilot/#/impact" target="_blank" rel="noopener noreferrer">Open Copilot Impact in its own tab</a></nav>'
@@ -870,7 +943,7 @@ function ghasPanel(account, windowDays) {
     return productPanel("GitHub Advanced Security", hasProduct(account, "ghas"), body, "No GHAS on record.");
 }
 
-function copilotPanel(account, windowDays) {
+function copilotPanel(account, windowDays, row) {
     const cp = account.products.ghcp;
     const healthInfo = isObject(cp.health) ? cp.health : {};
     const funnel = isObject(cp.funnel) ? cp.funnel : null;
@@ -888,9 +961,13 @@ function copilotPanel(account, windowDays) {
             return `<li><span class="funnel-label">${label}</span><span class="funnel-bar"><span style="width:${width.toFixed(2)}%"></span></span><span class="funnel-value">${fmtInt(value)}</span></li>`;
         }).join("")}</ol>` : "";
     const body = facts([
-        ["Contracted seats", withChange(cp, "contracted", windowDays, cp.contracted_as_of)],
-        ["Plan mix", plan || null],
-        ["Assigned seats", withChange(cp, "assigned", windowDays, cp.as_of) ?? lastReported(cp.assigned_last)],
+        ["Licenses", withChange(cp, "contracted", windowDays, cp.contracted_as_of) ?? DASH],
+        ["Licenses by plan", row ? esc(planSplit(row)) : plan || DASH],
+        ["Enterprise", row?.slug ? esc(row.slug) : "Not linked"],
+        ["Assigned", `${fmtInt(cp.assigned)} <span class="sub">${licenseShare(cp.assigned, cp.contracted)} of licenses · as of ${esc(fmtDay(cp.as_of))}</span>`],
+        ["Active devs 28d", `${fmtInt(funnel?.active_1d28)} <span class="sub">${licenseShare(funnel?.active_1d28, cp.contracted)} of licenses · as of ${esc(fmtDay(row?.usageAsOf))}</span>`],
+        ["Engaged devs 28d", `${fmtInt(funnel?.engaged_1d28)} <span class="sub">${licenseShare(funnel?.engaged_1d28, cp.contracted)} of licenses · as of ${esc(fmtDay(row?.usageAsOf))}</span>`],
+        ["Sources differ", row?.flags.source_mismatch ? esc(mismatchNote(row)) : null],
         ["Installed IDE users 28d (partial)", `<span>${fmtInt(funnel?.installed_1d28)}</span>`],
         ["Users at risk", isNumber(cp.at_risk) ? `${fmtInt(cp.at_risk)}${share}` : null],
         ["At-risk reasons", risks || null],
@@ -900,7 +977,7 @@ function copilotPanel(account, windowDays) {
         ["Billed, last 12 months", isNumber(cp.billed_ltm) ? money(cp.billed_ltm) : null],
     ]) + (funnelHtml ? `<h4>Usage, 28 days</h4>${funnelHtml}` : "")
         + sparks([["Assigned seats", cp.series?.assigned], ["Users at risk", cp.series?.at_risk], ["Contracted seats", cp.series?.contracted]]);
-    return productPanel("GitHub Copilot", hasProduct(account, "ghcp"), body, "No Copilot on record.");
+    return productPanel("GitHub Copilot", hasProduct(account, "ghcp") || row?.flags.source_mismatch, body, "No Copilot on record.");
 }
 
 const FLAG_LABELS = {
@@ -935,15 +1012,18 @@ export function renderDrawer(model, ui = {}) {
         .filter(([, value]) => isNumber(value) && value).map(([label, value]) => `${label} ${money(value)}`).join(" · ") : "";
     const support = isObject(account.support) ? [isNumber(account.support.tickets_28d) ? `${fmtInt(account.support.tickets_28d)} tickets in 28 days` : null,
         isNumber(account.support.csat_ltm) ? `CSAT ${account.support.csat_ltm <= 1 ? fmtPct(account.support.csat_ltm) : esc(account.support.csat_ltm)} (12 months)` : null].filter(Boolean).join(" · ") : "";
+    const cpPanel = copilotPanel(account, windowDays,
+        (ui.copilotLicenses || copilotLicenses(model)).rows.find(row => row.account_id === account.id));
     return `<div class="backdrop" data-close></div><aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title">`
         + `<header class="drawer-head"><div><h2 id="drawer-title">${esc(account.name || account.id)}</h2>${sub ? `<p class="sub">${sub}</p>` : ""}</div>`
         + `<div class="drawer-tools">${sfdc ? `<a class="button subtle tiny" href="${esc(sfdc)}" target="_blank" rel="noopener noreferrer">Open in Salesforce</a>` : ""}${close}</div></header>`
-        + `<div class="drawer-body"><p><a href="copilot/?embed=1#/account/${encodeURIComponent(account.id)}" data-copilot-account="${esc(account.id)}" target="copilot-dashboard">Open in Copilot dashboard</a></p><dl class="fact-strip">${strip.map(([term, value]) => `<div><dt>${esc(term)}</dt><dd>${value}</dd></div>`).join("")}</dl>`
+        + `<div class="drawer-body"><p><a href="#/copilot/desk/account/${encodeURIComponent(account.id)}" data-copilot-account="${esc(account.id)}">Open in Adoption desk</a></p><dl class="fact-strip">${strip.map(([term, value]) => `<div><dt>${esc(term)}</dt><dd>${value}</dd></div>`).join("")}</dl>`
+        + (ui.view === "copilot" ? cpPanel : "")
         + `<section class="drawer-section"><h3>Actions <span class="count-text">${actions.filter(action => !isClosed(action)).length}</span></h3>`
         + `${actions.length ? `<ol class="action-list">${actions.map(action => actionRow(model, action, { showAccount: false, showReasons: true })).join("")}</ol>` : '<p class="empty">No actions for this account.</p>'}</section>`
         + `<section class="drawer-section"><h3>Signals <span class="count-text">${signals.filter(signal => !isClosed(signal)).length}</span></h3>`
         + `${signals.length ? signalList(model, signals, { showAccount: false }) : '<p class="empty">No signals for this account.</p>'}</section>`
-        + ghePanel(account, windowDays) + ghasPanel(account, windowDays) + copilotPanel(account, windowDays)
+        + ghePanel(account, windowDays) + ghasPanel(account, windowDays) + (ui.view === "copilot" ? "" : cpPanel)
         + (other ? `<section class="product-panel"><h3>Other products</h3>${facts([["Contracted", other]])}</section>` : "")
         + `<section class="drawer-section"><h3>Seat changes <span class="muted">last ${esc(model.thresholds?.history_days ?? 35)} days</span></h3>`
         + `${events.length ? `<ul class="change-list timeline">${events.map(event => changeRow(model, event, { showAccount: false })).join("")}</ul>` : '<p class="empty">No seat changes recorded.</p>'}</section>`

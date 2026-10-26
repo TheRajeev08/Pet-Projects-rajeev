@@ -1,5 +1,5 @@
 import {
-    LANES, SOURCE_NAMES, accountPlays, accountStatus, dataCaveats, getQueue, hasSources,
+    LANES, SOURCE_NAMES, accountPlays, accountStatus, adoptionTotals, dataCaveats, getQueue, hasSources,
     hasSurfaceSignal, integrityIssues, isNewMetric, queueByLane, riskProfile, summarize, validateModel,
 } from "./insights.mjs";
 import {
@@ -9,7 +9,8 @@ import {
 } from "./impact.mjs";
 
 const app = document.querySelector("#app");
-document.body.classList.toggle("embedded", new URLSearchParams(location.search).get("embed") === "1");
+const embedded = new URLSearchParams(location.search).get("embed") === "1";
+document.body.classList.toggle("embedded", embedded);
 const notices = document.querySelector("#notices");
 const navigation = document.querySelector("#navigation");
 const freshness = document.querySelector("#freshness");
@@ -58,6 +59,7 @@ const state = {
         surfaceWindow: "28d", model: "all", sort: "queue", ascending: true },
     page: 0, changeSeverity: "all", changeKind: "all", changeQ: "",
     selectedSlug: null, impactQ: "",
+    pulseLicenses: null, pulseLicensesError: null,
 };
 let loadingModel;
 let chartId = 0;
@@ -113,11 +115,13 @@ function metricName(key, text) {
 
 function adoptionFunnel(account = null) {
     const m = state.model;
+    const totals = adoptionTotals(m);
     const value = (key, qid) => !hasSources(m, qid) ? null : account
-        ? account[key] : m.portfolio[`total_${key}`];
+        ? account[key] : totals[key].value;
     const steps = [["assigned", "Assigned", "06"], ["active_28d", "Active 28d", "03"], ["engaged_1d28", "Engaged 28d", "02"]];
     return `<div class="fact-strip" aria-label="Adoption funnel">${steps.map(([key, text, qid]) =>
-        `<div class="fact"><small>${metricName(key, text)}</small><strong>${num(value(key, qid))}</strong></div>`).join("")}</div>` +
+        `<div class="fact"><small>${metricName(key, text)}</small><strong>${num(value(key, qid))}</strong>`
+        + (!account ? `<span class="meta">${totals[key].n} of ${totals[key].of} reporting</span>` : "") + "</div>").join("")}</div>` +
         (account ? `<p class="meta">Installed IDE users 28d (partial telemetry): ${num(dataValue(account, "installed_1d28", "02"))}. Not a funnel step.</p>` : "") +
         `<p class="meta">Assigned &rarr; active &rarr; engaged. Source cutoffs differ; a dash means not reported.</p>`;
 }
@@ -370,7 +374,7 @@ function renderDesk() {
                 : "") +
             `</div><div class="queue">${shown.map(queueRow).join("")}</div></section>`;
     }).join("");
-    return `<div class="page-head"><div><h1>Where Copilot needs you.</h1>` +
+    return `<div class="page-head"><div><h1>Adoption desk</h1>` +
         `<p>Grouped by what the next step is, not by a score. Every signal an account matched stays on its row.</p></div>` +
         `<div class="meta"><strong>${num(summary.urgentAccounts)}</strong> to act on &middot; ` +
         `<strong>${num(summary.verifyAccounts)}</strong> to verify &middot; <strong>${num(summary.watchAccounts)}</strong> to watch</div></div>` +
@@ -384,7 +388,7 @@ function renderDesk() {
             `<button class="metric ${index === 2 ? "is-key" : ""}" type="button" data-jump="${target}" ` +
             `aria-label="Explore ${H(name)}"><span class="value">${target === "spend" ? money(value) : matched(value)}</span>` +
             `<span class="label">${H(name)}</span><span class="hint">${H(hint)}</span></button>`).join("")}</div>` +
-        (caveats.length ? `<div class="inline-note warning"><strong>Read the data carefully.</strong><ul>` +
+        (caveats.length ? `<div class="inline-note warning desk-caveat"><strong>Read the data carefully.</strong><ul>` +
             caveats.map(text => `<li>${H(text)}</li>`).join("") + `</ul></div>` : "") +
         adoptionFunnel() + `<div class="desk-grid"><div>${laneSections || empty("No plays to show",
             "No account matched a rule in this snapshot. Check source coverage in Ask & data notes.")}</div>` +
@@ -444,7 +448,7 @@ function sortedAccounts(accounts) {
         f.sort === "renewal" ? isNumber(account.renewing_in_days) && account.renewing_in_days >= 0
             ? account.renewing_in_days : null :
             f.sort === "health_cat" ? ({ Red: 3, Yellow: 2, Green: 1 })[account.health_cat] :
-                account[f.sort];
+                ["licenses", "engaged28"].includes(f.sort) ? state.pulseLicenses?.get(account.id)?.[f.sort] : account[f.sort];
     return accounts.sort((a, b) => {
         const aa = key(a), bb = key(b);
         if (aa == null && bb == null) return a.name.localeCompare(b.name);
@@ -475,7 +479,9 @@ function renderAccounts() {
     const options = (items, all = "All") => [["all", all], ...items.map(item => [item, item])];
     const sortButton = (name, key) => `<button type="button" data-sort="${key}" ` +
         `aria-label="Sort by ${H(name)}">${H(name)}${state.filters.sort === key ? state.filters.ascending ? " ^" : " v" : ""}</button>`;
-    return `<div class="page-head"><div><h1>Every account. One place.</h1>` +
+    const reading = (account, key) => state.pulseLicenses?.get(account.id)?.[key];
+    const sortState = key => state.filters.sort === key ? ` aria-sort="${state.filters.ascending ? "ascending" : "descending"}"` : "";
+    return `<div class="page-head"><div><h1>All accounts</h1>` +
         `<p>All ${num(m.accounts.length)} Salesforce-owned accounts are in scope, including Copilot whitespace.</p></div>` +
         `<div class="meta">Click an account for its evidence, 13-week trajectory and suggested next steps.</div></div>` +
         `<div class="filter-bar"><div class="field search"><label for="account-search">Search account, market, integration or model</label>` +
@@ -494,27 +500,28 @@ function renderAccounts() {
         `<div class="results-line"><span><strong>${num(results.length)}</strong> of ${num(m.accounts.length)} accounts` +
         ` &middot; page ${state.page + 1} of ${Math.max(1, Math.ceil(results.length / pageSize))}</span>` +
         `<span>Surface: ${H(state.filters.surfaceWindow)} UBB; model: 28d UBB. Absence does not prove non-use.</span></div>` +
-        (subset.length ? `<div class="table-wrap"><table><thead><tr>` +
-            `<th>${sortButton("Account", "name")}</th><th>Activity</th><th>${sortButton("Health", "health_cat")}</th>` +
-            `<th class="num">${sortButton("Active 28d", "active_28d")}</th><th class="num">${sortButton("Assigned", "assigned")}</th>` +
-            `<th class="num">${sortButton("Util.", "utilization")}</th><th class="num">${sortButton("UBB 7d", "gross_7d")}</th>` +
-            `<th class="num">${sortButton("4-wk trend", "trend_4w")}</th><th>${sortButton("Renewal", "renewal")}</th>` +
-            `<th>${sortButton("Queue", "queue")}</th></tr></thead><tbody>` +
+        (state.pulseLicensesError ? `<p class="meta" role="status">${H(state.pulseLicensesError)}</p>` : "") +
+        (subset.length ? `<div class="table-wrap all-accounts"><table><thead><tr>` +
+            `<th${sortState("name")}>${sortButton("Account", "name")}</th><th class="optional">Activity</th><th${sortState("health_cat")}>${sortButton("Health", "health_cat")}</th>` +
+            `<th class="num"${sortState("licenses")}>${sortButton("Licenses", "licenses")}</th><th class="num"${sortState("assigned")}>${sortButton("Assigned", "assigned")}</th>` +
+            `<th class="num"${sortState("active_28d")}>${sortButton("Active 28d", "active_28d")}</th><th class="num"${sortState("engaged28")}>${sortButton("Engaged 28d", "engaged28")}</th>` +
+            `<th class="num optional"${sortState("gross_7d")}>${sortButton("UBB 7d", "gross_7d")}</th><th class="optional"${sortState("renewal")}>${sortButton("Renewal", "renewal")}</th>` +
+            `<th class="queue-column"${sortState("queue")}>${sortButton("Queue", "queue")}</th></tr></thead><tbody>` +
             subset.map(a => {
                 const item = queueMap.get(a.id);
                 const status = accountStatus(m, a);
                 const health = a.health_cat && hasSources(m, "06") ? a.health_cat : null;
                 return `<tr><td><button type="button" class="account-link" data-account="${H(a.id)}">${H(a.name)}</button>` +
                     `<span class="account-sub">${H(accountSubtitle(a))}</span></td>` +
-                    `<td><span class="status ${status}">${H(STATUS_LABELS[status])}</span></td>` +
+                    `<td class="optional"><span class="status ${status}">${H(STATUS_LABELS[status])}</span></td>` +
                     `<td>${health ? `<span class="health ${health}">${H(health)}</span>` : "&mdash;"}</td>` +
-                    `<td class="num">${num(dataValue(a, "active_28d", "03"))}</td>` +
+                    `<td class="num">${num(reading(a, "licenses"))}</td>` +
                     `<td class="num">${num(dataValue(a, "assigned", "06"))}</td>` +
-                    `<td class="num">${pct(hasSources(m, "03", "06") ? a.utilization : null)}</td>` +
-                    `<td class="num">${money(dataValue(a, "gross_7d", "07"))}</td>` +
-                    `<td class="num">${isNumber(a.trend_4w) && hasSources(m, "03") ? `${a.trend_4w > 0 ? "+" : ""}${pct(a.trend_4w)}` : "&mdash;"}</td>` +
-                    `<td>${dates(a.renewal)}</td>` +
-                    `<td>${item ? `${laneTag(item.lane)} ${H(item.play.title)}` : '<span class="quiet">No flagged play</span>'}</td></tr>`;
+                    `<td class="num">${num(dataValue(a, "active_28d", "03"))}</td>` +
+                    `<td class="num">${num(reading(a, "engaged28"))}</td>` +
+                    `<td class="num optional">${money(dataValue(a, "gross_7d", "07"))}</td>` +
+                    `<td class="optional">${dates(a.renewal)}</td>` +
+                    `<td class="queue-column">${item ? `${laneTag(item.lane)} ${H(item.play.title)}` : '<span class="quiet">No flagged play</span>'}</td></tr>`;
             }).join("") + `</tbody></table></div>` :
             empty("No accounts match these filters", "Try a broader search or clear one of the selected filters.",
                 '<button type="button" class="button" data-action="reset-filters">Clear filters</button>')) +
@@ -543,7 +550,7 @@ function renderTrends() {
     const models = Object.entries(p.models || {}).map(([name, value]) => [name, value.l28 || 0])
         .sort((a, b) => b[1] - a[1]);
     const health = p.health_mix || {};
-    return `<div class="page-head"><div><h1>Momentum, not just spend.</h1>` +
+    return `<div class="page-head"><div><h1>Trends</h1>` +
         `<p>Thirteen weekly windows, newest on the right. Portfolio series sum consuming accounts only.</p></div>` +
         `<div class="meta">UBB = usage-side list value &middot; billable = beyond included pools</div></div>` +
         `<div class="chart-grid">` +
@@ -953,7 +960,7 @@ function renderChanges() {
         `${change.account || ""} ${change.text || ""}`.toLowerCase().includes(state.changeQ.toLowerCase()));
     const owned = new Set(m.accounts.map(a => a.id));
     const severity = { bad: ["now", "Negative"], warn: ["watch", "Watch"], good: ["grow", "Positive"], info: ["grow", "Information"] };
-    return `<div class="page-head"><div><h1>What changed.</h1>` +
+    return `<div class="page-head"><div><h1>Changes</h1>` +
         `<p>The dashboard's change feed. Each event compares the latest weekly window with the one before it, not with yesterday.</p></div>` +
         `<div class="meta">${num(changes.length)} events in the ${H(m.data_date)} snapshot</div></div>` +
         `<div class="filter-bar"><div class="field search"><label for="change-search">Account or change</label>` +
@@ -1156,7 +1163,7 @@ function renderNotes() {
         ["signals conflict", "Weekly active users fell sharply while independent measures such as 28-day actives, UBB users or accepted suggestions did not. That pattern usually points to telemetry or attribution rather than lost adoption."],
         ...Object.entries(m.definitions),
     ];
-    return `<div class="page-head"><div><h1>Know what the data says.</h1>` +
+    return `<div class="page-head"><div><h1>Data notes</h1>` +
         `<p>Definitions, source coverage and the original dashboard's offline Ask experience.</p></div>` +
         `<div class="meta">Snapshot ${H(m.data_date)} &middot; ${num(m.accounts.length)} owned accounts</div></div>` +
         `<div class="ask-card"><div><h2>Ask a question of your dashboard</h2>` +
@@ -1206,6 +1213,7 @@ function render() {
             input.setSelectionRange(focus.start, focus.end);
         }
     }
+    notifyParentRoute();
 }
 
 async function loadModel() {
@@ -1223,6 +1231,16 @@ async function loadModel() {
             queueCache = null;
             nameCounts = null;
             state.queueOrder = null;
+            try {
+                const response = await fetch("../api/copilot-licenses", { cache: "no-store" });
+                const payload = await response.json();
+                if (!response.ok) throw new Error(payload.error || `License request failed (${response.status}).`);
+                state.pulseLicenses = new Map(payload.rows.map(row => [row.account_id, row]));
+                state.pulseLicensesError = payload.note;
+            } catch (error) {
+                state.pulseLicenses = null;
+                state.pulseLicensesError = `Pulse license reconciliation unavailable. ${error.message}`;
+            }
         } catch (error) {
             state.loadError = error.message;
             state.loading = false;
@@ -1297,6 +1315,10 @@ function openEnterprise(slug) {
 }
 
 function changeView(view) {
+    if (embedded && view === "impact" && location.hash !== "#/impact") {
+        parent.postMessage({ type: "pulse:navigate", view: "impact" }, location.origin);
+        return;
+    }
     state.selectedId = null;
     state.selectedSlug = null;
     state.view = view;
@@ -1307,6 +1329,32 @@ function changeView(view) {
 }
 
 const VIEWS = ["desk", "accounts", "trends", "impact", "changes", "notes"];
+
+function notifyParentRoute() {
+    if (!embedded || state.view === "impact") return;
+    parent.postMessage({ type: "pulse:route", view: state.view, account: state.selectedId }, location.origin);
+}
+
+if (embedded) {
+    window.addEventListener("message", event => {
+        if (event.origin !== location.origin || event.source !== parent || event.data?.type !== "pulse:theme") return;
+        if (!["light", "dark"].includes(event.data.mode)) return;
+        document.documentElement.dataset.colorMode = event.data.mode;
+        for (const key of ["paper", "ink", "muted", "line", "accent", "accent-ink", "positive", "negative", "caution",
+            "focus", "font", "surface", "surface-strong", "wash", "hover-row"]) {
+            const value = event.data.tokens?.[key];
+            if (typeof value === "string" && value.length < 500) document.documentElement.style.setProperty(`--${key}`, value);
+        }
+    });
+    let lastHeight = 0;
+    new ResizeObserver(() => {
+        const height = Math.ceil(document.querySelector(".shell").getBoundingClientRect().height);
+        if (height !== lastHeight) {
+            lastHeight = height;
+            parent.postMessage({ type: "pulse:height", height }, location.origin);
+        }
+    }).observe(document.querySelector(".shell"));
+}
 
 document.addEventListener("click", event => {
     const target = event.target;
@@ -1406,7 +1454,12 @@ window.addEventListener("popstate", () => {
 const initialAccount = location.hash.match(/^#\/account\/(.+)$/);
 const initialEnterprise = location.hash.match(/^#\/enterprise\/(.+)$/);
 if (initialAccount) {
-    try { state.selectedId = decodeURIComponent(initialAccount[1]); state.view = "accounts"; state.previousView = "accounts"; }
+    try {
+        state.selectedId = decodeURIComponent(initialAccount[1]);
+        const from = new URLSearchParams(location.search).get("view");
+        state.view = VIEWS.includes(from) && from !== "impact" ? from : "accounts";
+        state.previousView = state.view;
+    }
     catch { state.selectedId = null; }
 } else if (initialEnterprise) {
     try { state.selectedSlug = decodeURIComponent(initialEnterprise[1]); state.view = "impact"; }

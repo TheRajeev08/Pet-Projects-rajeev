@@ -430,5 +430,40 @@ th button:hover { color: var(--ink); }
     html { scroll-behavior: auto; }
     .button { transition: none; }
 }
-.embedded .topbar { display: none; }
+.embedded .topbar, .embedded .navigation, .embedded .footer,
+.embedded .snapshot-ribbon, .embedded .desk-caveat { display: none; }
+.embedded .shell { min-height: 0; }
+.embedded main { max-width: none; padding: 0 0 20px; }
+.embedded .notices { padding: 0; }
+.embedded h1 { font-size: 20px; letter-spacing: -.025em; }
+.embedded h2 { font-size: 16px; letter-spacing: -.02em; }
+.embedded .page-head { margin-bottom: 20px; }
+.embedded .metric-strip { margin: 20px 0; }
+.embedded .metric.is-key { background: var(--paper); }
+.embedded .metric.is-key .value { color: var(--ink); }
+.embedded .side-section { padding: 16px 0; border-top: 1px solid var(--line); border-radius: 0; background: transparent; }
+.embedded .table-wrap { max-height: none; overflow: visible; }
+.embedded th, .embedded td { white-space: normal; overflow-wrap: anywhere; }
+.embedded .account-sub { max-width: none; overflow: visible; }
+.embedded .all-accounts table { table-layout: fixed; }
+.embedded .all-accounts th:first-child { width: 18%; }
+.embedded .all-accounts .queue-column { width: 20%; }
+.embedded .all-accounts .play-tag { white-space: normal; }
+.embedded .all-accounts th, .embedded .all-accounts td { padding: 10px 7px; }
+.embedded .status { white-space: normal; }
+.embedded .detail-table { table-layout: fixed; }
+.embedded .fact-strip { font-variant-numeric: tabular-nums; }
+@media (max-width: 950px) {
+    .embedded .all-accounts .optional { display: none; }
+    .embedded .all-accounts th:first-child { width: 22%; }
+    .embedded .all-accounts .queue-column { width: 23%; }
+}
+@media (max-width: 560px) {
+    .embedded .all-accounts table, .embedded .all-accounts tbody { display: block; }
+    .embedded .all-accounts thead tr { display: flex; flex-wrap: wrap; }
+    .embedded .all-accounts th { flex: 1 1 30%; white-space: normal; }
+    .embedded .all-accounts tbody tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border-bottom: 1px solid var(--line); }
+    .embedded .all-accounts td { border: 0; }
+    .embedded .all-accounts td:first-child, .embedded .all-accounts .queue-column { grid-column: 1 / -1; width: auto; }
+}
 .new-metric { display: inline-block; padding: 1px 6px; border: 1px solid currentColor; border-radius: 10px; color: var(--accent); font-size: 10px; font-weight: 650; }

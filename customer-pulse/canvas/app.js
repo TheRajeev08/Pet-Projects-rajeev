@@ -1,5 +1,5 @@
 // Customer Pulse canvas client: hash routing, rendering through views.mjs, live updates and local action state.
-import { accountIndex, clipQuery, hashFor, isClosed, parseHash, SIGNAL_PRIORITIES, SIGNAL_SOURCES, validateModel } from "./model.mjs";
+import { COPILOT_VIEWS, accountIndex, clipQuery, hashFor, isClosed, parseHash, SIGNAL_PRIORITIES, SIGNAL_SOURCES, validateModel } from "./model.mjs";
 import { VIEW_LABELS, embedProblem, esc, renderDrawer, renderNav, renderNotices, renderTopbar, renderUnavailable, renderView } from "./views.mjs";
 
 const els = {
@@ -37,6 +37,11 @@ const state = {
     subview: null,
     copilotAccount: null,
     embedFailure: null,
+    embedSrc: null,
+    copilotLicenses: null,
+    copilotLicensesLoading: true,
+    copilotLicensesError: null,
+    copilotFilter: "all",
     query: "",
     sort: {},
     expanded: new Set(),
@@ -105,6 +110,21 @@ function setHTML(element, html) {
     return true;
 }
 
+/** Child navigation updates Pulse's controls without detaching the live iframe and losing its filters. */
+function setMainHTML(html) {
+    const frame = els.main.querySelector("iframe[data-embed]");
+    if (!frame || !state.embedSrc || written.get(els.main) === html) return setHTML(els.main, html);
+    const template = document.createElement("template");
+    template.innerHTML = html;
+    const fresh = template.content.querySelector("iframe[data-embed]");
+    if (!fresh || fresh.getAttribute("src") !== frame.getAttribute("src") || fresh.name !== frame.name) return setHTML(els.main, html);
+    fresh.remove();
+    for (const child of [...els.main.children]) if (child !== frame) child.remove();
+    els.main.insertBefore(template.content, frame);
+    written.set(els.main, html);
+    return true;
+}
+
 const refreshKey = refresh => `${refresh.phase}|${refresh.completedAt || refresh.requestedAt || ""}`;
 
 function refreshDismissed() {
@@ -122,6 +142,11 @@ function uiState() {
         subview: state.subview,
         copilotAccount: state.copilotAccount,
         embedFailure: state.embedFailure,
+        embedSrc: state.embedSrc,
+        copilotLicenses: state.copilotLicenses,
+        copilotLicensesLoading: state.copilotLicensesLoading,
+        copilotLicensesError: state.copilotLicensesError,
+        copilotFilter: state.copilotFilter,
         query: state.query,
         sort: state.sort,
         expanded: state.expanded,
@@ -143,7 +168,7 @@ function render() {
     setHTML(els.topbar, renderTopbar(state.model, ui));
     setHTML(els.nav, renderNav(state.model, ui));
     setHTML(els.notices, renderNotices(state.model, ui));
-    if (state.model) setHTML(els.main, renderView(state.model, ui));
+    if (state.model) setMainHTML(renderView(state.model, ui));
     else if (state.loadError) setHTML(els.main, renderUnavailable(state.loadError));
     els.main.setAttribute("aria-busy", String(!state.model && !state.loadError));
     renderDrawerHost(ui);
@@ -250,7 +275,7 @@ let opener = null;
 let openingTimer = null;
 
 function renderDrawerHost(ui) {
-    if (!state.model || !state.account) {
+    if (!state.model || !state.account || (state.view === "copilot" && state.subview)) {
         if (!drawerOpen) return;
         drawerOpen = false;
         drawerAccount = null;
@@ -350,6 +375,8 @@ function apply(next) {
     if (viewChanged) state.embedFailure = null;
     state.view = next.view;
     state.subview = next.subview || null;
+    state.embedSrc = null;
+    state.copilotAccount = null;
     state.account = next.account;
     state.query = next.query;
     if (viewChanged) window.scrollTo({ top: 0, left: 0, behavior: "instant" });
@@ -456,6 +483,7 @@ async function fetchModel({ toast = null, attempt = 0 } = {}) {
         state.error = null;
         state.loading = false;
         render();
+        await loadCopilotLicenses();
         if (toast) showToast(toast);
     } catch (error) {
         if (error.code === "dashboard_updating" && attempt < RETRIES) {
@@ -466,6 +494,20 @@ async function fetchModel({ toast = null, attempt = 0 } = {}) {
         if (state.model) state.error = `Could not load the latest snapshot. ${error.message}`;
         else state.loadError = { code: error.code || "unknown", message: error.message };
         state.loading = false;
+        render();
+    }
+}
+
+async function loadCopilotLicenses() {
+    state.copilotLicensesLoading = true;
+    try {
+        state.copilotLicenses = await request("/api/copilot-licenses");
+        state.copilotLicensesError = null;
+    } catch (error) {
+        state.copilotLicenses = null;
+        state.copilotLicensesError = `Could not load license reconciliation. Showing Pulse figures only. ${error.message}`;
+    } finally {
+        state.copilotLicensesLoading = false;
         render();
     }
 }
@@ -621,8 +663,7 @@ document.addEventListener("click", event => {
     if (!target || target.closest("[inert]")) return;
     if (target.hasAttribute("data-copilot-account")) {
         event.preventDefault();
-        state.copilotAccount = target.getAttribute("data-copilot-account");
-        const next = { view: "copilot", account: null, query: "" };
+        const next = { view: "copilot", subview: "desk", account: target.getAttribute("data-copilot-account"), query: "" };
         setHistory(hashFor(next), "push");
         apply(next);
     } else if (target.hasAttribute("data-account")) {
@@ -638,7 +679,10 @@ document.addEventListener("click", event => {
     } else if (target.hasAttribute("data-filter")) {
         const filter = target.getAttribute("data-filter");
         const value = target.getAttribute("data-value");
-        if (filter.startsWith("kind:") && KINDS.includes(value)) {
+        if (filter === "copilot" && ["all", "attention", "unassigned", "engaged_lt_50", "renewing_90"].includes(value)) {
+            state.copilotFilter = value;
+            render();
+        } else if (filter.startsWith("kind:") && KINDS.includes(value)) {
             state.kind[filter.slice(5)] = value;
             render();
         }
@@ -696,6 +740,11 @@ function trapTab(event) {
 document.addEventListener("keydown", event => {
     if (event.defaultPrevented || event.isComposing) return;
     const plain = !event.metaKey && !event.ctrlKey && !event.altKey;
+    if (plain && ["Enter", " "].includes(event.key) && event.target.matches("tr[data-account]")) {
+        event.preventDefault();
+        openAccount(event.target.getAttribute("data-account"), event.target);
+        return;
+    }
     if (event.key === "Escape") {
         if (state.account) {
             event.preventDefault();
@@ -725,11 +774,41 @@ document.addEventListener("keydown", event => {
 document.addEventListener("load", event => {
     const frame = event.target;
     if (!(frame instanceof HTMLIFrameElement) || !frame.hasAttribute("data-embed")) return;
+    sendEmbedTheme(frame);
     const detail = embedProblem(frame);
     if (!detail) return;
     state.embedFailure = { src: frame.getAttribute("src"), detail };
     render();
 }, true);
+
+const THEME_TOKENS = ["paper", "ink", "muted", "line", "accent", "accent-ink", "positive", "negative", "caution", "amber", "high",
+    "focus", "font", "surface", "surface-strong", "wash", "hover-row"];
+function sendEmbedTheme(frame) {
+    const style = getComputedStyle(document.body);
+    const mode = document.body.dataset.colorMode || document.documentElement.dataset.colorMode
+        || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    frame.contentWindow?.postMessage({ type: "pulse:theme", mode,
+        tokens: Object.fromEntries(THEME_TOKENS.map(key => [key, style.getPropertyValue(`--${key}`).trim()])) }, location.origin);
+}
+const updateEmbedThemes = () => document.querySelectorAll("iframe[data-embed]").forEach(sendEmbedTheme);
+new MutationObserver(updateEmbedThemes).observe(document.documentElement, { attributes: true, attributeFilter: ["style", "class", "data-color-mode"] });
+new MutationObserver(updateEmbedThemes).observe(document.body, { attributes: true, attributeFilter: ["style", "class", "data-color-mode"] });
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", updateEmbedThemes);
+window.addEventListener("message", event => {
+    const frame = document.querySelector("iframe[data-embed]");
+    if (event.origin !== location.origin || !frame || event.source !== frame.contentWindow || !event.data) return;
+    if (event.data.type === "pulse:height" && Number.isFinite(event.data.height) && event.data.height > 0 && event.data.height <= 100000) {
+        frame.style.height = `${Math.ceil(event.data.height)}px`;
+    } else if (event.data.type === "pulse:navigate" && event.data.view === "impact" && state.view !== "impact") {
+        location.hash = "#/impact";
+    } else if (event.data.type === "pulse:route" && state.view === "copilot" && COPILOT_VIEWS.includes(event.data.view)) {
+        state.embedSrc = frame.getAttribute("src");
+        state.subview = event.data.view;
+        state.account = typeof event.data.account === "string" ? event.data.account : null;
+        setHistory(hashFor({ view: "copilot", subview: state.subview, account: state.account, query: state.query }), "replace");
+        render();
+    }
+});
 
 // Boot ----------------------------------------------------------------------------------------------
 

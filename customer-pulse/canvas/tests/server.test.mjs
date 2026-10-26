@@ -157,6 +157,45 @@ describe("canvas server", () => {
         ctx = await serve(home);
         actionId = readJson(ctx.paths.model).actions[0].id;
     });
+
+    test("compact Copilot licenses endpoint reconciles and degrades explicitly without writing decisions", async t => {
+        const home = syntheticHome();
+        const cpHome = path.join(home, "copilot");
+        fs.mkdirSync(cpHome);
+        writeJson(path.join(home, "config.json"), { copilot_home: cpHome });
+        const model = syntheticModel();
+        model.accounts[0].products.ghcp.contracted = 0;
+        writeJson(path.join(home, "model.json"), model);
+        const ctx = await serveHome(t, home);
+        const get = () => request(ctx.server, "GET", "/api/copilot-licenses");
+        const missing = await get();
+        assert.equal(missing.status, 200);
+        assert.equal(missing.json.reconciliation, "unavailable");
+        assert.match(missing.json.note, /dashboard_missing/);
+        assert.equal(missing.json.rows[0].licenses, 0);
+        assert.equal(missing.json.rows[0].active28, 4);
+        const dashboard = {
+            data_date: "2030-01-04", portfolio: { owned: 1, consuming: 1 },
+            accounts: [{ id: "t-1", name: "Synthetic customer", consuming: true, contracted_seats: 12 }],
+            missing_sources: [], sources: {}, definitions: {},
+            enterprises: [{ slug: "synthetic-slug", match: { confidence: "confirmed", candidates: [{ id: "t-1" }] } }],
+        };
+        writeJson(path.join(cpHome, "model.json"), dashboard);
+        const result = await get();
+        assert.equal(result.status, 200);
+        assert.equal(result.json.reconciliation, "available");
+        assert.equal(result.json.rows[0].slug, "synthetic-slug");
+        assert.equal(result.json.rows[0].flags.source_mismatch, true);
+        assert.equal(result.json.rows[0].licenses, 0);
+        assert.ok(result.raw.length < 5000);
+        assert.equal(fs.existsSync(ctx.paths.actioned), false);
+        fs.writeFileSync(path.join(cpHome, "model.json"), "{invalid");
+        const invalid = await get();
+        assert.equal(invalid.status, 200);
+        assert.match(invalid.json.note, /dashboard_invalid/);
+        fs.writeFileSync(ctx.paths.model, "{invalid");
+        assert.equal((await get()).status, 503);
+    });
     after(async () => {
         await ctx?.server.close();
         removeDir(home);
