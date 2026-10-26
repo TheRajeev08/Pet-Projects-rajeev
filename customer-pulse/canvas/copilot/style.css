@@ -300,12 +300,12 @@ th button:hover { color: var(--ink); }
 .chart-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 17px; }
 .chart-panel { min-width: 0; padding: 17px; border: 1px solid var(--line); border-radius: 9px; }
 .chart-panel .meta { margin-bottom: 8px; }
-.chart-panel svg { display: block; width: 100%; height: auto; overflow: visible; }
+svg.plot { display: block; width: 100%; height: auto; overflow: visible; }
 .chart-legend { display: flex; gap: 8px 16px; flex-wrap: wrap; color: var(--muted); font-size: 10px; margin-top: 9px; }
 .chart-legend i { display: inline-block; width: 9px; height: 9px; border-radius: 3px; vertical-align: -1px; margin-right: 5px; }
-.chart-panel svg text { fill: var(--muted); font: 10px var(--font); }
-.chart-panel svg .grid { stroke: var(--line); stroke-width: 1; }
-.chart-panel svg .line { stroke-linecap: round; stroke-linejoin: round; stroke-width: 2; fill: none; }
+svg.plot text { fill: var(--muted); font: 10px var(--font); }
+svg.plot .grid { stroke: var(--line); stroke-width: 1; }
+svg.plot .line { stroke-linecap: round; stroke-linejoin: round; stroke-width: 2; fill: none; }
 .breakdown-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 25px; margin-top: 27px; }
 .breakdown { border-top: 1px solid var(--line); padding-top: 16px; }
 .bar-list { display: grid; gap: 0; }

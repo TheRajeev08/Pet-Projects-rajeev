@@ -123,6 +123,7 @@ function adoptionFunnel(account = null) {
         `<div class="fact"><small>${metricName(key, text)}</small><strong>${num(value(key, qid))}</strong>`
         + (!account ? `<span class="meta">${totals[key].n} of ${totals[key].of} reporting</span>` : "") + "</div>").join("")}</div>` +
         (account ? `<p class="meta">Installed IDE users 28d (partial telemetry): ${num(dataValue(account, "installed_1d28", "02"))}. Not a funnel step.</p>` : "") +
+        (!account ? `<p class="meta">Dashboard source. Portfolio uses Pulse's dated license figures, so Licenses and Assigned can differ for a few accounts.</p>` : "") +
         `<p class="meta">Assigned &rarr; active &rarr; engaged. Source cutoffs differ; a dash means not reported.</p>`;
 }
 
@@ -306,7 +307,7 @@ function plot(series, kind = "number", type = "line", title = "Trend", labels = 
             });
         }
     });
-    return `<svg role="img" aria-labelledby="${id}" viewBox="0 0 ${W} ${height}">` +
+    return `<svg class="plot" role="img" aria-labelledby="${id}" viewBox="0 0 ${W} ${height}">` +
         `<title id="${id}">${H(title)} over ${count} ${labels ? "periods" : "weeks"}, oldest on the left</title>${lines}</svg>` +
         `<div class="chart-legend">${series.map((item, index) =>
             `<span><i style="background:${palette[index % palette.length]}"></i>${H(item.name)}</span>`).join("")}</div>`;
