@@ -9,7 +9,7 @@ import traceback
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from pulse import collect, digest, model, paths, privacy, queries  # noqa: E402
+from pulse import collect, digest, model, paths, privacy, queries, signals  # noqa: E402
 from pulse.util import LockBusy, RunLock, atomic_write_json, read_json  # noqa: E402
 
 
@@ -27,7 +27,7 @@ def _run(session):
 def cmd_init_config(a):
     p = os.path.join(paths.home(), "config.json")
     cfg = read_json(p) or {}
-    for k in ("owner_sfdc_id", "owner_name", "digest_to", "sf_target_org", "workflow_id", "copilot_home"):
+    for k in ("owner_sfdc_id", "owner_name", "digest_to", "sf_target_org", "workflow_id", "copilot_home", "gong_email"):
         v = getattr(a, k)
         if v:
             cfg[k] = v
@@ -154,6 +154,25 @@ def cmd_privacy_scan(a):
     return 1 if findings else 0
 
 
+def cmd_signals_plan(a):
+    with RunLock(paths.lock_path()):
+        out = signals.plan(paths.load_config(), _today(a))
+    print(json.dumps(out, indent=2))
+
+
+def cmd_signals_ingest(a):
+    statuses = {}
+    for value in a.source_status:
+        source, sep, state = value.partition("=")
+        if not sep:
+            raise ValueError("source-status must be source=ok|failed|not_connected")
+        statuses[source] = state
+    with RunLock(paths.lock_path()):
+        out = signals.ingest(paths.load_config(), json.load(sys.stdin), queries.session_id(a.session),
+                             _today(a), statuses)
+    print(json.dumps(out, indent=2))
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="pulse.py", description=__doc__)
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -165,6 +184,7 @@ def main(argv=None):
     s.add_argument("--sf-target-org", dest="sf_target_org")
     s.add_argument("--workflow-id", dest="workflow_id")
     s.add_argument("--copilot-home", dest="copilot_home")
+    s.add_argument("--gong-email", dest="gong_email")
     s.set_defaults(fn=cmd_init_config)
 
     s = sub.add_parser("render", help="start (or reuse) a run and write the queries to run")
@@ -200,13 +220,28 @@ def main(argv=None):
     s.add_argument("--session")
     s.set_defaults(fn=cmd_digest)
 
+    s = sub.add_parser("signals-plan", help="print bounded account-scoped signal tasks and ingest schema")
+    s.add_argument("--today")
+    s.set_defaults(fn=cmd_signals_plan)
+
+    s = sub.add_parser("signals-ingest", help="validate and ingest up to five evidence-backed signals")
+    s.add_argument("--stdin", action="store_true", required=True)
+    s.add_argument("--session")
+    s.add_argument("--today")
+    s.add_argument("--source-status", action="append", default=[])
+    s.set_defaults(fn=cmd_signals_ingest)
+
     s = sub.add_parser("privacy-scan", help="block staged lines containing local account names or Salesforce ids")
     s.add_argument("--all", action="store_true", help="scan every tracked and untracked file instead of the staged diff")
     s.add_argument("paths", nargs="*")
     s.set_defaults(fn=cmd_privacy_scan)
 
     a = p.parse_args(argv)
-    return a.fn(a) or 0
+    try:
+        return a.fn(a) or 0
+    except (ValueError, LockBusy) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":

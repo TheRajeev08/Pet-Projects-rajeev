@@ -1,5 +1,5 @@
 // Customer Pulse canvas client: hash routing, rendering through views.mjs, live updates and local action state.
-import { accountIndex, clipQuery, hashFor, isClosed, parseHash, validateModel } from "./model.mjs";
+import { accountIndex, clipQuery, hashFor, isClosed, parseHash, SIGNAL_PRIORITIES, SIGNAL_SOURCES, validateModel } from "./model.mjs";
 import { VIEW_LABELS, esc, renderDrawer, renderNav, renderNotices, renderTopbar, renderUnavailable, renderView } from "./views.mjs";
 
 const els = {
@@ -41,6 +41,7 @@ const state = {
     expanded: new Set(),
     kind: {},
     showClosed: false,
+    signalFilters: { priority: "all", source: "all", status: "open" },
     pending: new Set(),
     dismissed: readDismissed(),
     toast: null,
@@ -124,6 +125,7 @@ function uiState() {
         expanded: state.expanded,
         kind: state.kind,
         showClosed: state.showClosed,
+        signalFilters: state.signalFilters,
         refresh: state.refresh,
         refreshDismissed: refreshDismissed(),
         build: state.build,
@@ -227,13 +229,14 @@ function actionFocus(id, next, button) {
     const root = button ? roots().find(candidate => candidate.contains(button)) : drawerOpen ? els.drawer : els.main;
     if (!root) return null;
     const selectors = [keySelector(`${next ? "reopen" : "done"}:${id}`)];
-    const row = button?.closest(".action-row");
+    const row = button?.closest(".action-row, .signal");
     for (const sibling of [row?.nextElementSibling, row?.previousElementSibling]) {
         const key = sibling?.querySelector("[data-focus-key]")?.getAttribute("data-focus-key");
         if (key) selectors.push(keySelector(key));
     }
     const toggle = button?.closest(".panel")?.querySelector('[data-toggle="closed"]')?.getAttribute("data-focus-key");
     if (toggle) selectors.push(keySelector(toggle));
+    if (row?.classList.contains("signal")) selectors.push(keySelector("signal-filter:status"));
     return { id, root, selectors, index: 0, selection: null };
 }
 
@@ -539,27 +542,30 @@ async function requestRefresh() {
 }
 
 function patchAction(id, replace) {
-    state.model = { ...state.model, actions: state.model.actions.map(action => action.id === id ? replace(action) : action) };
+    const key = state.model.actions.some(action => action.id === id) ? "actions" : "signals";
+    state.model = { ...state.model, [key]: (state.model[key] || []).map(action => action?.id === id ? replace(action) : action) };
 }
 
 /** Records done, dismissed or reopened (null) locally, optimistically, with Undo. Nothing goes to Salesforce. */
 async function changeAction(id, next, { button = null, undoable = true } = {}) {
-    const original = state.model?.actions.find(action => action.id === id);
+    const original = [...(state.model?.actions || []), ...(state.model?.signals || [])].find(action => action?.id === id);
     if (!original || state.pending.has(id) || !(next === null || next === "done" || next === "dismissed")) return;
-    const previous = isClosed(original) ? original.state : null;
+    const signal = state.model.signals?.includes(original);
+    const previous = isClosed(original) ? original.status ?? original.state : null;
     if (previous === next) return;
     state.pending.add(id);
     pendingFocus = actionFocus(id, next, button);
-    patchAction(id, action => ({ ...action, state: next, state_at: next ? new Date().toISOString() : null, new: next ? false : action.new }));
+    const decision = value => signal ? { status: value || "open" } : { state: value };
+    patchAction(id, action => ({ ...action, ...decision(next), state_at: next ? new Date().toISOString() : null, new: next ? false : action.new }));
     render();
     try {
         const result = await post("/api/action-state", { id, state: next });
-        patchAction(id, action => ({ ...action, state: result.state ?? null, state_at: result.state_at ?? null }));
+        patchAction(id, action => ({ ...action, ...decision(result.state ?? null), state_at: result.state_at ?? null }));
         if (undoable) showToast(ACTION_TOAST[String(next)], { undo: () => changeAction(id, previous, { undoable: false }) });
         else showToast("Restored.");
     } catch (error) {
         patchAction(id, () => original);
-        showToast(`Could not update the action. ${error.message}`, { tone: "error" });
+        showToast(`Could not update the ${signal ? "signal" : "action"}. ${error.message}`, { tone: "error" });
     } finally {
         state.pending.delete(id);
         render();
@@ -643,6 +649,14 @@ document.addEventListener("click", event => {
 
 document.addEventListener("change", event => {
     const input = event.target;
+    if (input instanceof HTMLSelectElement && input.matches("[data-signal-filter]")) {
+        const key = input.getAttribute("data-signal-filter");
+        const options = { priority: ["all", ...SIGNAL_PRIORITIES], source: ["all", ...Object.keys(SIGNAL_SOURCES)], status: ["open", "done", "dismissed", "all"] };
+        if (options[key]?.includes(input.value)) {
+            state.signalFilters[key] = input.value;
+            render();
+        }
+    }
     if (input instanceof HTMLInputElement && input.matches('[data-toggle="closed"]')) {
         state.showClosed = input.checked;
         render();

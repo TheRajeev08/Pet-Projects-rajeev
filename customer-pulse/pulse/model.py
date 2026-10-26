@@ -423,19 +423,28 @@ def build(cfg, today=None, run=None):
         if a["state"] in ("done", "dismissed"):
             a["new"] = False
 
-    feeds = status.feed_status(src, today, th)
+    from . import signals
+    try:
+        signal_items, signal_feeds = signals.merge(cfg, today, ids, notified, actioned)
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        signal_items = []
+        signal_feeds = [{"feed": "signals_store", "label": "Signals store", "state": "failed",
+                         "as_of": None, "messages": [f"{type(exc).__name__}: {exc}"],
+                         "qid": None, "raw_date": None, "via": "local", "held": [], "rows": 0}]
+    feeds = status.feed_status(src, today, th) + signal_feeds
     model = {
         "schema": SCHEMA, "generated_at": iso_now(), "date": today, "run": run,
         "owner": cfg.get("owner_name"), "book_source": book_source, "baseline": baseline,
         "thresholds": th, "changes_window_days": window,
         "sources": feeds, "status": status.overall(feeds),
         "kpis": build_kpis(accs, dailies, hd, events, actions),
-        "accounts": accs, "events": events, "actions": actions, "signals": [],
+        "accounts": accs, "events": events, "actions": actions, "signals": signal_items,
         "copilot": {"model_path": paths.copilot_model_path(cfg), "workflow_id": cfg.get("workflow_id")},
     }
+    model["kpis"]["overall"]["new_high"] += sum(1 for s in signal_items if s["new"] and s["verified"] and s["priority"] == "High")
     st = {"generated_at": model["generated_at"], "date": today, "run": run, "overall": model["status"],
           "feeds": feeds, "build_error": None, "baseline": baseline,
-          "counts": {"accounts": len(accs), "events": len(events), "actions": len(actions)}}
+          "counts": {"accounts": len(accs), "events": len(events), "actions": len(actions), "signals": len(signal_items)}}
     return model, st
 
 

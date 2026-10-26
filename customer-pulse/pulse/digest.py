@@ -4,8 +4,8 @@
 sidecar listing the ids the email covers. `mark_sent` records those ids in notified.json only
 after the session log shows the send succeeded, so each change is emailed once.
 
-Everything in the email comes from fixed templates filled with numbers and names; all text is
-HTML-escaped and the only links are https Salesforce record links.
+Everything in the email comes from fixed templates; all text is HTML-escaped.
+Links are HTTPS Salesforce records and evidence-backed signal source links.
 """
 import datetime as dt
 import glob
@@ -23,7 +23,8 @@ MAX_ITEMS = 10
 MAX_BODY_BYTES = 14000
 KEEP_NOTIFIED_DAYS = 120
 PRI_COLOR = {"High": "#cf222e", "Medium": "#9a6700", "Notify": "#0969da", "Info": "#57606a"}
-STATE_LABEL = {"failed": "Failed", "missing": "Missing", "suspect": "Suspect", "stale": "Stale", "ok": "OK"}
+STATE_LABEL = {"failed": "Failed", "missing": "Missing", "suspect": "Suspect", "stale": "Stale", "ok": "OK",
+               "not_connected": "Not connected"}
 FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif"
 
 
@@ -65,7 +66,7 @@ def _event_when(e):
 
 
 def _issue_feeds(model):
-    return [f for f in model.get("sources") or [] if f["state"] != "ok"]
+    return [f for f in model.get("sources") or [] if f["state"] != "ok" and not f.get("optional")]
 
 
 def build_digest(model, cfg, status=None, today=None):
@@ -78,18 +79,22 @@ def build_digest(model, cfg, status=None, today=None):
     events = [e for e in model["events"] if e.get("new")]
     actions = [a for a in model["actions"] if a.get("new")]
     high = [a for a in actions if a["priority"] == "High"] + [e for e in events if e["priority"] == "High"]
+    signals = [s for s in model.get("signals", []) if s.get("new") and s.get("verified")
+               and s.get("status", "open") == "open" and s["priority"] in ("High", "Notify")]
+    signals.sort(key=lambda s: (s["priority"] != "High", s["date"], s["id"]))
+    signal_high = sum(1 for s in signals if s["priority"] == "High")
     issues = _issue_feeds(model)
     build_error = (status or {}).get("build_error")
     stale_model = model["date"] != date
 
-    subject = f"Customer Pulse · {date} · {len(high)} high"
+    subject = f"Customer Pulse · {date} · {len(high) + signal_high} high"
     if issues or build_error or stale_model:
         subject += " · data issues"
 
     parts = [f'<div style="font-family:{FONT};font-size:14px;color:#1f2328;max-width:720px">',
              f'<h2 style="font-size:18px;margin:0 0 4px">Customer Pulse · {_e(date)}</h2>']
     k = model["kpis"]["overall"]
-    parts.append(f'<p style="margin:0 0 8px;color:#57606a">{k["accounts"]} accounts · {len(high)} new high · '
+    parts.append(f'<p style="margin:0 0 8px;color:#57606a">{k["accounts"]} accounts · {len(high) + signal_high} new high · '
                  f'{sum(1 for e in events if e["priority"] != "Info")} new seat changes · '
                  f'{len(actions)} new risks and opportunities</p>')
 
@@ -113,16 +118,29 @@ def build_digest(model, cfg, status=None, today=None):
         return (f'{_pill(e["priority"]) if pill else ""}{_acct_link(e["account_name"], urls.get(e["account_id"]))} · '
                 f'{_e(text)} {_e(when)}')
 
+    def signal_row(s):
+        return (f'{_pill(s["priority"])}{_acct_link(s["account_name"], urls.get(s["account_id"]))} · '
+                f'{_acct_link(s["title"], s["url"])} ({_e(s["source"])}, {_e(s["date"])})<br>'
+                f'&ldquo;{_e(s["evidence"])}&rdquo;<br>{_e(s["reason"])}. Play: {_e(s["play"])}')
+
     changes = [e for e in events if e["priority"] in ("Medium", "Notify")]
     med = [a for a in actions if a["priority"] != "High"]
     lists = [("High priority", [action_row(a, False) if "rule" in a else event_row(a, False) for a in high]),
              ("Seat changes", [event_row(e) for e in changes]),
-             ("New risks and opportunities", [action_row(a) for a in med])]
+             ("New risks and opportunities", [action_row(a) for a in med]),
+             ("Signals", [signal_row(s) for s in signals])]
 
     tail = []
-    if not high and not changes and not med:
+    if not high and not changes and not med and not signals:
         tail.append('<p style="margin:14px 0">No new changes since the last email.</p>')
+    fyi_items = [s for s in model.get("signals", []) if s.get("new") and s.get("verified")
+                 and s.get("status", "open") == "open" and s["priority"] == "Info"]
+    fyi = len(fyi_items)
+    if fyi:
+        tail.append(f'<p style="color:#57606a;font-size:12px">{fyi} FYI company news items in the Signals tab.</p>')
     asof = [f'{_e(f["label"])} {_e(f.get("as_of") or "—")}' for f in model.get("sources") or []]
+    if any(f["state"] == "not_connected" for f in model.get("sources") or []):
+        tail.append('<p style="color:#57606a;font-size:12px">ZoomInfo signals: Not connected.</p>')
     tail.append(f'<p style="margin:18px 0 4px;color:#57606a;font-size:12px">Data as of: {" · ".join(asof)}</p>')
     if model.get("baseline"):
         tail.append('<p style="margin:4px 0;color:#57606a;font-size:12px">First run: earlier changes are in the '
@@ -130,7 +148,7 @@ def build_digest(model, cfg, status=None, today=None):
     tail.append('<p style="margin:4px 0;color:#57606a;font-size:12px">Open the Customer Pulse canvas in the GitHub '
                 'Copilot app for details and drill-downs.</p></div>')
 
-    for limit in (MAX_ITEMS, 6, 3):
+    for limit in (MAX_ITEMS, 6, 3, 1, 0):
         sections = [_section(title, *_cap(rows, limit)) for title, rows in lists]
         body = {
             "message": {
@@ -140,12 +158,16 @@ def build_digest(model, cfg, status=None, today=None):
             },
             "saveToSentItems": True,
         }
-        if len(json.dumps(body, indent=2)) <= MAX_BODY_BYTES:
+        if len(json.dumps(body, indent=2).encode("utf-8")) <= MAX_BODY_BYTES:
             break
+    else:
+        raise ValueError("Digest exceeds MAX_BODY_BYTES even with all item rows omitted")
     meta = {
         "date": date, "subject": subject, "to": to, "generated_at": iso_now(), "model_generated_at": model.get("generated_at"),
-        "ids": sorted({e["id"] for e in model["events"]} | {a["id"] for a in model["actions"]}),
-        "counts": {"high": len(high), "changes": len(changes), "actions": len(actions), "issues": len(issues)},
+        "ids": sorted({e["id"] for e in model["events"]} | {a["id"] for a in model["actions"]}
+                      | {s["id"] for s in signals[:limit]} | {s["id"] for s in fyi_items}),
+        "counts": {"high": len(high) + signal_high, "changes": len(changes), "actions": len(actions),
+                   "signals": len(signals), "fyi": fyi, "issues": len(issues)},
     }
     return body, meta
 
@@ -172,7 +194,7 @@ def needs_send(meta):
     doc, _ = load_notified()
     sent_today = any(s.get("date") == meta["date"] for s in (doc or {}).get("sent") or [])
     c = meta["counts"]
-    return not sent_today or bool(c["high"] or c["changes"] or c["actions"])
+    return not sent_today or bool(c["high"] or c["changes"] or c["actions"] or c.get("signals") or c.get("fyi"))
 
 
 def _status_ok(result):
@@ -219,7 +241,9 @@ def mark_sent(meta, session, force=False, events=None):
         items[i] = cur
     doc["items"] = items
     cutoff = (dt.date.fromisoformat(day) - dt.timedelta(days=KEEP_NOTIFIED_DAYS)).isoformat()
-    doc["items"] = {k: v for k, v in items.items() if (v.get("last_seen") or v.get("first") or day) >= cutoff}
+    signal_cutoff = (dt.date.fromisoformat(day) - dt.timedelta(days=181)).isoformat()
+    doc["items"] = {k: v for k, v in items.items()
+                    if (v.get("last_seen") or v.get("first") or day) >= (signal_cutoff if k.startswith("sig:") else cutoff)}
     doc.setdefault("sent", []).append({"date": day, "subject": meta["subject"], "at": sent_at or iso_now(),
                                        "verified": bool(sent_at), "ids": len(meta["ids"])})
     doc["sent"] = doc["sent"][-90:]

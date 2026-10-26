@@ -115,7 +115,7 @@ export async function readBuildStatus(path) {
     }
 }
 
-/** Done/dismissed decisions keyed by action id. An unreadable file is treated as empty for display. */
+/** Done/dismissed decisions keyed by action or signal id. An unreadable file is treated as empty for display. */
 export async function readActionStates(path) {
     try {
         const doc = await readOptionalJson(path);
@@ -166,8 +166,8 @@ async function writeJsonAtomic(path, payload) {
 
 async function applyActionState(paths, id, state, now) {
     const { model } = await readModel(paths.model);
-    if (!model.actions.some(action => action.id === id)) {
-        throw new CanvasRequestError("action_unknown", 404, "That action is not in the current snapshot. Reload and try again.");
+    if (![...model.actions, ...(model.signals || [])].some(action => action?.id === id)) {
+        throw new CanvasRequestError("action_unknown", 404, "That action or signal is not in the current snapshot. Reload and try again.");
     }
     let doc;
     try {

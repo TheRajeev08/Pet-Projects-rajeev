@@ -1,7 +1,7 @@
 import { createCanvas, CanvasError, joinSession } from "@github/copilot-sdk/extension";
-import { hashFor, resolveAccount, summarize, VIEWS } from "./model.mjs";
+import { hashFor, resolveAccount, summarize, VIEWS, withActionStates } from "./model.mjs";
 import {
-    checkActionInput, createRefreshCoordinator, pulsePaths, readBuildStatus, readModel, readWorkflowId, setActionState,
+    checkActionInput, createRefreshCoordinator, pulsePaths, readActionStates, readBuildStatus, readModel, readWorkflowId, setActionState,
     startCanvasServer,
 } from "./server.mjs";
 
@@ -47,7 +47,7 @@ session = await joinSession({
         createCanvas({
             id: "customer-pulse",
             displayName: "Customer Pulse",
-            description: "Morning view of seat changes, risks and opportunities across GHE, GHAS and Copilot for your Salesforce-owned accounts.",
+            description: "Morning view of seat changes, risks, opportunities and Gong, web and ZoomInfo signals across GHE, GHAS and Copilot for your Salesforce-owned accounts.",
             inputSchema: {
                 type: "object",
                 properties: {
@@ -59,12 +59,13 @@ session = await joinSession({
             actions: [
                 {
                     name: "get_summary",
-                    description: "Read today's portfolio KPIs, open actions, recent seat changes and data freshness from the local snapshot.",
+                    description: "Read today's portfolio KPIs, open actions, open signals with evidence and verification, new verified High signal counts, recent seat changes and source connection/freshness status.",
                     handler: async () => {
                         try {
                             const { model, revision } = await readModel(paths.model);
                             refresh.observe(revision);
-                            return { ...summarize(model), last_build: await readBuildStatus(paths.status), refresh: refresh.status() };
+                            return { ...summarize(withActionStates(model, await readActionStates(paths.actioned))),
+                                last_build: await readBuildStatus(paths.status), refresh: refresh.status() };
                         } catch (error) {
                             throw canvasError(error, "dashboard_unavailable");
                         }
@@ -83,7 +84,7 @@ session = await joinSession({
                 },
                 {
                     name: "set_action_state",
-                    description: "Mark an action (id from get_summary) done or dismissed, or pass state null to reopen it.",
+                    description: "Mark an action or signal (id from get_summary, including sig: ids) done or dismissed, or pass state null to reopen it. Decisions stay local.",
                     inputSchema: {
                         type: "object",
                         properties: {

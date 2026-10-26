@@ -6,12 +6,15 @@ const RANK = Object.fromEntries(PRIORITIES.map((priority, index) => [priority, i
 export const PRODUCTS = ["ghe", "ghas", "ghcp"];
 export const FAMILY_LABELS = { ghe: "GHE", ghas: "GHAS", ghcp: "Copilot", book: "Book", all: "All products" };
 export const ACTION_STATES = ["done", "dismissed"];
+export const SIGNAL_PRIORITIES = ["High", "Notify", "Info"];
+export const SIGNAL_SOURCES = { gong: "Gong", web: "Web", zoominfo: "ZoomInfo" };
 export const SOURCE_STATES = {
     ok: "Current",
     stale: "Stale",
     suspect: "Partial load held back",
     failed: "Not refreshed today",
     missing: "No data",
+    not_connected: "Not connected",
 };
 export const VIEWS = ["overview", "copilot", "ghe", "ghas", "signals", "data"];
 export const TYPE_LABELS = { GHSP: "Secret Protection", GHCS: "Code Security", "Visual Studio": "Visual Studio bundle" };
@@ -84,7 +87,27 @@ export function accountIndex(model) {
     return index;
 }
 
-export const isClosed = action => ACTION_STATES.includes(action?.state);
+export const isClosed = action => ACTION_STATES.includes(action?.status ?? action?.state);
+
+export const isVerifiedSignal = signal => signal.verified === true && signal.verification !== "needs verification";
+export const isNewHighSignal = signal => signal.new === true && signal.priority === "High" && isVerifiedSignal(signal) && !isClosed(signal);
+
+/** Signal account search uses canonical account names as well as names carried by the feed. */
+export function signalsFor(model, { priority = "all", source = "all", status = "open", query = "", accountId = null, newHigh = false } = {}) {
+    const search = clipQuery(query).trim().toLowerCase();
+    const index = accountIndex(model);
+    return (model.signals || []).filter(isObject).filter(signal =>
+        (priority === "all" || signal.priority === priority)
+        && (source === "all" || signal.source === source)
+        && (status === "all" || (signal.status || signal.state || "open") === status)
+        && (!accountId || signal.account_id === accountId)
+        && (!newHigh || isNewHighSignal(signal))
+        && (!search || [signal.account_id, signal.account_name, signal.name, index.get(signal.account_id)?.name]
+            .some(value => String(value || "").toLowerCase().includes(search))))
+        .sort((a, b) => String(b.date || "").localeCompare(String(a.date || ""))
+            || priorityRank(a.priority) - priorityRank(b.priority)
+            || String(a.id).localeCompare(String(b.id)));
+}
 
 /** Product presence, matching the engine's KPI definitions. */
 export function hasProduct(account, family) {
@@ -247,7 +270,7 @@ export function parseHash(hash) {
     return { view, account, query, ...(seats ? { subview: "seats" } : {}) };
 }
 
-/** Applies locally recorded done/dismissed decisions without mutating the model. */
+/** The local decision store is authoritative for actions and signals, including reopened items. Never mutates. */
 export function withActionStates(model, items) {
     if (!isObject(items)) return model;
     return {
@@ -258,6 +281,13 @@ export function withActionStates(model, items) {
             if (state === (action.state ?? null) && (!state || entry.at === action.state_at)) return action;
             return { ...action, state, state_at: state ? entry.at ?? null : null, new: state ? false : action.new };
         }),
+        ...(model.signals ? { signals: model.signals.map(signal => {
+            if (!isObject(signal)) return signal;
+            const entry = items[signal.id];
+            const status = isObject(entry) && ACTION_STATES.includes(entry.state) ? entry.state : "open";
+            return { ...signal, status, state_at: status === "open" ? null : entry.at ?? null,
+                new: status === "open" ? signal.new : false };
+        }) } : {}),
     };
 }
 
@@ -300,6 +330,15 @@ export function summarize(model, { limit = 8 } = {}) {
             source: source.label, state: SOURCE_STATES[source.state] || source.state, as_of: source.as_of ?? null,
             notes: source.messages || [],
         })),
-        signals: (model.signals || []).length,
+        signals: (model.signals || []).filter(isObject).length,
+        open_signals: Object.fromEntries(SIGNAL_PRIORITIES.map(priority => [priority, signalsFor(model, { priority }).length])),
+        new_verified_high_signals: signalsFor(model, { newHigh: true }).length,
+        top_signals: signalsFor(model).slice(0, limit).map(signal => ({
+            id: signal.id, priority: signal.priority, account: signal.account_name ?? signal.name ?? signal.account_id,
+            source: signal.source, date: signal.date, title: signal.title, evidence: signal.evidence, url: signal.url,
+            competitors: signal.competitors || [], themes: signal.themes || [], play: signal.play, reason: signal.reason,
+            confidence: signal.confidence, verified: isVerifiedSignal(signal),
+            verification: isVerifiedSignal(signal) ? "verified" : "needs verification", new: Boolean(signal.new), status: "open",
+        })),
     };
 }

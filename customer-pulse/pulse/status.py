@@ -14,7 +14,7 @@ FEEDS = (
     ("ghas", "p05", "GHAS committers", "ghas", 2),
     ("attributes", "p06", "Account attributes", None, 3),
 )
-RANK = {"ok": 0, "stale": 1, "suspect": 2, "failed": 3, "missing": 4}
+RANK = {"ok": 0, "stale": 1, "suspect": 2, "failed": 3, "missing": 4, "not_connected": 1}
 
 
 def feed_status(src, today, th):
@@ -66,5 +66,5 @@ def feed_status(src, today, th):
 def overall(feeds, build_error=None):
     if build_error:
         return "failed"
-    worst = max((RANK[f["state"]] for f in feeds), default=0)
-    return {v: k for k, v in RANK.items()}[worst]
+    worst = max((RANK[f["state"]] for f in feeds if not f.get("optional")), default=0)
+    return {0: "ok", 1: "stale", 2: "suspect", 3: "failed", 4: "missing"}[worst]

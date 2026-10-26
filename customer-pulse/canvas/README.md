@@ -15,6 +15,7 @@ Then open the **Customer Pulse** canvas. It reads `~/CustomerPulse/model.json` (
 - **Tabs:** Overview, Copilot, GHE, GHAS, Signals and Data. The address (for example `#/ghas/account/<id>?q=<search>`) records your tab, open account and search, so Back and Forward work.
 - **Drill down:** click an account name anywhere (a table, an action or a seat change) to open the account panel. Product cards on the Overview open their tab, and table headers sort.
 - **Actions:** mark them Done or Dismiss them; Undo and Reopen bring them back. Choices are saved in `~/CustomerPulse/state/actioned.json` and never sent anywhere.
+- **Signals:** filter Gong, web and ZoomInfo evidence by priority, source, account search and Open/Done/Dismissed status. Each item shows evidence, competitor/theme chips, a play and reason, and its verification status. Done, Dismiss, Undo and Reopen use the same local action-state store. Account panels include their signals; Overview and badges highlight only new, verified, High-priority open signals. Unconnected signal sources show **Not connected**.
 - **Refresh:** asks Copilot to run your daily automation now, using `workflow_id` from `~/CustomerPulse/config.json`. The canvas never runs queries itself and shows the new data as soon as the automation rebuilds it.
 - **Data freshness:** a notice appears when a source wasn't refreshed today or a partial load was held back. The Data tab has the details.
 - **Copilot:** Adoption dashboard is the default sub-view, served in a same-origin iframe at `copilot/?embed=1`. Only that query parameter hides the inner brand header; navigation stays available. `#/copilot/seats` opens Pulse's Seats & actions view. A fallback link opens `/copilot/` in its own tab, and account drawer links select an account in the embedded dashboard.
@@ -24,9 +25,9 @@ Copilot can also drive the canvas through three actions:
 
 | Action | Does |
 | --- | --- |
-| `get_summary` | Returns today's KPIs, open actions, recent seat changes and source freshness. |
+| `get_summary` | Returns today's KPIs, open actions, recent seat changes, source freshness, signal totals/open priority counts and top open signals with evidence and verification. Includes the new verified High open signal count and local decisions. |
 | `request_refresh` | Same as the Refresh button. |
-| `set_action_state` | Marks an action `done` or `dismissed`, or reopens it with `null`. |
+| `set_action_state` | Marks an action or signal (`sig:` id) `done` or `dismissed`, or reopens it with `null`. |
 
 Opening the canvas with `{ "view": "copilot", "account": "<name or id>" }` jumps straight to a tab and account.
 

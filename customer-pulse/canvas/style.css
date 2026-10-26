@@ -396,6 +396,15 @@ tbody tr:hover > * { background: var(--hover-row); }
 .signal .title { margin: 0 0 4px; font-size: 15px; font-weight: 650; line-height: 1.38; }
 .signal .title a { color: var(--ink); text-decoration-color: color-mix(in srgb, var(--ink) 28%, transparent); }
 .signal .title a:hover { color: var(--accent); text-decoration-color: currentColor; }
+.signal.closed { opacity: .75; }
+.signal .action-controls { flex-direction: row; justify-content: flex-end; margin-top: 10px; }
+.signal-evidence { margin: 10px 0; padding: 8px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); white-space: pre-wrap; overflow-wrap: anywhere; }
+.needs-verification { color: var(--muted); border-style: dashed; }
+.signal-sources, .signal-filters { display: flex; flex-wrap: wrap; gap: 16px; }
+.signal-sources > div { flex: 1 1 150px; }
+.signal-filters { margin-bottom: 18px; align-items: flex-end; }
+.signal-filters label { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--muted); }
+.signal-filters select, .signal-filters input { min-height: 36px; max-width: 100%; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); padding: 6px 10px; font: inherit; }
 
 .empty-state { padding: clamp(22px, 4vw, 38px); }
 .empty-state h1 { font-size: 22px; }

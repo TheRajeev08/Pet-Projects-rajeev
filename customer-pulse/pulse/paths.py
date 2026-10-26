@@ -16,6 +16,13 @@ DEFAULTS = {
     "workflow_id": None,
     "copilot_home": "~/CopilotConsumptionDashboard",
     "digest_to": None,
+    "gong_email": None,
+    "signals": {
+        "top_n": 50, "web_accounts_per_day": 10, "gong_lookback_days": 3,
+        "sweep_days": 7, "account_call_limit": 3, "participant_limit": 5,
+        "zoominfo_enabled": False, "signal_types": ["INTENT", "NEWS", "SCOOP"],
+        "retention_days": 180, "evidence_max": 300, "daily_tool_budget": 25,
+    },
     "data_dir": None,
     "thresholds": {
         "consumed_abs": 5,
@@ -72,8 +79,25 @@ def load_config(required=True):
             f"Missing config. Run `python3 pulse.py init-config --owner-id <SFDC user id> --owner-name "
             f"\"<name as in Salesforce>\"` or copy config.example.json to {os.path.join(home(), 'config.json')}.")
     merged = dict(DEFAULTS)
-    merged.update({k: v for k, v in cfg.items() if k != "thresholds"})
+    merged.update({k: v for k, v in cfg.items() if k not in ("thresholds", "signals")})
     merged["thresholds"] = dict(DEFAULTS["thresholds"], **(cfg.get("thresholds") or {}))
+    merged["signals"] = dict(DEFAULTS["signals"], **(cfg.get("signals") or {}))
+    for key in ("top_n", "web_accounts_per_day", "gong_lookback_days", "sweep_days", "account_call_limit",
+                "participant_limit", "retention_days", "evidence_max", "daily_tool_budget"):
+        value = merged["signals"][key]
+        if type(value) is not int or value < 1:
+            raise ValueError("signals." + key + " must be a positive integer")
+    aliases = merged["signals"].get("competitors")
+    if aliases is not None and (not isinstance(aliases, dict) or any(
+            not isinstance(brand, str) or not brand.strip() or not isinstance(phrases, list) or not phrases
+            or any(not isinstance(phrase, str) or not phrase.strip() for phrase in phrases)
+            for brand, phrases in aliases.items())):
+        raise ValueError("signals.competitors must map brands to nonempty arrays of phrases")
+    if type(merged["signals"]["zoominfo_enabled"]) is not bool:
+        raise ValueError("signals.zoominfo_enabled must be a boolean")
+    kinds = merged["signals"]["signal_types"]
+    if not isinstance(kinds, list) or not kinds or any(k not in ("INTENT", "NEWS", "SCOOP") for k in kinds):
+        raise ValueError("signals.signal_types must contain INTENT, NEWS or SCOOP")
     if required:
         for key in ("owner_sfdc_id", "owner_name"):
             if not merged.get(key):

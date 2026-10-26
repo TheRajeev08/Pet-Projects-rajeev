@@ -2,7 +2,7 @@
 import {
     FAMILY_LABELS, PRIORITIES, SOURCE_STATES, TYPE_LABELS, VIEWS, accountIndex, actionsFor, attentionIndex, dayAge,
     eventsFor, hasProduct, isClosed, isDay, isNumber, isObject, priorityRank, productSeats, seriesChange, seriesPoints,
-    whitespace,
+    whitespace, SIGNAL_PRIORITIES, SIGNAL_SOURCES, isVerifiedSignal, signalsFor,
 } from "./model.mjs";
 
 export const ROW_LIMIT = 50;
@@ -122,7 +122,8 @@ function notice(tone, html, extra = "") {
 
 export function newHighCount(model) {
     return actionsFor(model).filter(action => action.new && action.priority === "High").length
-        + model.events.filter(event => event.new && event.priority === "High").length;
+        + model.events.filter(event => event.new && event.priority === "High").length
+        + signalsFor(model, { newHigh: true }).length;
 }
 
 function freshness(model) {
@@ -140,7 +141,7 @@ export function renderTopbar(model, ui = {}) {
             ? `<a class="pill warn" href="#/data" data-view="data">${issues.length} ${plural(issues.length, "source")} need${issues.length === 1 ? "s" : ""} attention</a>`
             : '<a class="pill ok" href="#/data" data-view="data">All sources current</a>';
         const high = newHighCount(model);
-        if (high) middle += `<span class="pill hot" title="New High-priority actions and seat changes since the last digest">${high} new High</span>`;
+        if (high) middle += `<span class="pill hot" title="New High-priority actions, seat changes and verified open signals since the last digest">${high} new High</span>`;
     }
     return `<div class="brand"><span class="mark" aria-hidden="true">P</span><div class="brand-text"><span class="product-name">Customer Pulse</span>`
         + `<span class="freshness">${model ? esc(freshness(model)) : ui.loading ? "Loading the snapshot…" : "No snapshot loaded"}</span></div></div>`
@@ -157,8 +158,8 @@ function tabCount(model, view) {
         return `<span class="count${high ? " high" : ""}" title="${open.length} open ${plural(open.length, "action")}${high ? `, ${high} High` : ""}">${open.length}</span>`;
     }
     if (view === "signals") {
-        const shown = Array.isArray(model.signals) ? model.signals.filter(isObject).length : 0;
-        return shown ? `<span class="count">${shown}</span>` : "";
+        const shown = signalsFor(model, { newHigh: true }).length;
+        return shown ? `<span class="count high" title="${shown} new verified High open signals">${shown}</span>` : "";
     }
     return "";
 }
@@ -210,14 +211,20 @@ function segmentControl(name, value, options, label) {
         `<button type="button" data-filter="${esc(name)}" data-value="${esc(option)}" aria-pressed="${option === value}">${esc(text)}</button>`).join("")}</div>`;
 }
 
-function actionRow(model, action, { showFamily = true, showAccount = true, showReasons = false } = {}) {
+function actionControls(action) {
+    if (typeof action.id !== "string" || !action.id) return "";
     const closed = isClosed(action);
     const id = esc(action.id);
-    const controls = closed
-        ? `<span class="state">${action.state === "done" ? "Done" : "Dismissed"}${action.state_at ? ` ${esc(fmtDay(action.state_at))}` : ""}</span>`
+    return closed
+        ? `<span class="state">${(action.status ?? action.state) === "done" ? "Done" : "Dismissed"}${action.state_at ? ` ${esc(fmtDay(action.state_at))}` : ""}</span>`
             + `<button type="button" class="button tiny subtle" data-action="reopen" data-id="${id}" data-focus-key="reopen:${id}">Reopen</button>`
         : `<button type="button" class="button tiny" data-action="done" data-id="${id}" data-focus-key="done:${id}">Done</button>`
             + `<button type="button" class="button tiny subtle" data-action="dismiss" data-id="${id}" data-focus-key="dismiss:${id}">Dismiss</button>`;
+}
+
+function actionRow(model, action, { showFamily = true, showAccount = true, showReasons = false } = {}) {
+    const closed = isClosed(action);
+    const controls = actionControls(action);
     const capability = action.tag ? `<span class="chip">${esc(action.tag === "New" ? "New capability" : action.tag)}</span>` : "";
     // The engine's "why" already inlines the first reasons, so a full list replaces it rather than repeating it.
     const listed = showReasons && Array.isArray(action.reasons) && action.reasons.length > 1;
@@ -482,13 +489,14 @@ function renderOverview(model, ui) {
         + `<p class="lede">${fmtInt(overall.accounts ?? model.accounts.length)} accounts · ${money(overall.arr)} ARR · ${fmtInt(overall.renewing_120)} renewing within ${model.thresholds?.renewal_days ?? 120} days</p></div>`
         + `<dl class="headline-stats">${stats.map(([term, value, tone]) => `<div class="${tone}"><dt>${esc(term)}</dt><dd>${fmtInt(value)}</dd></div>`).join("")}</dl></section>`
         + `<section class="product-cards" aria-label="Products">${productCard(model, "ghe")}${productCard(model, "ghas")}${productCard(model, "ghcp")}</section>`
-        + `<div class="columns"><div class="col-main">${actionsPanel(model, ui, { key: "overview" })}</div>`
+        + `<div class="columns"><div class="col-main">${newSignalsPanel(model, ui)}${actionsPanel(model, ui, { key: "overview" })}</div>`
         + `<div class="col-side">${changesPanel(model, ui, { key: "overview", limit: 8 })}${renewalsPanel(model, ui)}</div></div>`
         + accountsPanel(model, ui);
 }
 
 function newCount(model) {
-    return actionsFor(model).filter(action => action.new).length + model.events.filter(event => event.new).length;
+    return actionsFor(model).filter(action => action.new).length + model.events.filter(event => event.new).length
+        + signalsFor(model).filter(signal => signal.new).length;
 }
 
 function kpiStrip(model, family) {
@@ -623,26 +631,60 @@ function renderProduct(model, ui, family) {
         + whitespacePanel(model, ui, family) + note;
 }
 
-function renderSignals(model) {
-    const signals = (Array.isArray(model.signals) ? model.signals : []).filter(isObject)
-        .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")) || priorityRank(a.priority) - priorityRank(b.priority));
+function signalRow(model, signal, { showAccount = true } = {}) {
+    const url = safeUrl(signal.url);
+    const chips = (field, label) => (Array.isArray(signal[field]) ? signal[field] : []).filter(value => typeof value === "string")
+        .map(value => `<span class="chip" title="${label}">${esc(value)}</span>`).join("");
+    return `<li class="signal${isClosed(signal) ? " closed" : ""}"><div class="meta">${SIGNAL_PRIORITIES.includes(signal.priority) ? tag(signal.priority) : ""}${newTag(signal)}`
+        + `<span class="family">${esc(SIGNAL_SOURCES[signal.source] || signal.source || "")}</span><time datetime="${esc(signal.date)}">${esc(fmtDay(signal.date))}</time>`
+        + `<span class="chip${isVerifiedSignal(signal) ? "" : " needs-verification"}">${isVerifiedSignal(signal) ? "Verified" : "Needs verification"}</span>`
+        + `${chips("competitors", "Competitor")}${chips("themes", "Theme")}`
+        + (Array.isArray(signal.tags) ? signal.tags.filter(value => typeof value === "string").map(value => `<span class="chip">${esc(value)}</span>`).join("") : "") + "</div>"
+        + `${showAccount ? `<p class="who">${signal.account_id ? accountLink(model, signal.account_id, signal.account_name || signal.name) : esc(signal.account_name || signal.name || "")}</p>` : ""}`
+        + `<p class="title">${url ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(signal.title || url)}</a>` : esc(signal.title || "")}</p>`
+        + `${signal.evidence ? `<blockquote class="signal-evidence">${esc(signal.evidence)}</blockquote>` : ""}`
+        + `${signal.play ? `<p class="why"><strong>Play:</strong> ${esc(signal.play)}</p>` : ""}`
+        + `${signal.reason || signal.summary ? `<p class="why"><strong>Reason:</strong> ${esc(signal.reason || signal.summary)}</p>` : ""}`
+        + `<div class="action-controls">${actionControls(signal)}</div></li>`;
+}
+
+function signalList(model, signals, options) {
+    return `<ul class="signal-list">${signals.map(signal => signalRow(model, signal, options)).join("")}</ul>`;
+}
+
+function newSignalsPanel(model, ui) {
+    const signals = signalsFor(model, { newHigh: true });
+    const expanded = Boolean(ui.expanded?.has("signals:overview"));
+    return `<section class="panel" aria-labelledby="h-new-signals"><div class="panel-head"><h2 id="h-new-signals">New verified High signals <span class="count-text">${signals.length}</span></h2>`
+        + '<a href="#/signals" data-view="signals">All signals</a></div>'
+        + (signals.length ? signalList(model, expanded ? signals : signals.slice(0, 8)) : '<p class="empty">No new verified High open signals.</p>')
+        + moreButton("signals:overview", signals.length, 8, expanded) + "</section>";
+}
+
+function signalSources(model) {
+    return `<section class="panel signal-sources" aria-label="Signal sources">${Object.entries(SIGNAL_SOURCES).map(([feed, label]) => {
+        const source = model.sources.find(item => item.feed === `signals_${feed}` || item.feed === feed);
+        const state = source?.state || "not_connected";
+        return `<div><strong>${label}</strong> <span class="state-chip ${esc(state)}">${esc(SOURCE_STATES[state] || state)}</span>`
+            + `${source?.as_of ? `<span class="sub">As of ${esc(fmtDay(source.as_of))}</span>` : ""}`
+            + (source?.messages || []).map(message => `<p class="note">${esc(message)}</p>`).join("") + "</div>";
+    }).join("")}</section>`;
+}
+
+function renderSignals(model, ui) {
+    const signals = signalsFor(model, { ...ui.signalFilters, query: ui.query });
     const head = '<section class="page-head"><div><h1>Signals</h1><p class="lede">Conversations, news and public posts that point to engineering or business priorities.</p></div></section>';
-    if (!signals.length) {
-        return `${head}<section class="panel empty-state"><h2>No signals yet</h2><p>This tab will gather:</p><ul>`
-            + "<li>Gong call themes that mention competitors or GitHub</li><li>ZoomInfo intent topics and company news</li>"
-            + "<li>Public web posts, such as engineering blogs and press, about developer platforms and AI in the SDLC</li></ul>"
-            + "<p>Competitor mentions and priorities that GitHub solves will be marked High.</p>"
-            + '<p class="note">LinkedIn is not monitored, because its terms do not allow automated reading of member posts.</p></section>';
-    }
-    return `${head}<section class="panel"><ul class="signal-list">${signals.map(signal => {
-        const url = safeUrl(signal.url);
-        const tags = Array.isArray(signal.tags) ? signal.tags.filter(value => typeof value === "string").map(value => `<span class="chip">${esc(value)}</span>`).join("") : "";
-        return `<li class="signal"><div class="meta">${PRIORITIES.includes(signal.priority) ? tag(signal.priority) : ""}${newTag(signal)}`
-            + `${signal.source ? `<span class="family">${esc(signal.source)}</span>` : ""}<time>${esc(fmtDay(signal.date))}</time>${tags}</div>`
-            + `<p class="who">${signal.account_id ? accountLink(model, signal.account_id, signal.account_name) : esc(signal.account_name || "")}</p>`
-            + `<p class="title">${url ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(signal.title || url)}</a>` : esc(signal.title || "")}</p>`
-            + `${signal.summary ? `<p class="why">${esc(signal.summary)}</p>` : ""}</li>`;
-    }).join("")}</ul></section>`;
+    const select = (key, label, options, fallback) => `<label>${label}<select data-signal-filter="${key}" data-focus-key="signal-filter:${key}">`
+        + options.map(([value, text]) => `<option value="${value}"${(ui.signalFilters?.[key] || fallback) === value ? " selected" : ""}>${text}</option>`).join("") + "</select></label>";
+    const expanded = Boolean(ui.expanded?.has("signals:feed"));
+    return `${head}${signalSources(model)}<section class="panel" aria-labelledby="h-signals"><div class="panel-head"><h2 id="h-signals">Signal feed <span class="count-text">${signals.length}</span></h2></div>`
+        + `<div class="signal-filters">${select("priority", "Priority", [["all", "All priorities"], ...SIGNAL_PRIORITIES.map(value => [value, value])], "all")}`
+        + select("source", "Source", [["all", "All sources"], ...Object.entries(SIGNAL_SOURCES)], "all")
+        + select("status", "Status", [["open", "Open"], ["done", "Done"], ["dismissed", "Dismissed"], ["all", "All statuses"]], "open")
+        + `<label>Account search<input type="search" data-search data-focus-key="search:signals" value="${esc(ui.query || "")}" placeholder="Account name or ID"></label></div>`
+        + `<div data-region>${signals.length ? signalList(model, expanded ? signals : signals.slice(0, ROW_LIMIT))
+            : `<p class="empty">${(model.signals || []).filter(isObject).length ? "No signals match these filters." : "No signals yet. Connect signal sources to collect evidence."}</p>`}`
+        + moreButton("signals:feed", signals.length, ROW_LIMIT, expanded) + "</div></section>";
 }
 
 function pct(value) {
@@ -700,7 +742,7 @@ export function renderView(model, ui = {}) {
             : `<iframe class="copilot-frame" name="copilot-dashboard" title="Copilot adoption dashboard" src="copilot/?embed=1${ui.copilotAccount ? `#/account/${encodeURIComponent(ui.copilotAccount)}` : ""}"></iframe>`);
     }
     if (VIEW_FAMILY[ui.view]) return renderProduct(model, ui, VIEW_FAMILY[ui.view]);
-    if (ui.view === "signals") return renderSignals(model);
+    if (ui.view === "signals") return renderSignals(model, ui);
     if (ui.view === "data") return renderData(model);
     return renderOverview(model, ui);
 }
@@ -849,6 +891,7 @@ export function renderDrawer(model, ui = {}) {
     ];
     const actions = actionsFor(model, { accountId: account.id, includeClosed: true });
     const events = eventsFor(model, { accountId: account.id });
+    const signals = signalsFor(model, { accountId: account.id, status: "all" });
     const other = byType(account.products.other?.by_type);
     const flags = Object.entries(FLAG_LABELS).filter(([key]) => account.flags?.[key]).map(([, label]) => `<span class="chip">${esc(label)}</span>`).join("");
     const billing = isObject(account.billing_ltm) ? [["GHEC", account.billing_ltm.ghec], ["GHAS", account.billing_ltm.ghas], ["Copilot", account.billing_ltm.copilot], ["Actions", account.billing_ltm.actions]]
@@ -861,6 +904,8 @@ export function renderDrawer(model, ui = {}) {
         + `<div class="drawer-body"><p><a href="copilot/?embed=1#/account/${encodeURIComponent(account.id)}" data-copilot-account="${esc(account.id)}" target="copilot-dashboard">Open in Copilot dashboard</a></p><dl class="fact-strip">${strip.map(([term, value]) => `<div><dt>${esc(term)}</dt><dd>${value}</dd></div>`).join("")}</dl>`
         + `<section class="drawer-section"><h3>Actions <span class="count-text">${actions.filter(action => !isClosed(action)).length}</span></h3>`
         + `${actions.length ? `<ol class="action-list">${actions.map(action => actionRow(model, action, { showAccount: false, showReasons: true })).join("")}</ol>` : '<p class="empty">No actions for this account.</p>'}</section>`
+        + `<section class="drawer-section"><h3>Signals <span class="count-text">${signals.filter(signal => !isClosed(signal)).length}</span></h3>`
+        + `${signals.length ? signalList(model, signals, { showAccount: false }) : '<p class="empty">No signals for this account.</p>'}</section>`
         + ghePanel(account, windowDays) + ghasPanel(account, windowDays) + copilotPanel(account, windowDays)
         + (other ? `<section class="product-panel"><h3>Other products</h3>${facts([["Contracted", other]])}</section>` : "")
         + `<section class="drawer-section"><h3>Seat changes <span class="muted">last ${esc(model.thresholds?.history_days ?? 35)} days</span></h3>`

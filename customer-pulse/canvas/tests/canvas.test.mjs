@@ -319,7 +319,8 @@ describe("model.mjs", () => {
         model.kpis.ghe.contracted = { value: 100, as_of: "2026-10-27", d7: -5, d7_since: "2026-10-20" };
         const summary = summarize(model, { limit: 2 });
         assert.deepEqual(Object.keys(summary), ["date", "generated_at", "owner", "data_status", "accounts", "arr", "renewing_within_120_days",
-            "products", "open_actions", "top_actions", "recent_changes", "sources_needing_attention", "signals"]);
+            "products", "open_actions", "top_actions", "recent_changes", "sources_needing_attention", "signals",
+            "open_signals", "new_verified_high_signals", "top_signals"]);
         assert.deepEqual([summary.date, summary.owner, summary.data_status, summary.accounts, summary.arr, summary.renewing_within_120_days],
             ["2026-10-27", "Test Owner", "failed", 3, 600, 1]);
         assert.deepEqual(summary.open_actions, { High: 1, Medium: 2, Notify: 1 });
@@ -418,7 +419,7 @@ describe("views.mjs", () => {
         assert.ok(nav.includes('data-view="ghas">GHAS<span class="count" title="1 open action">1</span></a>'));
         assert.ok(nav.includes('data-view="signals">Signals</a>'));
         const withSignals = renderNav({ ...model, signals: [{ id: "s-1" }, null, "x", { id: "s-2" }] }, { view: "overview" });
-        assert.ok(withSignals.includes('data-view="signals">Signals<span class="count">2</span></a>'), "badge counts only the signals the tab lists");
+        assert.ok(withSignals.includes('data-view="signals">Signals</a>'), "unverified signals do not count toward the badge");
         assert.ok(renderNav({ ...model, signals: [null, 7] }, { view: "overview" }).includes('data-view="signals">Signals</a>'));
     });
 
