@@ -215,9 +215,10 @@ export function createRefreshCoordinator({ modelPath, launch, now = Date.now, ti
         if (["launching", "requested"].includes(status().phase)) {
             throw new CanvasRequestError("refresh_in_progress", 409, "A refresh is already running. Check the automation run in Copilot.");
         }
-        baseline = await revisionOf(modelPath);
+        // Claim the refresh before any await so an overlapping request sees it and gets a 409.
         state = { phase: "launching", requestedAt: now(), completedAt: null, message: "Asking Copilot to run the refresh automation…" };
         try {
+            baseline = await revisionOf(modelPath);
             await launch();
             state = { ...state, phase: "requested",
                 message: "Refresh requested. The automation collects every source and rebuilds the snapshot; this usually takes 10–30 minutes." };

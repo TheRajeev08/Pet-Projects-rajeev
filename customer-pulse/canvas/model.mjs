@@ -64,11 +64,11 @@ export function validateModel(model) {
         if (!isObject(action) || typeof action.id !== "string" || !action.id) throw new Error(`action ${index} has no id`);
         if (actions.has(action.id)) throw new Error(`action ${action.id} appears twice`);
         actions.add(action.id);
-        if (!(action.priority in RANK)) throw new Error(`action ${action.id} has unknown priority ${JSON.stringify(action.priority)}`);
+        if (!Object.hasOwn(RANK, action.priority)) throw new Error(`action ${action.id} has unknown priority ${JSON.stringify(action.priority)}`);
     });
     model.events.forEach((event, index) => {
         if (!isObject(event) || typeof event.id !== "string") throw new Error(`event ${index} has no id`);
-        if (!(event.priority in RANK)) throw new Error(`event ${event.id} has unknown priority ${JSON.stringify(event.priority)}`);
+        if (!Object.hasOwn(RANK, event.priority)) throw new Error(`event ${event.id} has unknown priority ${JSON.stringify(event.priority)}`);
         if (!isDay(event.date)) throw new Error(`event ${event.id} has an invalid date`);
     });
     return model;

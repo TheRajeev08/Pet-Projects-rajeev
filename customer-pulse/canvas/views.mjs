@@ -156,7 +156,10 @@ function tabCount(model, view) {
         const high = open.filter(action => action.priority === "High").length;
         return `<span class="count${high ? " high" : ""}" title="${open.length} open ${plural(open.length, "action")}${high ? `, ${high} High` : ""}">${open.length}</span>`;
     }
-    if (view === "signals" && model.signals?.length) return `<span class="count">${model.signals.length}</span>`;
+    if (view === "signals") {
+        const shown = Array.isArray(model.signals) ? model.signals.filter(isObject).length : 0;
+        return shown ? `<span class="count">${shown}</span>` : "";
+    }
     return "";
 }
 
