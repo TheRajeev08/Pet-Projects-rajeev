@@ -4,7 +4,7 @@ import { test } from "node:test";
 import vm from "node:vm";
 import { copilotFilterCounts, copilotLicenses, copilotRowsFor, copilotTotals, summarize } from "../model.mjs";
 import { renderDrawer, renderView } from "../views.mjs";
-import { syntheticAccount, syntheticModel } from "./helpers.mjs";
+import { syntheticAccount, syntheticAction, syntheticEvent, syntheticModel } from "./helpers.mjs";
 
 function fixture() {
     const model = syntheticModel();
@@ -165,4 +165,81 @@ test("embedded route notification runs even when no search field has focus", () 
             notifyParentRoute: () => { notified++; }, chartId: 0 });
     assert.equal(app.innerHTML, "Synthetic desk");
     assert.equal(notified, 1);
+});
+
+test("narrow customer cells retain priority, action count and dated renewal without duplicate visible copies", () => {
+    const model = fixture();
+    model.accounts[0].renewal = "2030-02-01";
+    model.actions = [syntheticAction("synthetic-risk", model.accounts[0], "ghcp", "risk", "High")];
+    const html = renderView(model, { view: "copilot" });
+    assert.match(html, /<span class="compact-attention"><span class="tag tag-high">High<\/span><span>1 action<\/span><\/span>/);
+    assert.match(html, /<span class="compact-renewal renewing-soon"><span class="signal-unit">Renews Feb 1, 2030<\/span> <span class="signal-unit">\(30 days\)<\/span><\/span>/);
+    assert.match(html, /class="col-renewal"/);
+    assert.match(html, /class="col-attention"/);
+    const css = readFileSync(new URL("../style.css", import.meta.url), "utf8");
+    assert.match(css, /\.copilot-customers \.compact-signals \{ display: none; \}/);
+    assert.match(css, /@container \(max-width: 950px\) \{\s*\.copilot-customers \.col-renewal, \.copilot-customers \.col-attention \{ display: none; \}\s*\.copilot-customers \.compact-signals \{ display: flex;/);
+    assert.doesNotMatch(css.slice(css.indexOf("@container (max-width: 560px)")), /compact-signals.*display:\s*none/);
+});
+
+test("Portfolio wrapping units cover long names, reconciliation, action-only, notify-only and renewal-only rows", () => {
+    const model = fixture();
+    model.accounts[0].name = "Synthetic International Industrial Research and Development Company";
+    model.accounts[0].products.ghcp.business = 123;
+    model.accounts[0].products.ghcp.enterprise = 456;
+    model.accounts[1].products.ghcp.assigned = 0;
+    model.actions = [1, 2, 3].map(n => syntheticAction(`risk-${n}`, model.accounts[0], "ghcp", "risk", "High"));
+    model.events = [syntheticEvent("notify-only", model.accounts[1], "ghcp", "Notify", "2030-01-01", 1)];
+    model.accounts[2].renewal = "2030-02-01";
+    model.accounts[2].renewing_in_days = 5;
+    const html = renderView(model, { view: "copilot", copilotLicenses: copilotLicenses(model, dashboard) });
+    assert.match(html, /Synthetic International Industrial Research and Development Company/);
+    assert.match(html, /<span class="license-plan">Business 123<\/span><span class="plan-separator" aria-hidden="true"> · <\/span><span class="license-plan">Enterprise 456<\/span>/);
+    assert.match(html, /<span class="compact-signals"><span class="compact-attention"><span class="tag tag-high">High<\/span><span>3 actions<\/span><\/span><\/span>/);
+    assert.match(html, /Reconciliation only/);
+    assert.match(html, /<span class="compact-signals"><span class="compact-attention"><span class="tag tag-notify">Notify<\/span><\/span><\/span>/);
+    assert.match(html, /<span class="compact-signals"><span class="compact-renewal renewing-soon">/);
+    assert.match(html, /<span class="signal-unit">\(5 days\)<\/span>/);
+    const css = readFileSync(new URL("../style.css", import.meta.url), "utf8");
+    assert.match(css, /\.license-plan, \.copilot-customers \.signal-unit \{[^}]*white-space: nowrap; overflow-wrap: normal;/);
+    assert.match(css, /\.compact-attention \{[^}]*white-space: nowrap;/);
+    assert.match(css, /\.compact-renewal \{[^}]*flex-basis: 100%;/);
+    assert.doesNotMatch(css, /compact-signals > :last-child/);
+    const narrow = css.slice(css.indexOf("@container (max-width: 950px)"));
+    assert.match(narrow, /\.license-plan \{ display: block; \}/);
+    assert.match(narrow, /\.plan-separator \{ display: none; \}/);
+});
+
+test("all plot consumers receive container-independent line, grid and label styling", () => {
+    const source = readFileSync(new URL("../copilot/app.js", import.meta.url), "utf8");
+    const context = vm.createContext({
+        chartId: 0, isNumber: Number.isFinite, H: value => String(value), formatAxis: value => String(value),
+    });
+    const html = vm.runInContext(source.slice(source.indexOf("function plot("), source.indexOf("function chartPanel("))
+        + '\nplot([{ name: "Synthetic trend", values: [9, 3, 7] }]);', context);
+    assert.match(html, /^<svg class="plot"/);
+    assert.match(html, /<polyline class="line"/);
+    const css = readFileSync(new URL("../copilot/style.css", import.meta.url), "utf8");
+    assert.match(css, /(?:^|\n)svg\.plot \.line \{[^}]*fill: none;/);
+    assert.match(css, /(?:^|\n)svg\.plot text \{ fill: var\(--muted\);/);
+    assert.match(css, /(?:^|\n)svg\.plot \.grid \{ stroke: var\(--line\);/);
+});
+
+test("desk adoption strip clarifies dashboard readings while retaining cutoff guidance", () => {
+    const source = readFileSync(new URL("../copilot/app.js", import.meta.url), "utf8");
+    const context = vm.createContext({
+        state: { model: { accounts: [] } }, adoptionTotals: () => Object.fromEntries(["assigned", "active_28d", "engaged_1d28"]
+            .map(key => [key, { value: null, n: 0, of: 0 }])),
+        hasSources: () => true, metricName: (_, label) => label, num: value => value ?? "—",
+        dataValue: () => null,
+    });
+    vm.runInContext(source.slice(source.indexOf("function adoptionFunnel("), source.indexOf("function forecastWhitespace(")), context);
+    const html = vm.runInContext("adoptionFunnel()", context);
+    assert.match(html, /class="fact-strip fact-strip-three adoption-funnel"/);
+    const css = readFileSync(new URL("../copilot/style.css", import.meta.url), "utf8");
+    assert.match(css, /\.fact-strip\.fact-strip-three \{ grid-template-columns: repeat\(3, minmax\(0, 1fr\)\); \}/);
+    assert.match(css, /@media \(max-width: 740px\)[\s\S]*\.fact-strip \{ grid-template-columns: repeat\(2, minmax\(0, 1fr\)\); \}/);
+    assert.match(html, /Dashboard source\. Portfolio uses Pulse's dated license figures, so Licenses and Assigned can differ for a few accounts\./);
+    assert.match(html, /Source cutoffs differ; a dash means not reported\./);
+    assert.doesNotMatch(vm.runInContext("adoptionFunnel({ assigned: 4 })", context), /Dashboard source/);
 });

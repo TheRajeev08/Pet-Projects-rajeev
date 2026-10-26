@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import vm from "node:vm";
 import { mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -50,6 +51,33 @@ function fixture(accounts = []) {
         missing_sources: [], asof: { "02": "2030-01-06", "03": "2030-01-06", "06": "2030-01-04" }, changes: [],
     };
 }
+
+test("three-cell strips share full-width responsive layout without orphan cells or touching strips", async () => {
+    const source = await readFile(new URL("../app.js", import.meta.url), "utf8");
+    const css = await readFile(new URL("../style.css", import.meta.url), "utf8");
+    const context = vm.createContext({
+        state: { model: { portfolio: {} } }, hasSources: () => true,
+        adoptionTotals: () => Object.fromEntries(["assigned", "active_28d", "engaged_1d28"]
+            .map(key => [key, { value: 1234, n: 1234, of: 12345 }])),
+        metricName: (_, text) => text, num: value => String(value), money: value => String(value),
+        H: value => String(value), sourceNote: () => "", detailTable: () => "",
+    });
+    vm.runInContext(source.slice(source.indexOf("function adoptionFunnel("), source.indexOf("function forecastWhitespace(")), context);
+    vm.runInContext(source.slice(source.indexOf("function portfolioForecast("), source.indexOf("function empty(")), context);
+    for (const fn of ["adoptionFunnel", "portfolioForecast"]) {
+        const html = vm.runInContext(`${fn}()`, context);
+        assert.match(html, /class="fact-strip fact-strip-three/);
+        assert.equal((html.match(/class="fact"/g) || []).length, 3);
+    }
+    assert.match(css, /\.fact-strip\.fact-strip-three \{ grid-template-columns: repeat\(3, minmax\(0, 1fr\)\); \}/);
+    assert.match(css, /\.fact-strip \+ \.fact-strip \{ margin-top: 14px; \}/);
+    assert.match(css, /\.details-grid \+ h3 \{ margin-top: 24px; \}/);
+    assert.match(css, /\.fact:last-child:nth-child\(odd\) \{ grid-column: 1 \/ -1; \}/);
+    assert.match(css, /\.fact-strip-three > \.fact \{ border-bottom: 0; border-right: 1px solid var\(--line\); grid-column: auto; \}/);
+    assert.match(css, /\.fact-strip-three > \.fact:last-child \{ border-right: 0; grid-column: auto; \}/);
+    assert.match(css, /@media \(max-width: 540px\) \{\s*\.fact-strip\.fact-strip-three \{ grid-template-columns: minmax\(0, 1fr\); \}/);
+    assert.match(css, /\.fact-strip-three > \.fact:last-child \{ border-bottom: 0; \}/);
+});
 
 test("adoption funnel sums account values instead of reading weekly portfolio arrays", () => {
     const model = fixture([
