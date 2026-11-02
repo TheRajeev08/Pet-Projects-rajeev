@@ -171,6 +171,50 @@ export function eventsFor(model, { family = null, accountId = null, recentOnly =
             || Math.abs(b.delta || 0) - Math.abs(a.delta || 0));
 }
 
+const EVENT_MEASURES = {
+    contracted: ["seats under contract", "seat"],
+    metered: ["metered users", "user"],
+    ubu: ["billable users", "user"],
+    committers: ["active committers", "committer"],
+    assigned: ["assigned seats", "seat"],
+};
+const eventNumber = value => Math.round(value).toLocaleString("en-US");
+
+/** Presentation only: structured events override saved copy, without reclassifying changes or missing reporting. */
+export function formatSeatEvent(event) {
+    const fallback = String(event.text || "");
+    const measure = Object.hasOwn(EVENT_MEASURES, event.measure) ? EVENT_MEASURES[event.measure] : null;
+    if (!measure || typeof event.family !== "string" || !event.family) return fallback;
+    const family = FAMILY_LABELS[event.family] || event.family;
+    const product = event.product_type ? TYPE_LABELS[event.product_type] || event.product_type : null;
+    const what = product ? `${product} ${measure[0]}` : `${family} ${measure[0]}`;
+    const a = event.from;
+    const b = event.to;
+    let text;
+    if (["added", "dropped", "new_product", "product_to_zero", "trend_up", "trend_down"].includes(event.kind)) {
+        if (!isNumber(a) || !isNumber(b) || !isNumber(event.delta)) return fallback;
+        const n = Math.abs(event.delta);
+        const units = `${measure[1]}${n === 1 ? "" : "s"}`;
+        const movement = event.delta === 0 ? "remained unchanged"
+            : `${event.delta > 0 ? "increased" : "decreased"} by ${eventNumber(n)} ${units}`;
+        const trend = ["trend_up", "trend_down"].includes(event.kind) ? " over 7+ days" : "";
+        text = `${what} ${movement}${trend} (from ${eventNumber(a)} to ${eventNumber(b)})`;
+    } else if (event.kind === "stopped" && isNumber(a) && b == null) {
+        text = `${what} stopped reporting (last ${eventNumber(a)})`;
+    } else if (event.kind === "started" && a == null && isNumber(b)) {
+        text = `${what} started reporting at ${eventNumber(b)}`;
+    } else if (event.kind === "resumed" && isNumber(a) && isNumber(b)) {
+        text = `${what} reporting again (from ${eventNumber(a)} to ${eventNumber(b)})`;
+    } else {
+        // Migration details and unknown/incomplete events retain the producer's wording verbatim.
+        return fallback;
+    }
+    const suffix = isDay(event.since) ? ` since ${event.since}` : "";
+    const trend = ["trend_up", "trend_down"].includes(event.kind);
+    if (!trend && suffix && (event.gap_days > 1 || fallback.endsWith(suffix))) text += suffix;
+    return text;
+}
+
 /** Normalizes the engine's two series shapes ({start, values} daily, or sparse {points}) to [day, value] pairs. */
 export function seriesPoints(series) {
     if (!isObject(series)) return [];
@@ -406,7 +450,7 @@ export function summarize(model, { limit = 8 } = {}) {
         })),
         recent_changes: eventsFor(model, { recentOnly: true, includeReverted: false, minPriority: "Notify" }).slice(0, limit).map(event => ({
             date: event.date, priority: event.priority, account: event.account_name ?? event.account_id,
-            product: FAMILY_LABELS[event.family] || event.family, change: event.text, new: Boolean(event.new),
+            product: FAMILY_LABELS[event.family] || event.family, change: formatSeatEvent(event), new: Boolean(event.new),
         })),
         sources_needing_attention: model.sources.filter(source => source.state !== "ok").map(source => ({
             source: source.label, state: SOURCE_STATES[source.state] || source.state, as_of: source.as_of ?? null,
