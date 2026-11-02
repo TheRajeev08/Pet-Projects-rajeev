@@ -3,15 +3,27 @@ import importlib.util
 import os
 import sys
 import unittest
+from unittest.mock import patch
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 spec = importlib.util.spec_from_file_location("dashboard_builder", os.path.join(ROOT, "build_dashboard.py"))
 builder = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(builder)
+import refresh
 
 
 class ForecastWhitespaceTests(unittest.TestCase):
+    def test_whitespace_query_uses_monthly_table(self):
+        with patch.object(refresh, "load_config", return_value={
+            "owner_sfdc_id": "ownerIdAAAAAAAA", "owner_name": "Synthetic Owner",
+        }):
+            query = next(q for q in refresh.queries() if q["qid"] == "17")
+        self.assertEqual(query["db"], "rev_source")
+        self.assertEqual(query["query"].count("salesforce_parent_account_monthly_tam_som_fact"), 2)
+        self.assertIn('sales_owner_id == "ownerIdAAAAAAAA"', query["query"])
+        self.assertNotIn("{{", query["query"])
+
     def test_missing_rows_are_unknown(self):
         account = {}
         builder.add_forecast_whitespace(account, {}, {})

@@ -4,6 +4,31 @@ Follow these steps in order. The session needs the **revenue-mcp-server** and **
 
 Config, data and output live in `~/CustomerPulse/`, outside the repo. **Never copy them into the repo or commit them.** They contain customer data and the repo is public. Don't modify repository files during a refresh.
 
+## Extraction failures and data-only repairs
+
+- Check the source checkout before retrying. `_owned.kql` is inserted into every
+  p02-p06 query; an unresolved table there breaks all five feeds. The GHE metered
+  source is `rev_source.salesforce_account_daily_ghe_metered_users_fact`, including
+  the two direct references in p03.
+- A missing-table semantic error is not transient. Verify the catalog and schema
+  before a code repair; do not infer an authentication failure solely from a later
+  access-denied retry. If `query_kusto` is unavailable, report extraction as blocked.
+  Salesforce book collection cannot replace the missing product facts.
+- After a query repair, use step 1 to register a new run, execute its rendered
+  queries, and collect through step 3. Do not ingest earlier validation calls or
+  change their run ids, collection timestamps or source dates.
+- For an authorized data-only repair, run step 5 after collection with
+  `python3 customer-pulse/pulse.py build --no-prune`. Skip signals, digest and email
+  steps. Leave done/dismissed and notification states unchanged.
+- Inspect `pulse.py status` after building. A new build timestamp is not evidence
+  of new extraction: report each missing query and its carried-forward `raw_date`
+  and `as_of`. A build using old product facts is not a successful data repair.
+- A fix in an isolated worktree does not update future scheduled checkouts.
+  Report whether the recurring source contains the fix; integration requires
+  separate authorization.
+
+## Daily refresh
+
 1. **Start the run**
    ```bash
    python3 customer-pulse/pulse.py render --new-run
