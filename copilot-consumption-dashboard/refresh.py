@@ -81,58 +81,83 @@ def iter_events(session):
                 continue
 
 
+def tool_results(events):
+    """Normalize successful execution pairs and post-tool hooks from one session."""
+    starts = {}
+    for e in events:
+        d = e.get("data") or {}
+        if e.get("type") == "tool.execution_start":
+            starts[d.get("toolCallId")] = d
+            continue
+        if e.get("type") == "tool.execution_complete":
+            s = starts.pop(d.get("toolCallId"), None)
+            if not s or not d.get("success"):
+                continue
+            tool = s.get("mcpToolName") or s.get("toolName", "")
+            args_in = s.get("arguments") or {}
+            res = d.get("result") or {}
+            text = res.get("content")
+        elif e.get("type") == "hook.start" and d.get("hookType") == "postToolUse":
+            inp = d.get("input") or {}
+            res = inp.get("toolResult") or {}
+            if res.get("resultType") != "success":
+                continue
+            tool = inp.get("toolName") or ""
+            args_in = inp.get("toolArgs") or {}
+            text = res.get("textResultForLlm")
+        else:
+            continue
+        if isinstance(args_in, str):
+            try:
+                args_in = json.loads(args_in)
+            except json.JSONDecodeError:
+                continue
+        if not isinstance(args_in, dict):
+            continue
+        payload = res.get("structuredContent")
+        if payload is None:
+            try:
+                payload = json.loads(text)
+            except (json.JSONDecodeError, TypeError):
+                continue
+        if not isinstance(payload, dict) or payload.get("isError"):
+            continue
+        yield e.get("timestamp"), tool, args_in, payload
+
+
 def cmd_collect(args):
     qs = queries()
     by_kql = {q["qid"]: q for q in qs if q["tool"] == "query_kusto"}
     by_soql = {norm(q["query"]): q for q in qs if q["tool"] == "query_salesforce"}
-    starts, found, impact, settings = {}, {}, {}, {}
-    for e in iter_events(args.session):
-        d = e.get("data") or {}
-        if e.get("type") == "tool.execution_start":
-            starts[d.get("toolCallId")] = d
-        elif e.get("type") == "tool.execution_complete" and d.get("success"):
-            s = starts.get(d.get("toolCallId")) or {}
-            tool = s.get("mcpToolName") or s.get("toolName", "")
-            args_in = s.get("arguments") or {}
-            if isinstance(args_in, str):
-                try:
-                    args_in = json.loads(args_in)
-                except json.JSONDecodeError:
-                    args_in = {}
-            if not isinstance(args_in, dict):
-                args_in = {}
-            qtext = args_in.get("query", "")
-            # Copilot Impact and feature settings are fetched per enterprise slug, not by query text.
-            if tool.endswith("get_copilot_impact") or tool.endswith("get_copilot_feature_settings"):
-                slug = args_in.get("slug")
-                if slug:
-                    payload = (d.get("result") or {}).get("structuredContent")
-                    if payload is None:
-                        try:
-                            payload = json.loads((d.get("result") or {}).get("content", ""))
-                        except (json.JSONDecodeError, TypeError):
-                            continue
-                    bucket = settings if tool.endswith("feature_settings") else impact
-                    bucket[slug] = {"collected_from": e.get("timestamp"), "slug": slug,
-                                    "namespace": args_in.get("namespace"), "result": payload}
+    found, impact, settings = {}, {}, {}
+    for timestamp, tool, args_in, result in tool_results(iter_events(args.session)):
+        qtext = args_in.get("query", "")
+        # Copilot Impact and feature settings are fetched per enterprise slug, not by query text.
+        if tool.endswith("get_copilot_impact") or tool.endswith("get_copilot_feature_settings"):
+            slug = args_in.get("slug")
+            if slug:
+                bucket = settings if tool.endswith("feature_settings") else impact
+                bucket[slug] = {"collected_from": timestamp, "slug": slug,
+                                "namespace": args_in.get("namespace"), "result": result}
+            continue
+        q = None
+        if tool.endswith("query_kusto"):
+            m = re.match(r"\s*// qid:(\d+)", qtext)
+            q = by_kql.get(m.group(1)) if m else None
+            if q and (norm(qtext) != norm(q["query"]) or args_in.get("database") != q["db"]):
+                q = None  # stale/edited query text — ignore
+        elif tool.endswith("query_salesforce"):
+            q = by_soql.get(norm(qtext))
+        if not q:
+            continue
+        if q["tool"] == "query_kusto":
+            if not isinstance(result.get("columns"), list) or not isinstance(result.get("rows"), list):
+                print(f"WARNING {q['qid']}: invalid Kusto result; not collected")
                 continue
-            q = None
-            if tool.endswith("query_kusto"):
-                m = re.match(r"\s*// qid:(\d+)", qtext)
-                q = by_kql.get(m.group(1)) if m else None
-                if q and norm(qtext) != norm(q["query"]):
-                    q = None  # stale/edited query text — ignore
-            elif tool.endswith("query_salesforce"):
-                q = by_soql.get(norm(qtext))
-            if not q:
+            if len(result["rows"]) >= 1000:
+                print(f"WARNING {q['qid']}: hit 1000-row cap; not collected")
                 continue
-            result = (d.get("result") or {}).get("structuredContent")
-            if result is None:
-                try:
-                    result = json.loads((d.get("result") or {}).get("content", ""))
-                except (json.JSONDecodeError, TypeError):
-                    continue
-            found[q["qid"]] = {"collected_from": e.get("timestamp"), "query_file": q["name"], "result": result}
+        found[q["qid"]] = {"collected_from": timestamp, "query_file": q["name"], "result": result}
 
     missing = [q["qid"] for q in qs if q["qid"] not in found]
     day = args.date or dt.date.today().isoformat()
