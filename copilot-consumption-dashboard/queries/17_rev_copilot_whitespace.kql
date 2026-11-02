@@ -1,6 +1,6 @@
 // qid:17 db:rev_source — Copilot whitespace model per account (latest month): potential seats, SOM, recommended play, plus GHE/GHAS potential
-let mo = toscalar(salesforce_parent_account_tam_som_fact | where measurement_month > ago(120d) | summarize max(measurement_month));
-salesforce_parent_account_tam_som_fact
+let mo = toscalar(salesforce_parent_account_monthly_tam_som_fact | where measurement_month > ago(120d) | summarize max(measurement_month));
+salesforce_parent_account_monthly_tam_som_fact
 | where sales_owner_id == "{{OWNER_ID}}" and measurement_month == mo
 | project id = salesforce_parent_account_id, headcount = round(total_workforce_headcount, 0), seat_estimate_source,
     potential_seats = round(copilot_potential_seats, 0), assigned_seats, tam_annual = round(copilot_tam_dollars_annualized, 0), som_annual = round(copilot_som_dollars_annualized, 0),

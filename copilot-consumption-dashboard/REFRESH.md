@@ -4,6 +4,26 @@ Follow these steps exactly. The session running them must have the **revenue-mcp
 
 Config, data and output live in `~/CopilotConsumptionDashboard/`, outside the repo. **Never copy them into the repo or commit them.** They contain customer data and the repo is public. Don't modify any repository files during a refresh.
 
+## Extraction failures and data-only repairs
+
+- Query 17 uses `rev_source.salesforce_parent_account_monthly_tam_som_fact`.
+  An unresolved-table semantic error needs catalog/schema verification and a code
+  repair, not repeated unchanged queries. A later access-denied retry does not
+  establish that authentication caused the original failure.
+- If `query_kusto` is unavailable, report the affected extraction as blocked.
+  Do not substitute another dataset or relabel historical results as newly read.
+- For an authorized data-only repair, render and execute the affected queries
+  verbatim, collect from the same session through step 3, then build through
+  step 5. Existing collected results remain available; do not fetch unrelated
+  signals, reinstall the skill, or send email.
+- Report the repaired query's collection timestamp and actual source date
+  separately from the dashboard build time, and identify any carried-forward
+  results. A new HTML timestamp alone does not demonstrate fresh extraction.
+- An isolated worktree fix does not update the recurring source checkout.
+  Report that integration boundary without changing automation.
+
+## Daily refresh
+
 1. **Render the queries**
    ```bash
    python3 refresh.py render

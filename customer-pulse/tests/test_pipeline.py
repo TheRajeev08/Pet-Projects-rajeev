@@ -35,6 +35,15 @@ class QueriesTest(fx.HomeCase):
         self.assertIn("ownerIdAAAAAAAA", qs[0]["query"])
         self.assertEqual(qs[0]["tool"], "query_salesforce")
 
+    def test_daily_metered_table_in_owned_queries(self):
+        qs = queries.load(self.cfg(), "abcd1234")
+        table = "salesforce_account_daily_ghe_metered_users_fact"
+        for q in qs:
+            if q["tool"] == "query_kusto":
+                with self.subTest(qid=q["qid"]):
+                    self.assertIn(f'database("rev_source").{table}', q["query"])
+                    self.assertEqual(q["query"].count(table), 3 if q["qid"] == "p03" else 1)
+
     def test_config_validation(self):
         bad = dict(self.cfg(), owner_name='x"; drop')
         with self.assertRaises(SystemExit):
