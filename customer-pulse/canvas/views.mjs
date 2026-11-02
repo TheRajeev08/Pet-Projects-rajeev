@@ -1,7 +1,7 @@
 // Pure HTML-string rendering for the canvas. Every model value passes through esc() before reaching markup.
 import {
     FAMILY_LABELS, PRIORITIES, SOURCE_STATES, TYPE_LABELS, VIEWS, accountIndex, actionsFor, attentionIndex, dayAge,
-    eventsFor, hasProduct, isClosed, isDay, isNumber, isObject, priorityRank, productSeats, seriesChange, seriesPoints,
+    eventsFor, formatSeatEvent, hasProduct, isClosed, isDay, isNumber, isObject, priorityRank, productSeats, seriesChange, seriesPoints,
     whitespace, SIGNAL_PRIORITIES, SIGNAL_SOURCES, isVerifiedSignal, signalsFor,
     copilotLicenses, copilotRowTotals, copilotRowsFor, copilotFilterCounts,
 } from "./model.mjs";
@@ -271,7 +271,7 @@ function actionsPanel(model, ui, { family = null, key, limit = 8, title = "Needs
 
 /** The model appends " since <day>" after a reporting gap; show that as a date range, as the email does. */
 function changeWhen(event) {
-    const text = String(event.text || "");
+    const text = formatSeatEvent(event);
     const suffix = isDay(event.since) ? ` since ${event.since}` : "";
     if (suffix && text.endsWith(suffix)) {
         return { text: text.slice(0, -suffix.length), when: `${fmtDay(event.since)} – ${fmtDay(event.date)}`,

@@ -4,3 +4,4 @@ import "./server.test.mjs";
 import "./copilot-routing.test.mjs";
 import "./copilot-licenses.test.mjs";
 import "./signals.test.mjs";
+import "./seat-wording.test.mjs";
