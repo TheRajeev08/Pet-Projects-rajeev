@@ -43,6 +43,9 @@ Config, data and output live in `~/CopilotConsumptionDashboard/`, outside the re
    Exit code 2 means some queries weren't found (it lists the IDs). Re-run just those queries verbatim, then run `collect` again.
 
    `collect` reads only this session's log (from `COPILOT_AGENT_SESSION_ID`) and never falls back to other sessions. When running it outside the session that ran the queries, pass `--session <id>`.
+   It accepts successful execution-pair and post-tool-hook events, preserving the
+   tool timestamp and exact query match. Malformed or capped Kusto results are
+   reported and not collected.
 
 4. **Fetch Copilot Impact and feature settings per enterprise**
    ```bash
