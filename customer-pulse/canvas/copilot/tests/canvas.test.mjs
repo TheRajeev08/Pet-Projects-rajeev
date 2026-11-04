@@ -10,7 +10,7 @@ import {
 } from "../insights.mjs";
 import {
     adoptionFacts, enablementKnown, enterpriseRows, impactState, multipliers, phases,
-    portfolioImpact, roi, surfaceAdoption, surfaceRows, totalEngagedUsers,
+    enterpriseModels, portfolioModels, portfolioImpact, roi, surfaceAdoption, surfaceRows, totalEngagedUsers,
 } from "../impact.mjs";
 import { CanvasRequestError, createRefreshCoordinator, readCopilotModel as readModel, startCanvasServer, pulsePaths } from "../../server.mjs";
 
@@ -453,6 +453,131 @@ function enterprise(slug, extra = {}, match = { confidence: "none", candidates: 
         ...extra,
     };
 }
+
+function modelUsage(slices = [], extra = {}) {
+    return {
+        asof: "2030-01-07T00:00:00Z", collected_from: "2030-01-08T03:04:05Z",
+        status: slices.length ? "observed" : "no_usage", slices, ...extra,
+    };
+}
+
+function modelSlice(extra = {}) {
+    return { stamp: "stamp-a", key: "key-a", model: "New <Model>", integration: "chat",
+        l7: 2, p7: 3, l28: 10, aiu7: 20, aiup7: 30, aiu28: 100, ...extra };
+}
+
+test("enterprise model mix sums stamp/integration slices and retains unattributed and zero allocations", () => {
+    const item = enterprise("models", { model_usage: modelUsage([
+        modelSlice(), modelSlice({ stamp: "stamp-b", integration: "agent" }),
+        modelSlice({ key: "unknown", model: null, l28: 5 }),
+        modelSlice({ key: "zero", model: "Zero", l7: 0, p7: 0, l28: 0, aiu7: 0, aiup7: 0, aiu28: 0 }),
+    ]) });
+    const data = enterpriseModels(item, "2030-01-08");
+    assert.equal(data.totals.l28, 25);
+    assert.equal(data.totals.aiu28, 300);
+    assert.equal(data.rows[0].model, "New <Model>");
+    assert.deepEqual(data.rows[0].integrations, ["agent", "chat"]);
+    assert.equal(data.rows[0].share, .8);
+    assert.equal(data.rows.find(row => row.unattributed).share, .2);
+    assert.equal(data.rows.find(row => row.model === "Zero").share, 0);
+    assert.equal(data.rows.reduce((sum, row) => sum + row.share, 0), 1);
+    assert.equal("users" in data.rows[0], false);
+});
+
+test("model states distinguish old snapshots, empty/zero windows, stale, future and unavailable data", () => {
+    assert.equal(enterpriseModels(enterprise("old")).state, "missing");
+    const empty = enterpriseModels({ model_usage: modelUsage() }, "2030-01-08");
+    assert.equal(empty.state, "no_usage");
+    assert.equal(empty.totals.l28, 0);
+    assert.equal(empty.stale, false);
+    const zero = enterpriseModels({ model_usage: modelUsage([modelSlice({ l28: 0 })]) }, "2030-01-08");
+    assert.equal(zero.state, "observed");
+    assert.equal(zero.rows[0].share, null);
+    const stale = enterpriseModels({ model_usage: modelUsage([], { carried_from: "2030-01-08" }) }, "2030-01-11");
+    assert.equal(stale.stale, true);
+    assert.equal(stale.carried, "2030-01-08");
+    assert.equal(stale.collected, "2030-01-08T03:04:05Z");
+    assert.equal(enterpriseModels({ model_usage: modelUsage() }, "2030-01-06").future, true);
+    for (const usage of [modelUsage([], { asof: null }), modelUsage([], { asof: 42 }), modelUsage([], { status: "unavailable" }),
+        modelUsage([modelSlice({ aiu28: null })])]) {
+        assert.equal(enterpriseModels({ model_usage: usage }, "2030-01-08").state, "unavailable");
+    }
+    const corrected = enterpriseModels({ model_usage: modelUsage([modelSlice(),
+        modelSlice({ model: "Adjustment", l28: -1 })]) }, "2030-01-08");
+    assert.ok(corrected.rows.every(row => row.share === null), "signed corrections have no misleading mix");
+});
+
+test("portfolio models reconcile common windows and count enterprises once per model, not integrations", () => {
+    const model = { enterprises: [
+        enterprise("one", { model_usage: modelUsage([modelSlice(), modelSlice({ stamp: "stamp-b" })]) }),
+        enterprise("two", { model_usage: modelUsage([modelSlice()]) }),
+        enterprise("zero", { model_usage: modelUsage([]) }),
+        enterprise("missing", { adoption: { model_count: 77 }, models: [{ model: "Wrong account model", l28: 9999 }] }),
+        enterprise("unavailable", { model_usage: modelUsage([], { asof: null }) }),
+        enterprise("different", { model_usage: modelUsage([modelSlice()], { asof: "2030-01-06", carried_from: "2030-01-07" }) }),
+    ] };
+    const p = portfolioModels(model, "2030-01-08");
+    assert.equal(p.total, 6);
+    assert.equal(p.reporting, 3);
+    assert.equal(p.missing, 1);
+    assert.equal(p.unavailable, 1);
+    assert.equal(p.differentCutoff, 1);
+    assert.equal(p.rows.length, 1);
+    assert.equal(p.rows[0].usingEnterprises, 2);
+    assert.equal(p.totals.l28, 30);
+    assert.equal(p.totals.aiu28, 300);
+    assert.equal(p.rows[0].share, 1);
+    assert.equal(portfolioModels({ enterprises: [enterprise("old")] }).totals, null);
+});
+
+test("model panels render in overview and no-ROI detail, escape labels and stack at narrow embedded widths", async () => {
+    const source = await readFile(new URL("../app.js", import.meta.url), "utf8");
+    const css = await readFile(new URL("../style.css", import.meta.url), "utf8");
+    const item = enterprise("synthetic", { impact: { noDataReason: "feature_disabled" },
+        model_usage: modelUsage([modelSlice()]) });
+    const model = { enterprises: [item] };
+    const context = vm.createContext({
+        state: { model, selectedSlug: "synthetic", impactQ: "" },
+        enterpriseModels: e => enterpriseModels(e, "2030-01-08"),
+        portfolioModels: m => portfolioModels(m, "2030-01-08"),
+        impactState, phases, roi, multipliers, totalEngagedUsers, adoptionFacts, enterpriseRows,
+        portfolioImpact, surfaceAdoption, impactOf: e => e.impact?.impact, productivity: () => null,
+        engagementTrend: () => [], dates: value => value, label: value => value || "&mdash;",
+        isNumber: value => typeof value === "number" && Number.isFinite(value),
+        surfacePanel: () => "SURFACE PANEL", matchCell: () => "", phaseBar: () => "",
+        H: value => String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll('"', "&quot;"),
+        num: value => value === null ? "&mdash;" : String(value),
+        money: value => value === null ? "&mdash;" : `$${value}`,
+        pct: value => value === null ? "&mdash;" : `${(value * 100).toFixed(1)}%`,
+        empty: (title, text) => `<strong>${title}</strong><p>${text}</p>`,
+    });
+    vm.runInContext(source.slice(source.indexOf("function modelPanel("), source.indexOf("function renderChanges(")), context);
+    vm.runInContext(source.slice(source.indexOf("function detailTable("), source.indexOf("function accountLink(")), context);
+    const detail = vm.runInContext("renderEnterprise()", context);
+    assert.match(detail, /id="enterprise-models"/);
+    assert.match(detail, /href="#enterprise-models"/);
+    assert.match(detail, /Models used/);
+    assert.match(detail, /New &lt;Model>/);
+    assert.doesNotMatch(detail, /New <Model>/);
+    assert.match(detail, /collected 2030-01-08T03:04:05Z/);
+    assert.match(detail, /data-label="AI units 28d"/);
+    item.impact = { impact: {} };
+    assert.match(vm.runInContext("renderEnterprise()", context), /id="enterprise-models"/);
+    context.state.selectedSlug = null;
+    const overview = vm.runInContext("renderImpact()", context);
+    assert.match(overview, /Models used/);
+    assert.match(overview, /1 of 1 enterprises covered/);
+    assert.match(overview, /Using enterprises \(28d\)/);
+    item.model_usage = null;
+    assert.match(vm.runInContext("modelPanel()", context), /Model usage unavailable/);
+    item.model_usage = modelUsage([modelSlice({ l28: 0 })]);
+    assert.match(vm.runInContext("modelPanel()", context), /&mdash;/);
+    assert.doesNotMatch(vm.runInContext("modelPanel()", context), /NaN|Infinity/);
+    assert.match(css, /\.model-usage table \{ table-layout: fixed; \}/);
+    assert.match(css, /@media \(max-width: 740px\) \{\s*\.model-usage table, \.model-usage tbody \{ display: block; \}/);
+    assert.match(css, /\.model-usage td:not\(:first-child\)::before \{ content: attr\(data-label\)/);
+    assert.match(css, /\.embedded th, \.embedded td \{ white-space: normal; overflow-wrap: anywhere; \}/);
+});
 
 function impactPayload(overrides = {}) {
     return {

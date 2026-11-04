@@ -28,7 +28,7 @@ Config, data and output live in `~/CopilotConsumptionDashboard/`, outside the re
    ```bash
    python3 refresh.py render
    ```
-   This prints one block per file in `queries/` (17 today), like `=== 07 · query_kusto · database=rev_source ===`, followed by the query text. If it reports missing config, stop and tell the user to create `~/CopilotConsumptionDashboard/config.json` from `config.example.json`.
+   This prints one block per file in `queries/` (18 today), like `=== 07 · query_kusto · database=rev_source ===`, followed by the query text. If it reports missing config, stop and tell the user to create `~/CopilotConsumptionDashboard/config.json` from `config.example.json`.
 
 2. **Run every query verbatim**
    - `query_salesforce` blocks → `revenue-mcp-server-query_salesforce` with the SOQL exactly as printed.
@@ -60,6 +60,15 @@ Config, data and output live in `~/CopilotConsumptionDashboard/`, outside the re
    python3 build_dashboard.py --summary
    ```
    Any `WARNING … 1000 rows` line means a query hit the row cap. Report it, because the query needs splitting.
+
+   Query **18** supplies enterprise model usage for Impact (separate from account-grain query 11).
+   It packs stamp/integration-model slices into one row per owned enterprise and reports a shared
+   source cutoff for latest 7d, prior 7d and latest 28d. The builder rejects duplicate dimension
+   keys, ambiguous enterprise identity, incomplete arrays and non-reconciling totals. A rejection
+   is an extraction/data-integrity failure, not zero usage; do not remove the guards or shorten
+   the model list to make a build succeed. Blank model names remain unattributed allocation.
+   Missing q18 stays unknown; carried q18 retains its original collection time and source cutoff.
+   The panels label source cutoffs older than three days as stale, independently of build time.
 
 6. **Refresh the chat skill** (keeps the `copilot-dashboard-ask` skill in sync with this code)
    ```bash

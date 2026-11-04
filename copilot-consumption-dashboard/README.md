@@ -69,6 +69,16 @@ Customer Pulse embeds the adoption frontend at `/copilot/`, with the offline Ask
 
 Queries **16** (weekly UBB forecast) and **17** (monthly whitespace model) add flat account fields for Ask and a **Forecast & whitespace** section in the embedded account view. Trends includes entitlement/insight counts and estimated potential seats, whitespace seats and annual SOM. New facts are badged for 30 days from `new_metrics[].since`.
 
+Query **18** adds **Models used** to Customer Pulse Impact overview and enterprise detail, even
+without an Impact/ROI payload. It joins enterprise IDs from the latest owned-enterprise snapshot
+to `rev_source.enterprise_account_daily_ubb_revenue_fact` and `ubb_integration_model_dim`.
+Enterprise/stamp/integration-model slices retain source labels, latest/prior 7-day and latest
+28-day gross usage value and AI units, source cutoff and collection time. These are metered/UBB
+readings before pool deduction, not an invoice or every Copilot interaction. Users are not summed.
+Model shares include unattributed allocation; zero totals have no defined share. Portfolio totals
+only combine a common cutoff and disclose excluded enterprises, missing data and stale readings.
+Account-grain query 11 and monthly adoption `model_count` retain their existing semantics.
+
 - **Forecast:** bill, low-high range (positive forecasts only), included pool, ratio, entitlement status, utilization band, insight and UBB adoption band. "Projected above included pool" is `max(0, forecast_bill - included_pool)`, not invoiced overage. User counts are labelled neutrally as licensed users and users with UBB activity.
 - **Whitespace:** direct account-id matches only, deduplicated; unmatched parent ids are excluded. All figures are **Model estimate · parent-level**, not reconciled enterprise totals. Whitespace is `max(0, potential - coalesce(assigned, 0))`; implausible estimates are withheld. GHE/GHAS estimates are available to SQL Ask only, not displayed.
 - **Adoption:** assigned → active 28d → engaged 28d. Installed IDE telemetry is partial and shown separately, never as a funnel step. A Mover chip identifies flagged accounts.

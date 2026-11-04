@@ -1,0 +1,42 @@
+// qid:18 db:rev_source — enterprise model usage: 7d/prior 7d/28d gross value and AI units, packed per enterprise
+let asof = toscalar(enterprise_account_daily_ubb_revenue_fact | where measurement_date > ago(21d) | summarize max(measurement_date));
+let snap = toscalar(database("c360").entity_all | where entity_type == "Enterprise Account" and measurement_date > ago(14d) | summarize max(measurement_date));
+let owned = materialize(
+    database("c360").entity_all
+    | where entity_type == "Enterprise Account" and measurement_date == snap and sales_owner == "{{OWNER_NAME}}"
+    | project eid = tolong(entity_id), slug = entity_name
+    | summarize by eid, slug
+    | summarize identity_count = count(), slug = take_any(slug) by eid);
+let usage = materialize(
+    enterprise_account_daily_ubb_revenue_fact
+    | where measurement_date > asof - 28d and measurement_date <= asof
+    | join kind=inner owned on $left.enterprise_account_id == $right.eid
+    | project eid, stamp = tostring(stamp_converted), ubb_integration_model_id, measurement_date,
+        gross_usage_in_dollar, ai_units_consumed);
+let dimension = materialize(
+    ubb_integration_model_dim
+    | where ubb_integration_model_id in (usage | project ubb_integration_model_id)
+    | summarize dimension_rows = count(), integration = take_any(integration), model = take_any(model)
+        by ubb_integration_model_id);
+// The builder rejects duplicate dimension keys, ambiguous identities and incomplete packed arrays.
+let duplicate_keys = toscalar(dimension | where dimension_rows != 1 | count);
+let slices = usage
+    | join kind=leftouter dimension on ubb_integration_model_id
+    | extend d = toint((asof - measurement_date) / 1d)
+    | summarize l7 = sumif(gross_usage_in_dollar, d < 7),
+        p7 = sumif(gross_usage_in_dollar, d >= 7 and d < 14), l28 = sum(gross_usage_in_dollar),
+        aiu7 = sumif(ai_units_consumed, d < 7), aiup7 = sumif(ai_units_consumed, d >= 7 and d < 14),
+        aiu28 = sum(ai_units_consumed), last_date = max(measurement_date)
+        by eid, stamp, ubb_integration_model_id, integration, model;
+let packed = slices
+    | order by eid asc, stamp asc, ubb_integration_model_id asc
+    | summarize models = make_list(bag_pack("stamp", stamp, "key", ubb_integration_model_id,
+        "integration", integration, "model", model, "l7", l7, "p7", p7, "l28", l28,
+        "aiu7", aiu7, "aiup7", aiup7, "aiu28", aiu28, "last_date", last_date)),
+        slice_count = count(), gross28_total = sum(l28), aiu28_total = sum(aiu28) by eid;
+owned
+| join kind=leftouter packed on eid
+| project enterprise_id = tostring(eid), slug, identity_count, dimension_duplicate_keys = duplicate_keys,
+    asof, models = iff(isnull(models), dynamic([]), models), slice_count = coalesce(slice_count, tolong(0)),
+    gross28_total = coalesce(gross28_total, 0.0), aiu28_total = coalesce(aiu28_total, 0.0)
+| order by slug asc, enterprise_id asc

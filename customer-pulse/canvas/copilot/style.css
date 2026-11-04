@@ -380,6 +380,19 @@ svg.plot .line { stroke-linecap: round; stroke-linejoin: round; stroke-width: 2;
 .inline-note.warning { background: color-mix(in srgb, var(--caution) 12%, var(--paper)); }
 .detail-table { overflow-x: auto; max-width: 100%; border: 1px solid var(--line); border-radius: 8px; }
 .detail-table td, .detail-table th { font-size: 10px; }
+.model-usage table { table-layout: fixed; }
+.model-usage th, .model-usage td { white-space: normal; overflow-wrap: anywhere; }
+.model-usage th:first-child { width: 20%; }
+.model-usage .account-sub { max-width: none; overflow: visible; }
+@media (max-width: 740px) {
+    .model-usage table, .model-usage tbody { display: block; }
+    .model-usage thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+    .model-usage tbody tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border-bottom: 1px solid var(--line); }
+    .model-usage tbody tr:last-child { border-bottom: 0; }
+    .model-usage td { border: 0; min-width: 0; }
+    .model-usage td:first-child { grid-column: 1 / -1; }
+    .model-usage td:not(:first-child)::before { content: attr(data-label); display: block; color: var(--muted); font-size: 10px; }
+}
 .details-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
 .details-grid + h3 { margin-top: 24px; }
 .source-table { max-height: none; }
