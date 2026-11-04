@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "calls": [
+    {
+      "call_id": "synthetic-call-001",
+      "title": "Synthetic demonstration call",
+      "source_url": "https://app.gong.io/call?id=synthetic-call-001",
+      "recorded_at": "2026-11-01T10:00:00+00:00",
+      "participants": ["Synthetic speaker A", "Synthetic speaker B"],
+      "transcript_file": "synthetic-transcript.txt",
+      "source_permissions": {
+        "audience": ["Synthetic operator only"],
+        "restrictions": "Synthetic example only. Replace with actual verified source restrictions.",
+        "captured_at": "2026-11-01T11:00:00+00:00"
+      },
+      "attestations": {
+        "export_authorized": false,
+        "full_transcript": false
+      }
+    }
+  ]
+}
