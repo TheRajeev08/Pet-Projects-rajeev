@@ -163,7 +163,88 @@ def build_settings(payload):
     }
 
 
-def build_enterprises(rows13, rows14, rows15, payloads, accounts):
+MODEL_METRICS = ("l7", "p7", "l28", "aiu7", "aiup7", "aiu28")
+
+
+def build_model_usage(rows, owned, source):
+    """Validate packed enterprise/stamp/key slices before publishing any model totals."""
+    out = {}
+    identities = {}
+    for row in owned:
+        eid = str(row.get("enterprise_id") or "")
+        slug = row.get("slug")
+        if eid in identities and identities[eid] != slug:
+            raise ValueError("q18: owned enterprise ID maps to multiple slugs")
+        identities[eid] = slug
+    if len(rows) >= 1000:
+        raise ValueError("q18: enterprise result reached the 1000-row cap")
+    for row in rows:
+        eid, slug = str(row.get("enterprise_id") or ""), row.get("slug")
+        if not eid or not slug or row.get("identity_count") != 1:
+            raise ValueError("q18: ambiguous or missing enterprise identity")
+        if row.get("dimension_duplicate_keys") != 0:
+            raise ValueError("q18: duplicate or unverified integration-model dimension keys")
+        if eid in out:
+            raise ValueError("q18: duplicate enterprise result")
+        # A carried source may include an enterprise no longer owned, but never a guessed join.
+        if eid not in identities:
+            continue
+        if identities[eid] != slug:
+            raise ValueError("q18: enterprise ID/slug does not match the owned source")
+        slices = dec(row.get("models"))
+        if isinstance(slices, str):
+            try:
+                slices = json.loads(slices)
+            except json.JSONDecodeError as exc:
+                raise ValueError("q18: invalid model array") from exc
+        if not isinstance(slices, list) or row.get("slice_count") != len(slices):
+            raise ValueError("q18: incomplete model array")
+        cutoff = row.get("asof")
+        if cutoff:
+            try:
+                dt.date.fromisoformat(cutoff[:10])
+            except (TypeError, ValueError) as exc:
+                raise ValueError("q18: invalid source cutoff") from exc
+        elif slices:
+            raise ValueError("q18: usage without a source cutoff")
+        seen, normalized = set(), []
+        for item in slices:
+            if not isinstance(item, dict):
+                raise ValueError("q18: invalid model slice")
+            stamp, key = item.get("stamp"), item.get("key")
+            if not isinstance(stamp, str) or not isinstance(key, str):
+                raise ValueError("q18: missing stamp/key identity")
+            identity = (stamp, key)
+            if identity in seen:
+                raise ValueError("q18: duplicate enterprise/stamp/model-key slice")
+            seen.add(identity)
+            values = {k: num(item.get(k)) for k in MODEL_METRICS}
+            if any(v is None for v in values.values()):
+                raise ValueError("q18: missing or non-finite additive metric")
+            model, integration = item.get("model"), item.get("integration")
+            if any(v is not None and not isinstance(v, str) for v in (model, integration)):
+                raise ValueError("q18: invalid dimension labels")
+            normalized.append({
+                "stamp": stamp, "key": key, "model": (model or "").strip() or None,
+                "integration": (integration or "").strip() or None,
+                "last_date": item.get("last_date"), **values,
+            })
+        for metric, total_key in (("l28", "gross28_total"), ("aiu28", "aiu28_total")):
+            expected = num(row.get(total_key))
+            if expected is None or not math.isclose(sum(s[metric] for s in normalized), expected,
+                                                     rel_tol=1e-9, abs_tol=1e-6):
+                raise ValueError(f"q18: {metric} does not reconcile to source total")
+        out[eid] = {
+            "asof": cutoff, "collected_from": source.get("collected_from"),
+            "carried_from": source.get("carried_from"),
+            "status": "observed" if normalized else "no_usage" if cutoff else "unavailable",
+            "slices": sorted(normalized, key=lambda s: (s["stamp"], s["key"])),
+        }
+    return out
+
+
+def build_enterprises(rows13, rows14, rows15, payloads, accounts, rows18=(), source18=None):
+    model_usage = build_model_usage(rows18, rows13, source18 or {})
     impact, settings = payloads.get("impact", {}), payloads.get("settings", {})
     owned_by_id = {a["id"]: a for a in accounts}
     usage = {}
@@ -209,6 +290,7 @@ def build_enterprises(rows13, rows14, rows15, payloads, accounts):
             "impact": data or None,
             "has_impact": bool(data.get("dataAvailable")) and bool(data.get("impact")),
             "integrations": sorted(usage.get(slug, []), key=lambda r: -r["l28"]),
+            "model_usage": model_usage.get(str(row.get("enterprise_id") or "")),
             "settings": build_settings(settings_payload) if settings_payload else None,
             "adoption": {k: extra.get(k) for k in (
                 "licensed", "ubb_users", "adoption_rate", "adoption_band", "wow_ubb_users",
@@ -246,7 +328,7 @@ def load_raw(day):
 # Enterprise-grained queries. They feed the Impact view, are collected incrementally, and describe
 # windows that do not move daily, so a run that skipped them reuses the last result rather than
 # publishing a model with no enterprises at all.
-ENTERPRISE_QUERIES = ("13", "14", "15")
+ENTERPRISE_QUERIES = ("13", "14", "15", "18")
 SLOW_QUERIES = ENTERPRISE_QUERIES + ("16", "17")
 
 
@@ -328,7 +410,7 @@ def build(day, raw, meta):
 
     asof = {}
     arr_dates = sorted({period(p["date"]) for r in raw.get("09", []) for p in chunk(r["s"], r["cols"])})
-    for q in ("03", "04", "06", "07", "08", "10", "12", "16", "17"):
+    for q in ("03", "04", "06", "07", "08", "10", "12", "16", "17", "18"):
         rows = raw.get(q) or []
         if rows and rows[0].get("asof"):
             asof[q] = rows[0]["asof"][:10]
@@ -430,7 +512,7 @@ def build(day, raw, meta):
 
     portfolio = build_portfolio(accounts, raw.get("10", []))
     enterprises = build_enterprises(raw.get("13", []), raw.get("14", []), raw.get("15", []),
-                                    load_enterprise_payloads(day), accounts)
+                                    load_enterprise_payloads(day), accounts, raw.get("18", []), meta.get("18"))
     return {"generated_at": dt.datetime.now().isoformat(timespec="minutes"), "data_date": day, "asof": asof,
             "sources": meta, "accounts": accounts, "portfolio": portfolio, "orphans": orphans,
             "enterprises": enterprises}
@@ -816,7 +898,7 @@ def main():
 
     day, raw, meta = load_raw(args.date)
     carried = carry_forward(day, raw, meta)
-    missing = [f"{q:02d}" for q in range(1, 18) if f"{q:02d}" not in raw]
+    missing = [f"{q:02d}" for q in range(1, 19) if f"{q:02d}" not in raw]
     if "01" in missing:
         sys.exit("Query 01 (owned accounts) is required.")
     model = build(day, raw, meta)

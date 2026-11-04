@@ -154,6 +154,86 @@ export function adoptionFacts(enterprise) {
 const isNumber = value => typeof value === "number" && Number.isFinite(value);
 const object = value => value !== null && typeof value === "object" && !Array.isArray(value);
 
+const MODEL_METRICS = ["l7", "p7", "l28", "aiu7", "aiup7", "aiu28"];
+const modelKey = row => row.unattributed ? null : row.model;
+
+function modelTotals(rows) {
+    return Object.fromEntries(MODEL_METRICS.map(key => [key, rows.reduce((sum, row) => sum + row[key], 0)]));
+}
+
+function modelMix(rows) {
+    const total = modelTotals(rows);
+    const validShare = total.l28 > 0 && rows.every(row => row.l28 >= 0);
+    return rows.map(row => ({ ...row, share: validShare ? row.l28 / total.l28 : null }))
+        .sort((a, b) => b.l28 - a.l28 || b.aiu28 - a.aiu28 || a.model.localeCompare(b.model));
+}
+
+/** UBB slices are additive in value/AI units, never in per-slice users. */
+export function enterpriseModels(enterprise, now = new Date()) {
+    const usage = enterprise?.model_usage;
+    if (!usage) return { state: "missing", rows: [], totals: null };
+    const cutoff = typeof usage.asof === "string" ? usage.asof.slice(0, 10) : null;
+    const age = (Date.parse(new Date(now).toISOString().slice(0, 10)) -
+        Date.parse(cutoff)) / 86400000;
+    if (!["observed", "no_usage"].includes(usage.status) || !Number.isFinite(age) ||
+        !Array.isArray(usage.slices) ||
+        usage.slices.some(row => !object(row) || MODEL_METRICS.some(key => !isNumber(row[key])))) {
+        return { state: "unavailable", rows: [], totals: null };
+    }
+    const grouped = new Map();
+    for (const slice of usage.slices) {
+        const name = typeof slice.model === "string" ? slice.model.trim() : "";
+        const key = name || null;
+        const row = grouped.get(key) || {
+            model: name || "Unattributed model", unattributed: !name,
+            ...modelTotals([]), integrations: new Set(), stamps: new Set(),
+        };
+        for (const metric of MODEL_METRICS) row[metric] += slice[metric];
+        row.integrations.add(slice.integration || "Unattributed integration");
+        row.stamps.add(slice.stamp || "Unattributed stamp");
+        grouped.set(key, row);
+    }
+    const rows = modelMix([...grouped.values()].map(row => ({
+        ...row, integrations: [...row.integrations].sort(), stamps: [...row.stamps].sort(),
+    })));
+    return {
+        state: usage.status, rows, totals: modelTotals(rows), cutoff,
+        collected: usage.collected_from || null, carried: usage.carried_from || null,
+        stale: age > 3, future: age < 0,
+    };
+}
+
+/** Only combine windows with the same cutoff; older/missing snapshots remain explicit coverage gaps. */
+export function portfolioModels(model, now = new Date()) {
+    const all = (model.enterprises || []).map(enterprise => enterpriseModels(enterprise, now));
+    const available = all.filter(entry => entry.totals);
+    const cutoff = available.map(entry => entry.cutoff).sort().at(-1) || null;
+    const reporting = available.filter(entry => entry.cutoff === cutoff);
+    const grouped = new Map();
+    for (const entry of reporting) {
+        for (const model of entry.rows) {
+            const key = modelKey(model);
+            const row = grouped.get(key) || {
+                model: model.model, unattributed: model.unattributed, ...modelTotals([]), usingEnterprises: 0,
+            };
+            for (const metric of MODEL_METRICS) row[metric] += model[metric];
+            if (model.l28 > 0 || model.aiu28 > 0) row.usingEnterprises += 1;
+            grouped.set(key, row);
+        }
+    }
+    const rows = modelMix([...grouped.values()]);
+    return {
+        rows, totals: reporting.length ? modelTotals(rows) : null, cutoff,
+        total: all.length, reporting: reporting.length,
+        missing: all.filter(entry => entry.state === "missing").length,
+        unavailable: all.filter(entry => entry.state === "unavailable").length,
+        differentCutoff: available.length - reporting.length,
+        stale: reporting.filter(entry => entry.stale).length,
+        carried: reporting.filter(entry => entry.carried).length,
+        future: reporting.some(entry => entry.future),
+    };
+}
+
 /** Several numeric fields arrive as strings in the payload. */
 export function toNumber(value) {
     if (isNumber(value)) return value;

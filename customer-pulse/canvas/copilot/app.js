@@ -4,7 +4,7 @@ import {
 } from "./insights.mjs";
 import {
     ENABLEMENT_LABELS, PHASE_ORDER, adoptionFacts, enablementKnown, enterpriseRows, engagementTrend,
-    impactOf, impactState, multipliers, phases, portfolioImpact, productivity, roi, surfaceAdoption,
+    enterpriseModels, impactOf, impactState, multipliers, phases, portfolioImpact, portfolioModels, productivity, roi, surfaceAdoption,
     surfaceRows, totalEngagedUsers,
 } from "./impact.mjs";
 
@@ -690,6 +690,38 @@ function sparkline(values, weight = 1) {
         `stroke-width="${(1 + weight).toFixed(1)}" points="${coords.join(" ")}"/></svg>`;
 }
 
+function modelPanel(enterprise = null) {
+    const data = enterprise ? enterpriseModels(enterprise) : portfolioModels(state.model);
+    const title = `<h2>Models used</h2>`;
+    const note = `<p class="meta">Metered/UBB model usage, not every Copilot interaction. ` +
+        `Usage value is gross USD before pool deduction, not an invoice. No unique-user counts are inferred.</p>`;
+    if (!data.totals) return title + note + empty("Model usage unavailable",
+        data.state === "unavailable" ? "The model source has no usable reporting window." :
+            "The enterprise model feed has not been collected for this snapshot. Account-level model totals are not substituted.");
+    const coverage = enterprise
+        ? `Source cutoff ${H(data.cutoff)} &middot; collected ${H(data.collected || "not recorded")}` +
+          (data.carried ? ` &middot; carried from ${H(data.carried)}` : "")
+        : `${num(data.reporting)} of ${num(data.total)} enterprises covered &middot; source cutoff ${H(data.cutoff)}` +
+          ` &middot; ${num(data.missing)} missing, ${num(data.unavailable)} unavailable, ` +
+          `${num(data.differentCutoff)} on a different cutoff, ${num(data.carried)} carried`;
+    const status = (data.stale ? `<div class="inline-note warning">Stale model source: cutoff is more than 3 days old. These are retained readings, not current usage.</div>` : "") +
+        (data.future ? `<div class="inline-note warning">The model source cutoff is in the future; verify the refresh clock.</div>` : "");
+    const rows = data.rows.map(row => [
+        `<strong>${H(row.model)}</strong>` + (row.unattributed
+            ? `<span class="account-sub">Blank or unresolved model allocation; included in totals</span>` : "") +
+            (enterprise ? `<span class="account-sub">${H(row.integrations.join(", "))}</span>` : ""),
+        ...(!enterprise ? [num(row.usingEnterprises)] : []),
+        money(row.l7), money(row.p7), money(row.l28), pct(row.share, 1),
+        num(row.aiu7), num(row.aiup7), num(row.aiu28),
+    ]);
+    return title + note + `<p class="meta">${coverage}. Latest 7d, prior 7d and latest 28d end at this cutoff.</p>` + status +
+        (rows.length ? detailTable(["Model", ...(!enterprise ? ["Using enterprises (28d)"] : []),
+            "7d value", "Prior 7d value", "28d value", "28d value share", "AI units 7d", "AI units prior 7d", "AI units 28d"], rows, null, true) :
+            `<div class="inline-note">No metered model usage recorded in this observed 28-day window.</div>`) +
+        `<p class="meta">Covered total: ${money(data.totals.l28)} usage value and ${num(data.totals.aiu28)} AI units (28d). ` +
+        `Shares include unattributed allocation and are undefined when total value is zero. Model names are source labels; monthly adoption model counts are unchanged.</p>`;
+}
+
 function renderImpact() {
     const m = state.model;
     if (!Array.isArray(m.enterprises) || !m.enterprises.length) {
@@ -787,6 +819,7 @@ function renderImpact() {
                 `</tbody></table></div>` +
                 `<p class="meta">User counts are per-integration distinct counts and are not summed across surfaces. Absence of UBB does not prove a feature is unused where enablement is unknown.</p></section>`;
         })() +
+        `<section class="section model-usage">${modelPanel()}</section>` +
         `<section class="section"><div class="section-top"><div><h2>All enterprises</h2>` +
         `<p>${num(rows.length)} of ${num(p.total)} shown. Select one for its adoption phases, trend and ROI.</p></div></div>` +
         `<div class="filter-bar"><div class="field search"><label for="impact-search">Search enterprise or suggested account</label>` +
@@ -834,6 +867,7 @@ function renderEnterprise() {
         `${enterprise.impact?.reportDateRange ? ` &middot; ${H(enterprise.impact.reportDateRange)}` : ""}</div></div>` +
         `<div class="detail-actions"><span class="status ${state_.state === "available" ? "active" : state_.state === "uncollected" ? "unknown" : "inactive"}">${H(state_.label)}</span></div></div>` +
         `<nav class="detail-nav" aria-label="Enterprise sections"><a href="#enterprise-surfaces">Surfaces</a>` +
+        `<a href="#enterprise-models">Models</a>` +
         `<a href="#enterprise-adoption">Adoption breadth</a><a href="#enterprise-phases">Phases</a>` +
         `<a href="#enterprise-trend">Trend</a><a href="#enterprise-roi">Cost &amp; ROI</a></nav>` +
         `<div class="inline-note ${["confirmed", "single"].includes(enterprise.match.confidence) ? "" : "warning"}">` +
@@ -852,6 +886,7 @@ function renderEnterprise() {
         return head +
             `<section class="detail-section" id="enterprise-surfaces"><h2>Surfaces, CLI and agents</h2>` +
             surfacePanel(enterprise) + `</section>` +
+            `<section class="detail-section model-usage" id="enterprise-models">${modelPanel(enterprise)}</section>` +
             empty(state_.label,
                 state_.state === "uncollected"
                     ? "This enterprise has not been fetched in the current snapshot. The daily refresh will collect it."
@@ -877,6 +912,7 @@ function renderEnterprise() {
         `<section class="detail-section" id="enterprise-surfaces"><h2>Surfaces, CLI and agents</h2>` +
         `<p class="meta">Where Copilot spend and users actually sit, and whether each surface is switched on.</p>` +
         surfacePanel(enterprise) + `</section>` +
+        `<section class="detail-section model-usage" id="enterprise-models">${modelPanel(enterprise)}</section>` +
         (facts_ ? `<section class="detail-section" id="enterprise-adoption"><h2>Adoption breadth</h2>` +
             `<p class="meta">Licensed versus active users and how widely the product is used` +
             `${facts_.monthAsOf ? `, from the closed month ending ${H(facts_.monthAsOf)}` : ""}` +
@@ -989,10 +1025,11 @@ function facts(entries) {
         `<div><dt>${H(title)}</dt><dd>${value}</dd></div>`).join("")}</dl>`;
 }
 
-function detailTable(headers, rows, fallback) {
+function detailTable(headers, rows, fallback, responsiveLabels = false) {
     if (!rows.length) return empty(fallback, "No values were recorded for this section in the saved model.");
     return `<div class="detail-table"><table><thead><tr>${headers.map(head => `<th>${H(head)}</th>`).join("")}</tr></thead>` +
-        `<tbody>${rows.map(row => `<tr>${row.map(cell => `<td>${cell}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+        `<tbody>${rows.map(row => `<tr>${row.map((cell, index) =>
+            `<td${responsiveLabels ? ` data-label="${H(headers[index])}"` : ""}>${cell}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
 }
 
 function accountLink(id, name = "Salesforce") {

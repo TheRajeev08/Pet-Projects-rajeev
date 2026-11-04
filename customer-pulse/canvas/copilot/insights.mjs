@@ -16,6 +16,7 @@ export const SOURCE_NAMES = Object.freeze({
     "15": "Enterprise adoption",
     "16": "UBB forecast and pool status",
     "17": "Copilot whitespace model",
+    "18": "Enterprise model usage",
 });
 
 /** Queue lanes. Rank orders the lanes; within a lane, sorting is explicit and never score-based. */
