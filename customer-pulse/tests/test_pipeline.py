@@ -240,12 +240,15 @@ class BuildTest(fx.HomeCase):
 class SnapshotMergeTest(fx.HomeCase):
     """Copilot seats publish month-end rows plus a rolling row that is re-dated every day."""
 
-    def p04(self, raw_day, rolling, accounts):
-        """accounts: {acct: (month_end_seats, rolling_seats)}. Month-end rows carry fewer rows than the rolling one."""
-        items = [(a, "seats", [("2026-08-31", me, 0, 0), ("2026-09-30", me, 0, 0), (rolling, cur, 0, 0)])
+    def p04(self, raw_day, rolling, accounts, placeholder=None):
+        """accounts: {acct: (month_end_seats, rolling_seats)}. Month-end rows carry fewer rows than the rolling one.
+        `placeholder` adds the zero-total rows the fact leaves on the previous rolling date."""
+        stub = [(placeholder, 0, 0, 0)] if placeholder else []
+        items = [(a, "seats", [("2026-08-31", me, 0, 0), ("2026-09-30", me, 0, 0)] + stub + [(rolling, cur, 0, 0)])
                  for a, (me, cur) in accounts.items()]
-        items.append(("__meta__", "seat_totals", [("2026-08-31", 600, 50000), ("2026-09-30", 600, 50000),
-                                                  (rolling, 1000, 50000)]))
+        totals = [(placeholder, 900, 0)] if placeholder else []
+        items.append(("__meta__", "seat_totals", [("2026-08-31", 600, 50000), ("2026-09-30", 600, 50000)] + totals
+                      + [(rolling, 1000, 50000)]))
         fx.write_raw(self.home, raw_day, "p04", fx.series(items))
 
     def seat_events(self, today, acct):
@@ -276,6 +279,30 @@ class SnapshotMergeTest(fx.HomeCase):
         acc2 = next(a for a in m["accounts"] if a["id"] == "acc2")["products"]["ghcp"]
         self.assertEqual([p[0] for p in acc2["series"]["contracted"]["points"]], ["2026-08-31", "2026-09-30", "2026-10-23"])
         self.assertEqual(acc2["contracted"], 30)
+
+    def test_zero_placeholders_neither_hide_real_days_nor_drop_seats_to_zero(self):
+        """Each file also leaves a zero-total placeholder on the previous rolling date. A newer placeholder must
+        not hide the real value an older file holds, and zeros must never read as seats dropping to 0."""
+        ids = {}
+        for i, cur in enumerate([40, 40, 40, 37, 37, 37]):
+            today = f"2026-10-{23 + i}"
+            accounts = {"acc1": (50, cur), "acc2": (30, 30)} if i == 5 else {"acc1": (50, cur)}
+            self.p04(today, f"2026-10-{22 + i}", accounts, placeholder=f"2026-10-{21 + i}")
+            src, ev = self.seat_events(today, "acc1")
+            self.assertEqual({e["kind"] for e in ev}, {"dropped"}, today)
+            for e in ev:
+                self.assertEqual(ids.setdefault(e["date"], e["id"]), e["id"], today)
+        self.assertEqual([(e["date"], e["from"], e["to"]) for e in ev], [("2026-10-25", 40, 37), ("2026-10-22", 50, 40)])
+        days = sorted(src["healthy"]["seats"])
+        self.assertEqual(days, ["2026-08-31", "2026-09-30"] + fx.days("2026-10-22", "2026-10-27"))
+        self.assertTrue(src["unhealthy_why"]["seats"]["2026-10-21"].startswith("total 0"))
+        _, new_to_feed = self.seat_events(today, "acc2")
+        self.assertEqual(new_to_feed, [])
+        self.assertEqual(sources.account_days(src, "seats", "acc2", days), ["2026-08-31", "2026-09-30", "2026-10-27"])
+        m, _ = model.build(self.cfg(), today)
+        acc1 = next(a for a in m["accounts"] if a["id"] == "acc1")["products"]["ghcp"]
+        self.assertEqual([p[0] for p in acc1["series"]["contracted"]["points"]], days)
+        self.assertEqual(acc1["contracted"], 37)
 
 
 class DigestTest(fx.HomeCase):

@@ -61,6 +61,21 @@ class HealthyDaysTest(unittest.TestCase):
         self.assertEqual(healthy, {"m1", "m2"})
         self.assertIn("total", why["m3"])
 
+    def test_zero_placeholders_never_pass_or_shape_the_reference(self):
+        # Snapshot facts leave zero-total placeholders between real days. Four zeros among the previous
+        # seven used to pull the reference to zero, letting a zero day through and rejecting month-ends.
+        meta = [("08-31", 600, 50000.0), ("09-30", 600, 50500.0), ("10-21", 900, 0.0), ("10-22", 1000, 49000.0),
+                ("10-30", 900, 0.0), ("10-31", 1000, 50200.0), ("11-01", 900, 0.0), ("11-02", 900, 0.0),
+                ("11-03", 900, 0.0), ("11-04", 1000, 48000.0)]
+        healthy, why = sources.healthy_days(meta, ratio=0.0)
+        self.assertEqual(healthy, {"08-31", "09-30", "10-22", "10-31", "11-04"})
+        self.assertTrue(all(why[d].startswith("total 0 ") for d in ("10-21", "10-30", "11-01", "11-02", "11-03")))
+
+    def test_all_zero_totals_never_healthy(self):
+        healthy, why = sources.healthy_days([("a", 1000, 0.0), ("b", 1000, 0.0), ("c", 1000, 0.0)])
+        self.assertEqual(healthy, set())
+        self.assertEqual(why["c"], "total 0")
+
     def test_level_shift_accepted_after_a_few_days(self):
         meta = [(f"d{i:02d}", 1000, 1000.0 if i < 10 else 2000.0) for i in range(20)]
         healthy, _ = sources.healthy_days(meta)

@@ -261,23 +261,32 @@ def parse_universe(doc):
     return out
 
 
+def _counted(m):
+    """A reported day with rows and, where totals are reported, a positive total. Snapshot facts leave
+    zero-total placeholder rows on dates they have moved past; those are not data."""
+    return bool(m[1]) and (m[2] is None or m[2] > 0)
+
+
 def healthy_days(meta, ratio=0.80, value_tol=0.20, window=7):
     """Decide which source days are complete enough to diff.
 
     A day is healthy when its global row count is at least `ratio` of the reference and its global
-    value sum is within `value_tol` of the reference. The reference is the median of the previous
-    `window` reported days (or of the whole series when fewer than three precede it), so a single bad
-    day is rejected while a lasting level shift is accepted after a few days.
+    value sum is positive and within `value_tol` of the reference. The reference is the median of the
+    previous `window` reported days with a positive total (or of the whole series when fewer than three
+    precede it), so a single bad day is rejected while a lasting level shift is accepted after a few
+    days. Zero-total days never shape the reference: enough of them would pull the median to zero and
+    switch the value check off.
     """
     present = [m for m in meta if m[1]]
     if not present:
         return set(), {}
-    all_n = statistics.median(m[1] for m in present)
-    sums = [m[2] for m in present if m[2] is not None]
+    counted = [m for m in present if _counted(m)] or present
+    all_n = statistics.median(m[1] for m in counted)
+    sums = [m[2] for m in counted if m[2] is not None and m[2] > 0]
     all_s = statistics.median(sums) if sums else None
     healthy, why = set(), {}
     for i, (d, n, s) in enumerate(meta):
-        prev = [m for m in meta[max(0, i - window):i] if m[1]]
+        prev = [m for m in meta[:i] if _counted(m)][-window:]
         if len(prev) >= 3:
             ref_n = statistics.median(m[1] for m in prev)
             psums = [m[2] for m in prev if m[2] is not None]
@@ -288,8 +297,8 @@ def healthy_days(meta, ratio=0.80, value_tol=0.20, window=7):
             why[d] = "no rows"
         elif n < ratio * ref_n:
             why[d] = f"{int(n)} rows vs ~{int(ref_n)} expected"
-        elif s is not None and ref_s and (s <= 0 or abs(s - ref_s) > value_tol * ref_s):
-            why[d] = f"total {s:,.0f} vs ~{ref_s:,.0f} expected"
+        elif s is not None and (s <= 0 or (ref_s and abs(s - ref_s) > value_tol * ref_s)):
+            why[d] = f"total {s:,.0f} vs ~{ref_s:,.0f} expected" if ref_s else f"total {s:,.0f}"
         else:
             healthy.add(d)
     return healthy, why
@@ -309,16 +318,19 @@ def trailing_unhealthy(meta, healthy):
 # (Copilot seats on 08-31, 09-30 and 10-22, then 10-23 the next day). Older raw files keep each rolling
 # row, so the series turns daily from the first run and a change is reported once instead of being
 # re-dated, and re-sent, every morning. Their rolling rows carry more rows than month-ends, so only
-# the totals decide whether a day is healthy.
+# the totals decide whether a day is healthy. When the rolling row moves on, the fact can leave a
+# zero-total placeholder on the old date (Copilot seats since 2026-10), so a newer file's placeholder
+# must not replace the real value an older file holds for that date.
 SNAPSHOTS = {"p03": ("volume", parse_ghe_usage), "p04": ("seats", parse_copilot)}
 SNAPSHOT_KEYS = tuple(key for key, _ in SNAPSHOTS.values())
 
 
 def _merge_snapshots(cfg, src, today):
-    """Add the dates older raw files have and newer ones lack; newer files win on shared dates.
+    """Add the dates older raw files have and newer ones lack. Newer files win on shared dates unless
+    their version is a zero-total placeholder and the older file's is not.
 
-    An account missing from an older file has an unknown value on that file's dates, recorded in
-    src["unknown"][key][account] so it is neither diffed nor summed there."""
+    An account missing from the file a date was taken from has an unknown value on that date, recorded
+    in src["unknown"][key][account] so it is neither diffed nor summed there."""
     for qid, (key, parse) in SNAPSHOTS.items():
         newest = (src["files"].get(qid) or {}).get("raw_date")
         if not newest:
@@ -326,19 +338,23 @@ def _merge_snapshots(cfg, src, today):
         unknown = src["unknown"].setdefault(key, {})
         for day in reversed([d for d in raw_dates(cfg, qid) if d < newest and d <= today]):
             older = parse(read_json(raw_path(cfg, day, qid)))
-            have = {m[0] for m in src[f"{key}_meta"]}
-            extra = [m for m in older[f"{key}_meta"] if m[0] not in have]
-            if not extra:
+            have = {m[0]: m for m in src[f"{key}_meta"]}
+            take = [m for m in older[f"{key}_meta"]
+                    if m[0] not in have or (_counted(m) and not _counted(have[m[0]]))]
+            if not take:
                 continue
-            dates = {m[0] for m in extra}
-            src[f"{key}_meta"] = sorted(src[f"{key}_meta"] + extra)
-            for acct in src[key]:
-                if acct not in older[key]:
+            dates = {m[0] for m in take}
+            src[f"{key}_meta"] = sorted([m for m in src[f"{key}_meta"] if m[0] not in dates] + take)
+            for acct in set(src[key]) | set(older[key]):
+                rows = [r for r in src[key].get(acct, []) if r[0] not in dates]
+                if acct in older[key]:
+                    rows += [r for r in older[key][acct] if r[0] in dates]
+                    if acct in unknown:
+                        unknown[acct] -= dates
+                else:
                     unknown.setdefault(acct, set()).update(dates)
-            for acct, rows in older[key].items():
-                add = [r for r in rows if r[0] in dates]
-                if add:
-                    src[key][acct] = sorted(src[key].get(acct, []) + add)
+                if rows or acct in src[key]:
+                    src[key][acct] = sorted(rows)
 
 
 def account_days(src, key, acct, days):
