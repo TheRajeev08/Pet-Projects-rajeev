@@ -62,7 +62,7 @@ def feed_status(src, today, th):
             age = (dt.date.fromisoformat(today) - dt.date.fromisoformat(st["as_of"])).days
             if age > lag + 2:
                 st["state"] = "stale"
-                st["messages"].append(f"collected today, but the source has nothing newer: {age} days old (expected about {lag})")
+                st["messages"].append(f"collected today; latest usable data is {age} days old (expected about {lag})")
         out.append(st)
     return out
 

@@ -347,6 +347,26 @@ class DigestTest(fx.HomeCase):
         self.assertIn("Build failed", html)
         self.assertIn("last built for 2026-10-26", html)
 
+    def test_attribute_source_gap_reaches_dashboard_and_digest(self):
+        for day, expected in ((None, "suspect"), ("2026-10-10", "stale")):
+            with self.subTest(day=day):
+                row = {"salesforce_account_id": "acc1", "measurement_date": day}
+                if day:
+                    row["latest_total_arr"] = 69000
+                fx.write_raw(self.home, fx.DAY1, "p06", fx.attributes([row]))
+                m, st = model.build(self.cfg(), fx.DAY1)
+                model.write(m, st)
+                saved = read_json(paths.model_path())
+                feed = next(f for f in saved["sources"] if f["feed"] == "attributes")
+                self.assertEqual((feed["state"], feed["as_of"]), (expected, day))
+                self.assertEqual(read_json(paths.status_path())["overall"], expected)
+                if day:
+                    self.assertEqual(saved["kpis"]["overall"]["arr"], 69000)
+                body, meta = digest.build_digest(saved, self.cfg(), st, today=fx.DAY1)
+                self.assertEqual(meta["counts"]["issues"], 1)
+                self.assertIn("data issues", meta["subject"])
+                self.assertIn("Account attributes", body["message"]["body"]["content"])
+
     def test_requires_recipient(self):
         with self.assertRaises(SystemExit):
             digest.build_digest(self.m, dict(self.cfg(), digest_to=None))
