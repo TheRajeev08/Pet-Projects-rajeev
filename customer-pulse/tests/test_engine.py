@@ -340,7 +340,16 @@ class StatusTest(unittest.TestCase):
         meta = [(d, 1000, 1.0) for d in fx.days("2026-10-10", "2026-10-15")]
         feeds = self.by_feed(self.src(meta=meta))
         self.assertEqual(feeds["contracts"]["state"], "stale")
+        self.assertIn("collected today, but the source has nothing newer", feeds["contracts"]["messages"][0])
         self.assertEqual(feeds["copilot_seats"]["state"], "ok")
+
+    def test_attributes_without_dated_c360_rows_are_not_ok(self):
+        src = self.src()
+        src["attrs"] = {"acc1": {"salesforce_account_name": "Acme", "measurement_date": None}}
+        feeds = self.by_feed(src)
+        self.assertEqual(feeds["attributes"]["state"], "suspect")
+        self.assertIsNone(feeds["attributes"]["as_of"])
+        self.assertEqual(status.overall(list(feeds.values())), "suspect")
 
 
 class EventNewTest(unittest.TestCase):

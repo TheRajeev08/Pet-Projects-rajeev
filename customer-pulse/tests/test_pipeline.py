@@ -44,6 +44,14 @@ class QueriesTest(fx.HomeCase):
                     self.assertIn(f'database("rev_source").{table}', q["query"])
                     self.assertEqual(q["query"].count(table), 3 if q["qid"] == "p03" else 1)
 
+    def test_c360_lookbacks_follow_latest_snapshot(self):
+        for q in queries.load(self.cfg(), "abcd1234"):
+            if q["tool"] == "query_kusto":
+                with self.subTest(qid=q["qid"]):
+                    self.assertIn("let c360_asof = toscalar(", q["query"])
+                    self.assertNotIn("ago(10d)", q["query"])
+                    self.assertEqual(q["query"].count("c360_asof - 10d"), 2 if q["qid"] == "p06" else 1)
+
     def test_config_validation(self):
         bad = dict(self.cfg(), owner_name='x"; drop')
         with self.assertRaises(SystemExit):
