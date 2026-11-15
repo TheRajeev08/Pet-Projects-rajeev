@@ -340,7 +340,33 @@ class StatusTest(unittest.TestCase):
         meta = [(d, 1000, 1.0) for d in fx.days("2026-10-10", "2026-10-15")]
         feeds = self.by_feed(self.src(meta=meta))
         self.assertEqual(feeds["contracts"]["state"], "stale")
+        self.assertIn("collected today; latest usable data is", feeds["contracts"]["messages"][0])
         self.assertEqual(feeds["copilot_seats"]["state"], "ok")
+
+    def test_attributes_without_dated_c360_rows_are_not_ok(self):
+        for attrs in ({}, {"acc1": {"measurement_date": None}}, {"acc1": {}}):
+            with self.subTest(attrs=attrs):
+                src = self.src()
+                src["attrs"] = attrs
+                feeds = self.by_feed(src)
+                self.assertEqual(feeds["attributes"]["state"], "suspect")
+                self.assertIsNone(feeds["attributes"]["as_of"])
+                self.assertEqual(status.overall(list(feeds.values())), "suspect")
+
+    def test_missing_attribute_dates_preserve_collection_failure(self):
+        src = self.src(raw_date="2026-10-25")
+        src["attrs"] = {}
+        feed = self.by_feed(src)["attributes"]
+        self.assertEqual(feed["state"], "failed")
+        self.assertIn("not collected today", feed["messages"][0])
+        self.assertIn("no dated C360 attributes", feed["messages"][1])
+
+    def test_stale_message_allows_newer_held_data(self):
+        meta = [("2026-10-15", 1000, 1.0), ("2026-10-25", 200, 0.2)]
+        feed = self.by_feed(self.src(meta=meta, healthy={"2026-10-15"}))["copilot"]
+        self.assertEqual(feed["state"], "stale")
+        self.assertEqual(feed["held"], ["2026-10-25"])
+        self.assertIn("latest usable data is 11 days old", feed["messages"][-1])
 
 
 class EventNewTest(unittest.TestCase):

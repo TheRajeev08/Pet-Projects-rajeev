@@ -54,11 +54,15 @@ def feed_status(src, today, th):
         elif feed == "attributes":
             dates = [a.get("measurement_date") for a in src["attrs"].values() if a.get("measurement_date")]
             st["as_of"] = max(dates) if dates else None
+            if not dates:
+                st["messages"].append("no dated C360 attributes in the source")
+                if st["state"] == "ok":
+                    st["state"] = "suspect"
         if st["as_of"] and st["state"] == "ok":
             age = (dt.date.fromisoformat(today) - dt.date.fromisoformat(st["as_of"])).days
             if age > lag + 2:
                 st["state"] = "stale"
-                st["messages"].append(f"data is {age} days old (expected about {lag})")
+                st["messages"].append(f"collected today; latest usable data is {age} days old (expected about {lag})")
         out.append(st)
     return out
 

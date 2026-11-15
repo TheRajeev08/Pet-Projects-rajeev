@@ -44,6 +44,14 @@ class QueriesTest(fx.HomeCase):
                     self.assertIn(f'database("rev_source").{table}', q["query"])
                     self.assertEqual(q["query"].count(table), 3 if q["qid"] == "p03" else 1)
 
+    def test_c360_lookbacks_follow_latest_snapshot(self):
+        for q in queries.load(self.cfg(), "abcd1234"):
+            if q["tool"] == "query_kusto":
+                with self.subTest(qid=q["qid"]):
+                    self.assertIn("let c360_asof = toscalar(", q["query"])
+                    self.assertNotIn("ago(10d)", q["query"])
+                    self.assertEqual(q["query"].count("c360_asof - 10d"), 2 if q["qid"] == "p06" else 1)
+
     def test_config_validation(self):
         bad = dict(self.cfg(), owner_name='x"; drop')
         with self.assertRaises(SystemExit):
@@ -338,6 +346,26 @@ class DigestTest(fx.HomeCase):
         html = body["message"]["body"]["content"]
         self.assertIn("Build failed", html)
         self.assertIn("last built for 2026-10-26", html)
+
+    def test_attribute_source_gap_reaches_dashboard_and_digest(self):
+        for day, expected in ((None, "suspect"), ("2026-10-10", "stale")):
+            with self.subTest(day=day):
+                row = {"salesforce_account_id": "acc1", "measurement_date": day}
+                if day:
+                    row["latest_total_arr"] = 69000
+                fx.write_raw(self.home, fx.DAY1, "p06", fx.attributes([row]))
+                m, st = model.build(self.cfg(), fx.DAY1)
+                model.write(m, st)
+                saved = read_json(paths.model_path())
+                feed = next(f for f in saved["sources"] if f["feed"] == "attributes")
+                self.assertEqual((feed["state"], feed["as_of"]), (expected, day))
+                self.assertEqual(read_json(paths.status_path())["overall"], expected)
+                if day:
+                    self.assertEqual(saved["kpis"]["overall"]["arr"], 69000)
+                body, meta = digest.build_digest(saved, self.cfg(), st, today=fx.DAY1)
+                self.assertEqual(meta["counts"]["issues"], 1)
+                self.assertIn("data issues", meta["subject"])
+                self.assertIn("Account attributes", body["message"]["body"]["content"])
 
     def test_requires_recipient(self):
         with self.assertRaises(SystemExit):
