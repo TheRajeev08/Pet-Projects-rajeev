@@ -5,9 +5,10 @@ import {
     whitespace, SIGNAL_PRIORITIES, SIGNAL_SOURCES, isVerifiedSignal, signalsFor,
     copilotLicenses, copilotRowTotals, copilotRowsFor, copilotFilterCounts,
 } from "./model.mjs";
+import { renderRecommendations } from "./recommendations.mjs";
 
 export const ROW_LIMIT = 50;
-export const VIEW_LABELS = { overview: "Overview", copilot: "Copilot", impact: "Impact", ghe: "GHE", ghas: "GHAS", signals: "Signals", data: "Data" };
+export const VIEW_LABELS = { overview: "Overview", copilot: "Copilot", impact: "Impact", ghe: "GHE", ghas: "GHAS", signals: "Signals", recommendations: "Recommendations", data: "Data" };
 export const VIEW_FAMILY = { copilot: "ghcp", ghe: "ghe", ghas: "ghas" };
 const FAMILY_VIEW = { ghcp: "copilot", ghe: "ghe", ghas: "ghas" };
 const PRODUCT_TITLES = { ghe: "GitHub Enterprise", ghas: "GitHub Advanced Security", ghcp: "GitHub Copilot" };
@@ -866,6 +867,7 @@ export function renderView(model, ui = {}) {
     }
     if (VIEW_FAMILY[ui.view]) return renderProduct(model, ui, VIEW_FAMILY[ui.view]);
     if (ui.view === "signals") return renderSignals(model, ui);
+    if (ui.view === "recommendations") return renderRecommendations(model.recommendations, { filter: ui.recommendationFilter, query: ui.query, now: ui.now });
     if (ui.view === "data") return renderData(model);
     return renderOverview(model, ui);
 }

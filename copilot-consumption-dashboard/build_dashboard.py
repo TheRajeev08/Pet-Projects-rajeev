@@ -18,6 +18,7 @@ import re
 import sys
 
 from paths import ROOT, dashboard_path, data_dir
+import recommendations
 
 DATA = data_dir()
 WEEKS = 13
@@ -522,7 +523,7 @@ def build(day, raw, meta):
                                     load_enterprise_payloads(day), accounts, raw.get("18", []), meta.get("18"))
     return {"generated_at": dt.datetime.now().isoformat(timespec="minutes"), "data_date": day, "asof": asof,
             "sources": meta, "accounts": accounts, "portfolio": portfolio, "orphans": orphans,
-            "enterprises": enterprises}
+            "enterprises": enterprises, "recommendations": recommendations.load(DATA, [day] + [d for d in prior_days(day) if d != day], accounts)}
 
 def add_forecast_whitespace(account, forecast, whitespace):
     numbers = {

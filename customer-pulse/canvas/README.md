@@ -78,3 +78,10 @@ node --test customer-pulse/canvas/copilot/tests/
 Use synthetic data only. This repository is public.
 
 The suites cover null-preserving totals and coverage, mismatches (including Pulse zero), unassigned/over-assigned seats, trusted slug joins, escaping, filters, routes/deep links, embed messaging/chrome, per-account adoption sums, the compact endpoint and its degradation, and additive summary compatibility. For a live-data preview, copy only both model files into temporary directories and set a temporary `CP_HOME/config.json` with `copilot_home` pointing to the temporary Copilot directory. Never point development write routes at the live homes or commit customer data or screenshots.
+
+# Salesforce recommendations
+
+The Recommendations view reads the separately collected Copilot model's Salesforce
+Account Recommender feed. It is display-only, distinct from Pulse signals, and shows
+the source timestamp and any possible truncation. Impact enterprise detail only
+attributes Copilot recommendations using a confirmed warehouse Salesforce mapping.

@@ -4,6 +4,10 @@ Follow these steps in order. The session needs the **revenue-mcp-server** and **
 
 Config, data and output live in `~/CustomerPulse/`, outside the repo. **Never copy them into the repo or commit them.** They contain customer data and the repo is public. Don't modify repository files during a refresh.
 
+The separate Salesforce recommendations view reads the Copilot dashboard model. Its
+read-only collection is documented in `copilot-consumption-dashboard/REFRESH.md`;
+it does not feed Pulse signals, actions, digest state, or email.
+
 ## Extraction failures and data-only repairs
 
 - Check the source checkout before retrying. `_owned.kql` is inserted into every

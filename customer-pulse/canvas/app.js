@@ -48,6 +48,7 @@ const state = {
     kind: {},
     showClosed: false,
     signalFilters: { priority: "all", source: "all", status: "open" },
+    recommendationFilter: "open",
     pending: new Set(),
     dismissed: readDismissed(),
     toast: null,
@@ -153,6 +154,7 @@ function uiState() {
         kind: state.kind,
         showClosed: state.showClosed,
         signalFilters: state.signalFilters,
+        recommendationFilter: state.recommendationFilter,
         refresh: state.refresh,
         refreshDismissed: refreshDismissed(),
         build: state.build,
@@ -551,6 +553,7 @@ function connectEvents() {
     events = new EventSource("/events");
     events.addEventListener("status", event => handleStatus(parse(event.data)));
     events.addEventListener("model", event => noteRevision(parse(event.data)?.revision));
+    events.addEventListener("recommendations", () => loadModel());
     events.addEventListener("open", () => {
         if (!state.liveError && !state.statusError) return;
         state.liveError = null;
@@ -681,6 +684,9 @@ document.addEventListener("click", event => {
         const value = target.getAttribute("data-value");
         if (filter === "copilot" && ["all", "attention", "unassigned", "engaged_lt_50", "renewing_90"].includes(value)) {
             state.copilotFilter = value;
+            render();
+        } else if (filter === "recommendations" && ["open", "stale", "all"].includes(value)) {
+            state.recommendationFilter = value;
             render();
         } else if (filter.startsWith("kind:") && KINDS.includes(value)) {
             state.kind[filter.slice(5)] = value;

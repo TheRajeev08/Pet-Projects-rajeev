@@ -491,3 +491,6 @@ svg.plot .line { stroke-linecap: round; stroke-linejoin: round; stroke-width: 2;
     .embedded .all-accounts td:first-child, .embedded .all-accounts .queue-column { grid-column: 1 / -1; width: auto; }
 }
 .new-metric { display: inline-block; padding: 1px 6px; border: 1px solid currentColor; border-radius: 10px; color: var(--accent); font-size: 10px; font-weight: 650; }
+.recommendations, .recommendation-list li { overflow-wrap: anywhere; }
+.recommendation-list { padding-left: 1.5rem; }
+.recommendation-list li { margin: 1rem 0; }
