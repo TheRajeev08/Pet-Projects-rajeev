@@ -63,6 +63,11 @@ def num(v):
     return None if math.isnan(f) or math.isinf(f) else f
 
 
+def feature_metrics_known(row):
+    return {key: num(row.get(key)) is not None
+            for key in ("l7", "p7", "l28", "aiu28", "u7", "up7", "u28")}
+
+
 def chunk(flat, cols):
     names = cols.split(",")
     flat = dec(flat) or []
@@ -258,6 +263,7 @@ def build_enterprises(rows13, rows14, rows15, payloads, accounts, rows18=(), sou
             "l7": num(r.get("l7")) or 0, "p7": num(r.get("p7")) or 0, "l28": num(r.get("l28")) or 0,
             "aiu28": num(r.get("aiu28")) or 0, "u7": r.get("u7") or 0, "up7": r.get("up7") or 0,
             "u28": r.get("u28") or 0,
+            "feature_metrics_known": feature_metrics_known(r),
             "weekly": weekly(chunk(r.get("s"), r.get("cols") or "wk,gross"), "gross"),
         })
     adoption = {r["slug"]: r for r in rows15 if r.get("slug")}
@@ -411,7 +417,7 @@ def build(day, raw, meta):
 
     asof = {}
     arr_dates = sorted({period(p["date"]) for r in raw.get("09", []) for p in chunk(r["s"], r["cols"])})
-    for q in ("03", "04", "06", "07", "08", "10", "12", "16", "17", "18"):
+    for q in ("03", "04", "06", "07", "08", "10", "12", "14", "16", "17", "18"):
         rows = raw.get(q) or []
         if rows and rows[0].get("asof"):
             asof[q] = rows[0]["asof"][:10]
@@ -497,7 +503,8 @@ def build(day, raw, meta):
         a["integrations"] = sorted([{"integration": r["integration"], "surface": surface(r["integration"]),
                                      "l7": num(r["l7"]) or 0, "p7": num(r["p7"]) or 0, "l28": num(r["l28"]) or 0,
                                      "aiu28": num(r.get("aiu28")) or 0, "u7": r.get("u7") or 0, "up7": r.get("up7") or 0,
-                                     "u28": r.get("u28") or 0} for r in integ.get(aid, [])], key=lambda r: -r["l28"])
+                                     "u28": r.get("u28") or 0, "feature_metrics_known": feature_metrics_known(r)}
+                                    for r in integ.get(aid, [])], key=lambda r: -r["l28"])
         a["models"] = sorted([{"model": r["model"], "l7": num(r["l7"]) or 0, "p7": num(r["p7"]) or 0, "l28": num(r["l28"]) or 0}
                               for r in models.get(aid, [])], key=lambda r: -r["l28"])
         a["linked_usage"] = sorted(linked.get(aid, []), key=lambda r: -r["gross_28d"])

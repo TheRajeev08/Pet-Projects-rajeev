@@ -8,6 +8,7 @@ import {
     surfaceRows, totalEngagedUsers,
 } from "./impact.mjs";
 import { renderRecommendations } from "../recommendations.mjs";
+import { featureUsagePanel } from "./feature-usage.mjs";
 
 const app = document.querySelector("#app");
 const embedded = new URLSearchParams(location.search).get("embed") === "1";
@@ -820,6 +821,7 @@ function renderImpact() {
                 `</tbody></table></div>` +
                 `<p class="meta">User counts are per-integration distinct counts and are not summed across surfaces. Absence of UBB does not prove a feature is unused where enablement is unknown.</p></section>`;
         })() +
+        `<section class="section" id="feature-usage">${featureUsagePanel(m)}</section>` +
         `<section class="section model-usage">${modelPanel()}</section>` +
         `<section class="section"><div class="section-top"><div><h2>All enterprises</h2>` +
         `<p>${num(rows.length)} of ${num(p.total)} shown. Select one for its adoption phases, trend and ROI.</p></div></div>` +
@@ -867,7 +869,7 @@ function renderEnterprise() {
         `${H([enterprise.plan, enterprise.deployment, enterprise.industry, enterprise.region].filter(Boolean).join(" / ") || "GitHub enterprise")}` +
         `${enterprise.impact?.reportDateRange ? ` &middot; ${H(enterprise.impact.reportDateRange)}` : ""}</div></div>` +
         `<div class="detail-actions"><span class="status ${state_.state === "available" ? "active" : state_.state === "uncollected" ? "unknown" : "inactive"}">${H(state_.label)}</span></div></div>` +
-        `<nav class="detail-nav" aria-label="Enterprise sections"><a href="#enterprise-surfaces">Surfaces</a>` +
+        `<nav class="detail-nav" aria-label="Enterprise sections"><a href="#enterprise-feature-usage">Review &amp; agent usage</a><a href="#enterprise-surfaces">Surfaces</a>` +
         `<a href="#enterprise-models">Models</a>` +
         `<a href="#enterprise-adoption">Adoption breadth</a><a href="#enterprise-phases">Phases</a>` +
         `<a href="#enterprise-trend">Trend</a><a href="#enterprise-roi">Cost &amp; ROI</a></nav>` +
@@ -888,6 +890,7 @@ function renderEnterprise() {
 
     if (!impact) {
         return head +
+            `<section class="detail-section" id="enterprise-feature-usage">${featureUsagePanel(m, enterprise)}</section>` +
             `<section class="detail-section" id="enterprise-surfaces"><h2>Surfaces, CLI and agents</h2>` +
             surfacePanel(enterprise) + `</section>` +
             `<section class="detail-section model-usage" id="enterprise-models">${modelPanel(enterprise)}</section>` +
@@ -913,6 +916,7 @@ function renderEnterprise() {
             `<p class="meta">Engaged developers compared with the non-engaged baseline in the same enterprise. ` +
             `A larger multiplier is not automatically better &mdash; the direction says which way it goes.</p>` +
             `<div class="impact-grid">${mult.map(multiplierCard).join("")}</div></section>` : "") +
+        `<section class="detail-section" id="enterprise-feature-usage">${featureUsagePanel(m, enterprise)}</section>` +
         `<section class="detail-section" id="enterprise-surfaces"><h2>Surfaces, CLI and agents</h2>` +
         `<p class="meta">Where Copilot spend and users actually sit, and whether each surface is switched on.</p>` +
         surfacePanel(enterprise) + `</section>` +
@@ -1141,6 +1145,7 @@ function renderAccount() {
         `</section>` +
         `<section class="detail-section" id="account-workflows"><h2>Workflows and models</h2>` +
         `<p class="meta">Integration and model tables are UBB-based. No row does not prove a feature is unused.</p>` +
+        featureUsagePanel(m, null, a) +
         `<div class="details-grid"><div><h3>Copilot surfaces / integrations</h3>` +
         (hasSources(m, "08") ? detailTable(["Surface", "Integration", "7d $", "Prior 7d $", "28d $", "28d users", "AI units 28d"],
             integrationRows, "No recorded UBB integrations") : empty("Integration source missing", "The integration breakdown is withheld.")) +

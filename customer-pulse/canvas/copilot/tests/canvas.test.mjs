@@ -12,6 +12,7 @@ import {
     adoptionFacts, enablementKnown, enterpriseRows, impactState, multipliers, phases,
     enterpriseModels, portfolioModels, portfolioImpact, roi, surfaceAdoption, surfaceRows, totalEngagedUsers,
 } from "../impact.mjs";
+import { featureUsagePanel } from "../feature-usage.mjs";
 import { CanvasRequestError, createRefreshCoordinator, readCopilotModel as readModel, startCanvasServer, pulsePaths } from "../../server.mjs";
 import { renderRecommendations } from "../../recommendations.mjs";
 
@@ -546,7 +547,7 @@ test("model panels render in overview and no-ROI detail, escape labels and stack
         portfolioImpact, surfaceAdoption, impactOf: e => e.impact?.impact, productivity: () => null,
         engagementTrend: () => [], dates: value => value, label: value => value || "&mdash;",
         isNumber: value => typeof value === "number" && Number.isFinite(value),
-        surfacePanel: () => "SURFACE PANEL", matchCell: () => "", phaseBar: () => "",
+        featureUsagePanel, surfacePanel: () => "SURFACE PANEL", matchCell: () => "", phaseBar: () => "",
         H: value => String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll('"', "&quot;"),
         num: value => value === null ? "&mdash;" : String(value),
         money: value => value === null ? "&mdash;" : `$${value}`,
