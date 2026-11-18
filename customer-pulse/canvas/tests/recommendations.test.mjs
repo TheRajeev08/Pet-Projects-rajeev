@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { renderRecommendations } from "../recommendations.mjs";
 
 const feed = { status: "available", source_date: "2029-12-30", carried: true, collected_from: "2030-01-01T00:00:00Z", possibly_truncated: true, items: [
-    { account_id: "a", account_name: "<script>", in_book: true, status: "New", action_by: "2029-01-01",
+    { account_id: "a", account_name: "<SCRIPT>", in_book: true, status: "New", action_by: "2029-01-01",
         url: "javascript:alert(1)", signals: [{ recommended_product: "Copilot Business", ml_driven_insights: "<img src=x>" }] },
     { account_id: "b", in_book: false, status: "Stale", signals: [{ recommended_product: "GHAS" }] },
 ] };
@@ -16,9 +16,9 @@ test("unknown, empty, filters, escaping, and safe links", () => {
     assert.match(open, /Carried forward/);
     assert.match(open, /Source age: 2 day/);
     assert.match(open, /overdue/);
-    assert.match(open, /&lt;script&gt;/);
+    assert.match(open, /&lt;SCRIPT&gt;/);
     assert.match(open, /&lt;img src=x&gt;/);
-    assert.doesNotMatch(open, /javascript:|<script>|<img/);
+    assert.doesNotMatch(open, /javascript:|<script>|<img/i);
     assert.doesNotMatch(open, /GHAS/);
     assert.match(renderRecommendations(feed, { filter: "stale" }), /outside owned book/);
     assert.doesNotMatch(renderRecommendations(feed, { filter: "stale" }), /Copilot Business/);
