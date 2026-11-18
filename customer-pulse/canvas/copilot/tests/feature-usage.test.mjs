@@ -29,9 +29,20 @@ test("exact integrations, policy states, and non-additive user signals remain di
     assert.match(html, /At least using \(7d \/ 28d\): 1 \/ 1/);
     assert.match(html, /Policy enabled \/ disabled \/ other or unknown: 3 \/ 0 \/ 1/);
     assert.match(html, /Enabled with an observed zero 28d UBB signal/);
-    assert.doesNotMatch(html, /Users 28d/);
+    assert.doesNotMatch(html, /Peak daily user signal 28d/);
     assert.match(html, /Outcome metrics are not available/);
     assert.match(html, /Week 1: \$4\.00 \(2 observed\)/);
+});
+
+test("enterprise and account user signals describe their distinct source semantics", () => {
+    const e = enterprise("one", [row("copilot-pr-reviews")]);
+    const model = makeModel([e]);
+    const enterpriseHtml = featureUsagePanel(model, e);
+    const accountHtml = featureUsagePanel(model, null, e);
+    assert.match(enterpriseHtml, /Peak daily user signal 28d/);
+    assert.match(enterpriseHtml, /counts from a single model slice/);
+    assert.match(accountHtml, /sums of model-slice counts and may double-count people/);
+    assert.match(accountHtml, /not deduplicated unique users over the period/);
 });
 
 test("missing sources, absent rows and incomplete slices are unknown, not zero", () => {

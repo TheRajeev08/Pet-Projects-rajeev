@@ -61,7 +61,8 @@ export function featureUsagePanel(model, enterprise = null, account = null, now 
     const scope = account ? "Salesforce account" : enterprise ? "GitHub enterprise" : "GitHub enterprise portfolio";
     let html = `<h2>Code review &amp; cloud agent usage</h2>` +
         `<p class="meta">${scope}: metered UBB usage indicators, not every interaction. Usage value is gross list value, not an invoice. ` +
-        `User signals are maximum daily slice counts, not period-unique users; account counts may include model-slice overlap. ` +
+        `User signals are peak daily ${account ? "sums of model-slice counts and may double-count people" : "counts from a single model slice"}, ` +
+        `not deduplicated unique users over the period. ` +
         `They are not summed across enterprises or features.</p>` +
         `<div class="inline-note">Outcome metrics are not available: PRs created by cloud agent, PRs reviewed by Copilot, ` +
         `merges and review comments acted on are not supplied by this dashboard's feeds. ` +
@@ -89,7 +90,8 @@ export function featureUsagePanel(model, enterprise = null, account = null, now 
         } else {
             html += `<p class="meta">${rows.length ? "Integration row observed." : "No usable integration row; usage is unknown."} Account-level policy is not available.</p>`;
         }
-        html += table(["7d value", "Prior 7d value", "28d value", "AI units 28d", ...((enterprise || account) ? ["Users 7d", "Users prior 7d", "Users 28d"] : [])],
+        html += table(["7d value", "Prior 7d value", "28d value", "AI units 28d",
+            ...((enterprise || account) ? ["Peak daily user signal 7d", "Peak daily user signal prior 7d", "Peak daily user signal 28d"] : [])],
             [[money(sum(rows, "l7")), money(sum(rows, "p7")), money(sum(rows, "l28")), number(sum(rows, "aiu28")),
                 ...((enterprise || account) ? [number(rows[0]?.u7), number(rows[0]?.up7), number(rows[0]?.u28)] : [])]]);
         if (!account && gaps.length) {
