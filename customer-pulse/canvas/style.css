@@ -620,3 +620,6 @@ tbody tr:hover > * { background: var(--hover-row); }
     .copilot-customers td::before { content: attr(data-label); display: block; color: var(--muted); font-size: 11px; }
     .copilot-customers thead th.num button { justify-content: flex-start; }
 }
+.recommendations, .recommendation-list li { overflow-wrap: anywhere; }
+.recommendation-list { padding-left: 1.5rem; }
+.recommendation-list li { margin: 1rem 0; }

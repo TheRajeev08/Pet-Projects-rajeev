@@ -196,6 +196,32 @@ describe("canvas server", () => {
         fs.writeFileSync(ctx.paths.model, "{invalid");
         assert.equal((await get()).status, 503);
     });
+
+    test("recommendation feed errors remain visible without breaking Pulse", async t => {
+        const home = syntheticHome();
+        const cpHome = path.join(home, "copilot");
+        fs.mkdirSync(cpHome);
+        writeJson(path.join(home, "config.json"), { copilot_home: cpHome });
+        const server = await serveHome(t, home);
+        const get = () => request(server.server, "GET", "/api/model");
+        const file = path.join(cpHome, "model.json");
+        fs.writeFileSync(file, "{invalid");
+        let response = await get();
+        assert.equal(response.status, 200);
+        assert.match(response.json.model.recommendations.reason, /unavailable/);
+        const dashboard = { data_date: "2030-01-04", portfolio: { owned: 0, consuming: 0 },
+            accounts: [], missing_sources: [], sources: {}, definitions: {},
+            recommendations: { status: "available", items: [{ signals: [null] }] } };
+        writeJson(file, dashboard);
+        response = await get();
+        assert.equal(response.status, 200);
+        assert.match(response.json.model.recommendations.reason, /invalid shape/);
+        dashboard.recommendations = { status: "available", items: [] };
+        writeJson(file, dashboard);
+        response = await get();
+        assert.deepEqual(response.json.model.recommendations.items, []);
+        assert.equal(fs.existsSync(server.paths.actioned), false);
+    });
     after(async () => {
         await ctx?.server.close();
         removeDir(home);

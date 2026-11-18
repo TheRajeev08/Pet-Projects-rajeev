@@ -13,6 +13,7 @@ import {
     enterpriseModels, portfolioModels, portfolioImpact, roi, surfaceAdoption, surfaceRows, totalEngagedUsers,
 } from "../impact.mjs";
 import { CanvasRequestError, createRefreshCoordinator, readCopilotModel as readModel, startCanvasServer, pulsePaths } from "../../server.mjs";
+import { renderRecommendations } from "../../recommendations.mjs";
 
 async function testPaths(dir) {
     const paths = pulsePaths(join(dir, "pulse"));
@@ -538,6 +539,7 @@ test("model panels render in overview and no-ROI detail, escape labels and stack
     const model = { enterprises: [item] };
     const context = vm.createContext({
         state: { model, selectedSlug: "synthetic", impactQ: "" },
+        renderRecommendations,
         enterpriseModels: e => enterpriseModels(e, "2030-01-08"),
         portfolioModels: m => portfolioModels(m, "2030-01-08"),
         impactState, phases, roi, multipliers, totalEngagedUsers, adoptionFacts, enterpriseRows,

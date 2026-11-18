@@ -18,6 +18,7 @@ import re
 import sys
 
 from paths import ROOT, data_dir, load_config
+import recommendations
 
 QDIR = os.path.join(ROOT, "queries")
 DATA = data_dir()
@@ -130,8 +131,13 @@ def cmd_collect(args):
     by_kql = {q["qid"]: q for q in qs if q["tool"] == "query_kusto"}
     by_soql = {norm(q["query"]): q for q in qs if q["tool"] == "query_salesforce"}
     found, impact, settings = {}, {}, {}
+    recommendation_feed = None
     for timestamp, tool, args_in, result in tool_results(iter_events(args.session)):
         qtext = args_in.get("query", "")
+        if recommendations.matches(tool, args_in, result, timestamp):
+            recommendation_feed = {"collected_from": timestamp, "tool": tool,
+                                   "arguments": args_in, "result": result}
+            continue
         # Copilot Impact and feature settings are fetched per enterprise slug, not by query text.
         if tool.endswith("get_copilot_impact") or tool.endswith("get_copilot_feature_settings"):
             slug = args_in.get("slug")
@@ -167,6 +173,14 @@ def cmd_collect(args):
         with open(os.path.join(out, f"{qid}.json"), "w") as f:
             json.dump(payload, f)
     print(f"Collected {len(found)}/{len(qs)} query results into {out}")
+    if recommendation_feed:
+        with open(os.path.join(out, "recommendations.json"), "w") as f:
+            json.dump(recommendation_feed, f)
+        count = len(recommendation_feed["result"]["recommendations"])
+        print(f"Collected {count} Salesforce recommendations" +
+              ("; WARNING: possible truncation at the limit" if count >= recommendations.LIMIT else ""))
+    else:
+        print("Salesforce recommendations not found in this session; feed remains unknown or carried forward.")
     # A query collected earlier today is not missing; this keeps the Impact step re-runnable.
     missing = [qid for qid in missing if not os.path.exists(os.path.join(out, f"{qid}.json"))]
 

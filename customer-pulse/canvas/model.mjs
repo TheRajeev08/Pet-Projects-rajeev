@@ -16,7 +16,7 @@ export const SOURCE_STATES = {
     missing: "No data",
     not_connected: "Not connected",
 };
-export const VIEWS = ["overview", "copilot", "impact", "ghe", "ghas", "signals", "data"];
+export const VIEWS = ["overview", "copilot", "impact", "ghe", "ghas", "signals", "recommendations", "data"];
 export const COPILOT_VIEWS = ["desk", "accounts", "trends", "changes", "notes"];
 export const TYPE_LABELS = { GHSP: "Secret Protection", GHCS: "Code Security", "Visual Studio": "Visual Studio bundle" };
 

@@ -7,6 +7,7 @@ import {
     enterpriseModels, impactOf, impactState, multipliers, phases, portfolioImpact, portfolioModels, productivity, roi, surfaceAdoption,
     surfaceRows, totalEngagedUsers,
 } from "./impact.mjs";
+import { renderRecommendations } from "../recommendations.mjs";
 
 const app = document.querySelector("#app");
 const embedded = new URLSearchParams(location.search).get("embed") === "1";
@@ -880,7 +881,10 @@ function renderEnterprise() {
                     : enterprise.match.unowned_sf_id
                         ? `This enterprise maps to a Salesforce account outside your owned book, so it is not linked to an account view here.`
                         : `No Salesforce account name matches this enterprise, so Impact here is not linked to account figures.`) +
-        `</div>`;
+        `</div>` +
+        renderRecommendations(m.recommendations, { impact: true,
+            accountId: enterprise.match?.confidence === "confirmed" && enterprise.match?.source === "warehouse"
+                ? enterprise.match.candidates?.[0]?.id : null });
 
     if (!impact) {
         return head +

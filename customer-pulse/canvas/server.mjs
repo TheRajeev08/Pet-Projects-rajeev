@@ -12,6 +12,7 @@ const STATIC = {
     "/app.js": "text/javascript; charset=utf-8",
     "/model.mjs": "text/javascript; charset=utf-8",
     "/views.mjs": "text/javascript; charset=utf-8",
+    "/recommendations.mjs": "text/javascript; charset=utf-8",
     "/style.css": "text/css; charset=utf-8",
     "/copilot/app.js": "text/javascript; charset=utf-8",
     "/copilot/insights.mjs": "text/javascript; charset=utf-8",
@@ -374,9 +375,24 @@ export async function startCanvasServer({ paths = pulsePaths(), refresh, port = 
                 // Stat the overlay files before reading them so a concurrent change always produces a newer revision.
                 const [actionedRev, statusRev] = await Promise.all([revisionOf(paths.actioned), revisionOf(paths.status)]);
                 const [result, items, build] = await Promise.all([readModel(paths.model), readActionStates(paths.actioned), currentBuild()]);
+                let recommendations;
+                try {
+                    const copilot = await readCopilotModel(await copilotModelPath(paths));
+                    const feed = copilot.model.recommendations;
+                    if (!feed) recommendations = { status: "unknown", reason: "Recommendation feed has not been collected." };
+                    else if (!isObject(feed) || !["available", "unknown"].includes(feed.status)
+                        || (feed.status === "available" && (!Array.isArray(feed.items)
+                            || feed.items.some(item => !isObject(item) || !Array.isArray(item.signals)
+                                || item.signals.some(signal => !isObject(signal))))))
+                        recommendations = { status: "unknown", reason: "Recommendation feed has an invalid shape." };
+                    else recommendations = feed;
+                } catch (error) {
+                    if (!(error instanceof CanvasRequestError) && !(error instanceof SyntaxError)) throw error;
+                    recommendations = { status: "unknown", reason: `Copilot model unavailable: ${error.message}` };
+                }
                 refresh.observe(result.revision);
                 json(res, 200, {
-                    model: withActionStates(result.model, items),
+                    model: { ...withActionStates(result.model, items), recommendations },
                     revision: `${result.revision}|${actionedRev}|${statusRev}`,
                     build,
                     refresh: refresh.status(),
@@ -450,6 +466,7 @@ export async function startCanvasServer({ paths = pulsePaths(), refresh, port = 
                 if (JSON.stringify(copilot) !== lastCopilotStatus) client.write(`event: status\ndata: ${JSON.stringify(copilot)}\n\n`);
                 client.write(": keepalive\n\n");
             }
+            if (copilot.revision !== lastCopilotRevision) broadcast("recommendations", {});
             lastCopilotRevision = copilot.revision;
             lastCopilotStatus = JSON.stringify(copilot);
             if (failing) {

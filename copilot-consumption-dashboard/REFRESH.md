@@ -55,6 +55,14 @@ Config, data and output live in `~/CopilotConsumptionDashboard/`, outside the re
 
    Feature settings are what let the dashboard tell *"CLI is switched off"* apart from *"CLI is on and nobody uses it"*, so skipping them leaves the surface gaps blank rather than wrong.
 
+   **Salesforce Account Recommender:** call `revenue-mcp-server-get_account_recommendations`
+   once with `owner: "therajeev08"`, `status: ["New", "Working", "Saved", "Stale"]`,
+   and `limit: 100`. Run `python3 refresh.py collect` again in the same session.
+   The feed is read-only and separate from Pulse signals, actions, and email. If the
+   call fails, report it; a missing feed is unknown and an older collected feed
+   retains its original timestamp. If the returned count reaches 100, report possible
+   truncation: this endpoint offers no pagination.
+
 5. **Build the dashboard**
    ```bash
    python3 build_dashboard.py --summary
