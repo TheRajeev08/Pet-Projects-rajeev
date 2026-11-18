@@ -63,15 +63,15 @@ test("missing sources, absent rows and incomplete slices are unknown, not zero",
 });
 
 test("rendering escapes untrusted labels and discloses missing and stale cutoffs", () => {
-    const e = enterprise('bad"><script>alert(1)</script>', [
+    const e = enterprise('bad"><ScRiPt>alert(1)</ScRiPt>', [
         row("copilot-pr-reviews", { l7: 0, l28: 0, u7: 0, u28: 0, aiu28: 0 }),
     ], { "Code review": "enabled" });
     const model = makeModel([e]);
     delete model.asof["14"];
     model.stale_sources = { "14": '2030-01-01<script>' };
     const html = featureUsagePanel(model);
-    assert.doesNotMatch(html, /<script>/);
-    assert.match(html, /&lt;script&gt;/);
+    assert.doesNotMatch(html, /<script>/i);
+    assert.match(html, /&lt;script&gt;/i);
     assert.match(html, /freshness cannot be established/);
     assert.match(html, /carried forward/);
 });
