@@ -6,6 +6,7 @@ import importlib.util
 import io
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -90,6 +91,40 @@ class EnterpriseModelTests(unittest.TestCase):
         self.assertEqual(len(observed["slices"]), 1)
         unavailable = builder.build_model_usage([feed([], asof=None)], OWNED, SOURCE)["101"]
         self.assertEqual(unavailable["status"], "unavailable")
+
+    def test_enterprise_integration_cutoff_is_published(self):
+        raw = {"13": OWNED, "14": [{"slug": "synthetic-one", "integration": "copilot-pr-reviews",
+                                    "asof": CUTOFF}]}
+        with patch.object(builder, "load_enterprise_payloads", return_value={}):
+            model = builder.build("2030-01-08", raw, {"14": SOURCE})
+        self.assertEqual(model["asof"]["14"], "2030-01-07")
+
+    def test_partial_raw_integrations_remain_unknown_in_feature_panel(self):
+        incomplete = {"integration": "copilot-pr-reviews", "l7": 0, "p7": 0,
+                      "l28": None, "aiu28": 0, "u7": 0, "up7": 0, "u28": 0}
+        raw = {"01": [{"Id": "syn-a", "Name": "Synthetic Account"}],
+               "08": [{**incomplete, "id": "syn-a"}], "13": OWNED,
+               "14": [{**incomplete, "slug": "synthetic-one", "asof": CUTOFF}]}
+        with patch.object(builder, "load_enterprise_payloads", return_value={}):
+            model = builder.build("2030-01-08", raw, {"08": SOURCE, "14": SOURCE})
+        model["missing_sources"] = []
+        account = model["accounts"][0]["integrations"][0]
+        enterprise = model["enterprises"][0]["integrations"][0]
+        for row in (account, enterprise):
+            self.assertEqual(row["l28"], 0)
+            self.assertFalse(row["feature_metrics_known"]["l28"])
+        script = """
+import { featureUsage, featureUsagePanel } from './customer-pulse/canvas/copilot/feature-usage.mjs';
+let data = ''; for await (const chunk of process.stdin) data += chunk;
+const model = JSON.parse(data), enterprise = model.enterprises[0], account = model.accounts[0];
+enterprise.settings = { surfaces: { 'Code review': 'enabled' } };
+for (const item of [featureUsage(model, enterprise)[0], featureUsage(model, null, account)[0]]) {
+  if (item.entries[0].row.l28 !== null || item.entries[0].gap) process.exit(1);
+}
+if (featureUsagePanel(model, enterprise).includes('Enabled with an observed zero')) process.exit(1);
+"""
+        subprocess.run(["node", "--input-type=module", "-e", script],
+                       cwd=os.path.dirname(ROOT), input=json.dumps(model), text=True, check=True)
 
     def test_rejects_bad_identity_dimension_truncation_and_totals(self):
         cases = [
