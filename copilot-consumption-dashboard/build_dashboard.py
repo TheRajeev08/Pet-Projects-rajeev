@@ -321,6 +321,8 @@ def load_raw(day):
     raw, meta = {}, {}
     for path in sorted(glob.glob(os.path.join(folder, "*.json"))):
         qid = os.path.basename(path)[:-5]
+        if not re.fullmatch(r"\d{2}", qid):
+            continue
         with open(path) as f:
             payload = json.load(f)
         res = payload["result"]

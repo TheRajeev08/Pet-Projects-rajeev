@@ -162,6 +162,19 @@ if (featureUsagePanel(model, enterprise).includes('Enabled with an observed zero
             self.assertEqual(normalized["collected_from"], COLLECTED)
             self.assertEqual(normalized["asof"], CUTOFF)
 
+    def test_load_raw_ignores_non_query_recommendation_feed(self):
+        with tempfile.TemporaryDirectory() as data:
+            folder = os.path.join(data, "raw", "2030-01-08")
+            os.makedirs(folder)
+            with open(os.path.join(folder, "01.json"), "w") as f:
+                json.dump({"collected_from": COLLECTED, "result": {"records": [{"Id": "synthetic"}]}}, f)
+            with open(os.path.join(folder, "recommendations.json"), "w") as f:
+                json.dump({"collected_from": COLLECTED, "result": {"recommendations": [{"id": "synthetic"}]}}, f)
+            with patch.object(builder, "DATA", data):
+                _, raw, meta = builder.load_raw("2030-01-08")
+            self.assertEqual(set(raw), {"01"})
+            self.assertEqual(set(meta), {"01"})
+
     def test_query_is_bounded_packed_and_collected_with_existing_guards(self):
         with patch.object(refresh, "load_config", return_value={
             "owner_sfdc_id": "ownerIdAAAAAAAA", "owner_name": "Synthetic Owner",
