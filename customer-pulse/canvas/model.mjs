@@ -338,7 +338,19 @@ export function copilotRowTotals(rows) {
     return totals;
 }
 
-/** Pulse is authoritative for contracted seats and adoption. The second model only reconciles licenses and slugs. */
+function weeklyAiUnits(owned, dashboard, cutoff) {
+    const coverage = [];
+    const points = Array.from({ length: 13 }, (_, index) => {
+        // q07 indexes backward from the source cutoff; charts read oldest first.
+        const week = 12 - index;
+        const values = owned.map(a => dashboard.get(a.id)?.aiu?.[week]).filter(isNumber);
+        coverage.push(values.length);
+        return [addDays(cutoff, -7 * week), values.length ? values.reduce((sum, value) => sum + value, 0) : null];
+    });
+    return { points, coverage, total: owned.length };
+}
+
+/** Pulse is authoritative for licenses and adoption; weekly AI units come from the Copilot usage snapshot. */
 export function copilotLicenses(pulseModel, copilotModel = null) {
     const dashboard = new Map((copilotModel?.accounts || []).map(account => [account.id, account]));
     const slugs = new Map();
@@ -377,7 +389,10 @@ export function copilotLicenses(pulseModel, copilotModel = null) {
                 || cp.health?.category === "Red" || flags.source_mismatch,
         };
     });
+    const cutoff = copilotModel?.asof?.["07"];
     return { rows, totals: copilotRowTotals(rows),
+        aiuTrend: isDay(cutoff) && !copilotModel.missing_sources?.includes("07") && !copilotModel.stale_sources?.["07"]
+            ? weeklyAiUnits(pulseModel.accounts.filter(a => a.in_book !== false), dashboard, cutoff) : null,
         flags: Object.fromEntries(["unassigned", "over_assigned", "engaged_lt_50", "renewing_90", "source_mismatch"]
             .map(flag => [flag, rows.filter(row => row.flags[flag]).length])),
         reconciliation: copilotModel ? "available" : "unavailable",

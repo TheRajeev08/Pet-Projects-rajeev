@@ -85,7 +85,9 @@ export function createWorkspaceHome(home) {
     writeNewJson(path.join(home, "status.json"), { overall: "ok", date: model.date, generated_at: model.generated_at });
     writeNewJson(path.join(copilot, "model.json"), {
         data_date: model.date, generated_at: model.generated_at, missing_sources: [], sources: {}, definitions: {},
-        asof: {}, changes: [], accounts: model.accounts.map(a => ({ id: a.id, name: a.name, consuming: true,
+        asof: { "07": model.date }, changes: [], accounts: model.accounts.map((a, i) => ({ id: a.id, name: a.name, consuming: true,
+            aiu: [868, 820, 850, 760, 732, 780, 695, 642, 665, 590, 562, 585, 510].map((units, week) =>
+                (i + week) % 11 === 0 ? null : units + i * 8),
             assigned: 182, active_28d: 160, engaged_1d28: 132, arr: a.arr, integrations: [], factors: [], health: "Green" })),
         portfolio: { owned: 64, consuming: 64, a7: [110, 120], gross: [200, 210], at_risk: [2, 1] }, enterprises: [],
     });

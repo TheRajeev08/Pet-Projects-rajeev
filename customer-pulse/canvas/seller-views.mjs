@@ -72,7 +72,7 @@ export function createSellerViews({ esc, fmtInt, fmtMoney, fmtPct, fmtDay, spark
         return `<dl class="workspace-metrics">${items.map(([label, value, detail]) =>
             `<div><dt>${esc(label)}</dt><dd>${value}</dd><dd class="metric-note">${detail || ""}</dd></div>`).join("")}</dl>`;
     }
-    function lineChart(series, label, unit = "Billed USD") {
+    function lineChart(series, label, unit = "Billed USD", dateLabel = "Date") {
         const points = (series?.points || []).filter(([day]) => dayOf(day));
         const known = points.filter(([, value]) => typeof value === "number" && Number.isFinite(value));
         if (!known.length) return `<p class="empty">No reported ${esc(unit)} in this window.</p>`;
@@ -91,8 +91,8 @@ export function createSellerViews({ esc, fmtInt, fmtMoney, fmtPct, fmtDay, spark
         const indices = [...new Set([0, Math.floor(points.length / 2), points.length - 1])];
         return `<figure class="history-chart"><figcaption>${esc(label)} <span>${esc(unit)} · ${esc(points[0][0])} to ${esc(points.at(-1)[0])}</span></figcaption>`
             + `<svg viewBox="0 0 680 205" role="img" aria-label="${esc(label)}. ${esc(unit)}. Missing points break the line; exact values follow.">${axis}<path class="history-line" d="${path}"/>${dots}`
-            + indices.map(i => `<text x="${72 + (Date.parse(points[i][0]) - low) / span * 580}" y="192" text-anchor="${i === 0 ? "start" : i === points.length - 1 ? "end" : "middle"}">${esc(points[i][0].slice(0, 7))}</text>`).join("") + "</svg></figure>"
-            + `<details><summary>Exact values & reporting coverage</summary>${simpleTable(["Date", unit, ...(series.coverage ? ["Reporting accounts"] : [])],
+            + indices.map(i => `<text x="${72 + (Date.parse(points[i][0]) - low) / span * 580}" y="192" text-anchor="${i === 0 ? "start" : i === points.length - 1 ? "end" : "middle"}">${esc(dateLabel === "Week ending" ? fmtDay(points[i][0]) : points[i][0].slice(0, 7))}</text>`).join("") + "</svg></figure>"
+            + `<details><summary>Exact values & reporting coverage</summary>${simpleTable([dateLabel, unit, ...(series.coverage ? ["Reporting accounts"] : [])],
                 points.map(([day, value], i) => [date(day), exact(value), ...(series.coverage ? [`${series.coverage[i]}/${series.total}`] : [])]))}</details>`;
     }
     function bars(rows, label, unit) {
@@ -414,7 +414,13 @@ export function createSellerViews({ esc, fmtInt, fmtMoney, fmtPct, fmtDay, spark
         }
         const measure = ui.sellerOptions?.contribution === "arr" ? "arr" : "billed";
         const contributions = [...mix].map(([key, rows]) => ({ name: labelOf(key), value: knownSum(rows.map(r => r[measure])) }));
+        const aiu = ui.copilotLicenses?.aiuTrend;
         return header("Your book", `${accounts.length} owned accounts · Snapshot ${model.date}`)
+            + `<section class="product-cards overview-products" aria-label="Product overview">${["ghe", "ghas", "ghcp"].map(family => productCard(model, family)).join("")}`
+            + `<section class="product-trend"><div class="card-head"><h2>Copilot AIU trend</h2><span class="muted">13 weeks</span></div>`
+            + (aiu ? lineChart(aiu, "Weekly AI units consumed", "AI units", "Week ending")
+                : `<p class="empty">${ui.copilotLicensesLoading ? "Loading AI unit history…" : "Weekly AI unit history is unavailable for this snapshot."}</p>`)
+            + (aiu ? `<p class="note">Latest week: ${integer(aiu.coverage.at(-1))}/${integer(aiu.total)} owned accounts reporting.</p>` : "") + "</section></section>"
             + metrics(stats)
             + `<div class="workspace-columns">${panel("Product contribution", select(ui, "contribution", "Measure", [["billed", "Observed billed LTM"], ["arr", "Contract ARR"]])
                 + bars(contributions, measure === "arr" ? "Contract ARR by product" : "Observed billed LTM by product", measure === "arr" ? "ARR USD" : "Billed USD")
@@ -425,7 +431,6 @@ export function createSellerViews({ esc, fmtInt, fmtMoney, fmtPct, fmtDay, spark
             + `<div class="workspace-columns">${panel("Consumption movement", lineChart(portfolioSeries(model), "Closed-month invoiced history")
                 + '<p class="note">Reporting cohorts change. Unmatched total movement is not growth. See matched comparisons in Consumption.</p>'
                 + '<a href="#/consumption">Explore consumption</a>', bookSources(model, ["invoices"]))}${radar(model, ui)}</div>`
-            + `<div class="product-cards">${["ghe", "ghas", "ghcp"].map(family => productCard(model, family)).join("")}</div>`
             + changesPanel(model, ui, { key: "overview", limit: 8 })
             + `<div class="workspace-toolbar"><a class="button" href="#/account360">View all accounts</a><a href="#/data">Coverage & freshness</a></div>`
             + disclosure("Metric definitions & source dates", '<p>ARR, invoiced billing, pipeline and usage forecasts are different measures and are never added together. LTM includes observed months, not imputed zeros.</p>' + readySources(model) + bookSources(model, ["invoices"]));

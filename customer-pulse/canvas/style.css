@@ -225,6 +225,9 @@ main { grid-column: 2; grid-row: 3; container-type: inline-size; min-width: 0; w
 .headline-stats > .hot dd { color: var(--negative); }
 
 .product-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; margin-bottom: 20px; }
+.overview-products { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.product-trend { min-width: 0; padding: 18px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); }
+.product-trend .history-chart { margin-block: 8px; }
 .product-card {
     display: flex; flex-direction: column; gap: 12px; padding: 18px 18px 14px;
     border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper);
@@ -618,6 +621,7 @@ tbody tr:hover > * { background: var(--hover-row); }
     .copilot-customers .col-category { width: 12%; }
 }
 @container (max-width: 560px) {
+    .overview-products { grid-template-columns: minmax(0, 1fr); }
     .copilot-customers table, .copilot-customers tbody, .copilot-customers tfoot { display: block; }
     .copilot-customers thead { display: block; position: static; }
     .copilot-customers thead tr { display: flex; flex-wrap: wrap; }
