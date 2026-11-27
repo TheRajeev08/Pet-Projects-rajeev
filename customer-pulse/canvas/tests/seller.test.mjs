@@ -1,12 +1,27 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { ACCOUNT_VIEWS, hashFor, parseHash, withActionStates } from "../model.mjs";
-import { renderView } from "../views.mjs";
+import { renderView, renderNav } from "../views.mjs";
 import { activitySummary, billedLtm, billedSeries, bookConsumption, currentRows, dedupeSignals, knownSum,
-    bookFeedCoverage, monthlyChange, observedCount, openRows, productRows, rankAccounts } from "../seller-data.mjs";
+    bookFeedCoverage, monthlyChange, observedCount, openRows, productRows, rankAccounts,
+    allAccounts, contactDirectory, contactCount, portfolioSeries, renewalBuckets, stackGroups, openSeCount } from "../seller-data.mjs";
 import { syntheticAccount, syntheticModel } from "./helpers.mjs";
+import { workspaceModel } from "./workspace-fixture.mjs";
 
 const feed = records => ({ state: "ok", as_of: "2026-10-27", collected_at: "2026-10-27", records });
+test("preview evidence quotes, dates and links refer to the matching synthetic source", () => {
+    for (const account of workspaceModel().accounts) {
+        const feeds = account.seller.feeds;
+        for (const claim of feeds.tech_stack.records) {
+            const sources = claim.source_type === "gong" ? feeds.gong.records : feeds.issues.records;
+            const source = sources.find(r => r.id === claim.source_id);
+            assert.ok(source);
+            assert.equal(claim.source_url, source.url);
+            assert.equal(claim.observed_at, source.date);
+            assert.equal(claim.evidence_quote, source.description);
+        }
+    }
+});
 function fixture() {
     const model = syntheticModel();
     model.accounts[0].seller = { ready: { copilot_aiu_billed_lcm: 8, copilot_aiu_billed_ltm: 20, ghe_som_annual: 300 },
@@ -73,6 +88,18 @@ test("successful known statuses distinguish zero open issues from missing eviden
     assert.equal(productRows(model.accounts[1], model.date).find(p => p.key === "ghcs").status, "No data");
 });
 
+test("SE counts do not classify every account-linked record as engineering evidence", () => {
+    const a = fixture().accounts[0];
+    assert.equal(openSeCount(a), null);
+    a.seller.feeds.issues.records = [{ id: "se", se_issue: true, status: "closed" },
+        { id: "account-plan", se_issue: false, status: "open" }];
+    assert.equal(openSeCount(a), 0);
+    a.seller.feeds.issues.records[0].status = "open";
+    assert.equal(openSeCount(a), 1);
+    a.seller.feeds.issues.state = "partial";
+    assert.equal(openSeCount(a), null);
+});
+
 test("all six Account 360 routes round-trip and render without changing the model", () => {
     const model = fixture(), before = structuredClone(model);
     for (const subview of ACCOUNT_VIEWS) {
@@ -80,14 +107,14 @@ test("all six Account 360 routes round-trip and render without changing the mode
         assert.deepEqual(parseHash(hashFor(route)), route);
         const html = renderView(model, route);
         assert.match(html, /Account 360/);
-        assert.match(html, /aria-label="Account 360 sections"/);
+        assert.match(renderNav(model, route), /aria-label="Account 360 sections"/);
         assert.match(html, /No data/);
         assert.doesNotMatch(html, /undefined|NaN|<script>unsafe|href="javascript:/);
     }
     assert.deepEqual(model, before);
     const activity = renderView(model, { view: "account360", subview: "activity", account: model.accounts[0].id });
     assert.match(activity, /&lt;script&gt;unsafe/);
-    assert.match(activity, /Synthetic CI/);
+    assert.doesNotMatch(activity, /Synthetic CI|Proof of concept|PoC end date/);
 });
 
 test("new screens label each monetary type and expose source coverage", () => {
@@ -95,9 +122,9 @@ test("new screens label each monetary type and expose source coverage", () => {
     for (const view of ["overview", "top50", "consumption", "pipeline", "ghe", "ghas", "copilot", "data"]) {
         const html = renderView(model, { view });
         assert.doesNotMatch(html, /\bundefined\b|\bNaN\b/);
-        if (["overview", "top50", "consumption", "copilot"].includes(view)) assert.match(html, /\[Billed\]/);
+        if (["overview", "top50", "consumption", "copilot"].includes(view)) assert.match(html, /[Bb]illed/);
     }
-    assert.match(renderView(model, { view: "top50" }), /Synthetic CI/);
+    assert.doesNotMatch(renderView(model, { view: "top50" }), /Synthetic CI|proofs of concept|PoC evidence/);
     assert.match(renderView(model, { view: "top50", sellerRank: "billed" }), /data-value="billed"[^>]*aria-pressed="true"/);
     assert.match(renderView(model, { view: "data" }), /No rows does not mean zero/);
     assert.match(renderView(model, { view: "ghe" }), /\[Model est\.\]/);
@@ -107,6 +134,66 @@ test("new screens label each monetary type and expose source coverage", () => {
     assert.doesNotMatch(budgets, /\$100\.25/);
     assert.deepEqual(bookFeedCoverage(model, "invoices"), { state: "partial", first: "2026-10-27", as_of: "2026-10-27",
         collected_at: "2026-10-27", reporting: 1, total: 3 });
+});
+
+test("contacts are stable-ID records, not email-deduplicated interaction counts", () => {
+    const model = fixture(), a = model.accounts[0];
+    a.seller.feeds.contacts.records.push({ id: "no-email", name: "No email", role: "Buyer" },
+        { id: "shared-email", name: "Second person", email: "person@example.invalid" },
+        { id: "unseen", name: "No interaction", email: "unseen@example.invalid" });
+    assert.equal(contactCount(a), 4);
+    assert.equal(contactDirectory(a).filter(p => p.interaction).length, 2);
+    assert.equal(contactDirectory(a).find(p => p.id === "no-email").interaction, null);
+    a.seller.feeds.contacts.state = "stale";
+    assert.equal(contactCount(a), 4);
+    assert.equal(contactDirectory(a).filter(p => p.interaction).length, 0);
+    const html = renderView(model, { view: "account360", account: a.id, subview: "contacts" });
+    for (const label of ["No email", "Second person", "No interaction", "Stale"]) assert.ok(html.includes(label));
+    a.seller.feeds.contacts = { state: "no_rows", records: [] };
+    assert.equal(contactCount(a), 0);
+    assert.match(renderView(model, { view: "account360", account: a.id, subview: "contacts" }), /No contacts returned/);
+    a.seller.feeds.contacts.state = "failed";
+    assert.equal(contactCount(a), null);
+});
+
+test("directory includes the full book and renewal buckets do not overlap", () => {
+    const model = fixture();
+    model.accounts = Array.from({ length: 75 }, (_, i) => syntheticAccount(`id-${i}`, `Synthetic ${i}`, { arr: i }));
+    assert.equal(allAccounts(model).length, 75);
+    assert.equal(rankAccounts(model).length, 50);
+    assert.match(renderView(model, { view: "account360", query: "Synthetic 0" }), /Synthetic 0/);
+    const days = [-1, 0, 30, 31, 60, 61, 90, 91, 120, 121, null];
+    model.accounts = days.map((renewing_in_days, i) => syntheticAccount(`a${i}`, `A${i}`, { renewing_in_days }));
+    const buckets = renewalBuckets(model);
+    assert.deepEqual(buckets.map(b => b.accounts.length), [2, 2, 2, 2, 1, 1, 1]);
+    assert.equal(new Set(buckets.flatMap(b => b.accounts.map(a => a.id))).size, days.length);
+});
+
+test("chart data uses typed amounts and shows coverage, gaps and single observations", () => {
+    const model = fixture();
+    assert.deepEqual(portfolioSeries(model).points, billedSeries(model.accounts[0], model.date).points);
+    assert.equal(portfolioSeries(model).coverage.at(-1), 1);
+    const html = renderView(model, { view: "overview" });
+    assert.equal((html.match(/<h1>/g) || []).length, 1);
+    assert.doesNotMatch(html, /Your accounts today/);
+    assert.match(html, /Exact values/);
+    model.accounts[0].seller.feeds.invoices.records = [{ date: "2026-09-01", product: "actions", amount: -3.25 }];
+    const one = renderView(model, { view: "account360", account: model.accounts[0].id, subview: "products" });
+    assert.match(one, /<circle/);
+    assert.match(one, /-3\.25/);
+});
+
+test("conflicting, ambiguous and superseded stack evidence never becomes current adoption", () => {
+    const a = fixture().accounts[0];
+    const row = { schema: 1, technology: "Jenkins", category: "CI/CD", usage_status: "reported_in_use",
+        verification_state: "quote_verified", source_current: true, source_url: "https://example.invalid/source",
+        observed_at: "2026-10-01", evidence_quote: "We use Jenkins." };
+    a.seller.feeds.tech_stack = feed([row, { ...row, usage_status: "historical", evidence_quote: "We no longer use Jenkins." }]);
+    assert.equal(stackGroups(a)[0].status, "conflicting");
+    a.seller.feeds.tech_stack.records[0].source_current = false;
+    assert.equal(stackGroups(a)[0].status, "historical");
+    a.seller.feeds.tech_stack.records[1].verification_state = "ambiguous";
+    assert.equal(stackGroups(a)[0].status, "mention_only");
 });
 
 test("internal signals ignore local mutations; exact recommendation duplicates alone collapse", () => {

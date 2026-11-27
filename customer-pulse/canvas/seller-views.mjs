@@ -1,10 +1,11 @@
 import {
-    ACCOUNT_TABS, FEED_LABELS, activitySummary, billedLtm, billedSeries, bookConsumption, bookFeedCoverage, currentRows, dayOf,
+    ACCOUNT_TABS, ACCOUNT_LABELS, FEED_LABELS, activitySummary, allAccounts, billedLtm, billedSeries, bookConsumption, bookFeedCoverage, contactCount, contactDirectory, currentRows, dayOf,
     feedOf, knownSum, labelOf, latestRows, moneyTypes, monthlyChange, observedCount, openRows, productRows,
-    rankAccounts, renewalRisk, rowsOf, usageTrend,
+    portfolioSeries, rankAccounts, renewalBuckets, renewalRisk, rowsOf, stackGroups, STACK_STATUS, usageTrend, openSeCount,
 } from "./seller-data.mjs";
 
-export function createSellerViews({ esc, fmtInt, fmtMoney, fmtPct, fmtDay, sparkline, table, actionsFor, renderRecommendations }) {
+export function createSellerViews({ esc, fmtInt, fmtMoney, fmtPct, fmtDay, sparkline, table, actionsFor, renderRecommendations,
+    actionsPanel, changesPanel, productCard, newSignalsPanel }) {
     const noData = '<span class="none">No data</span>';
     const text = value => value == null || value === "" ? noData : esc(value);
     const integer = value => value == null ? noData : fmtInt(value);
@@ -23,15 +24,19 @@ export function createSellerViews({ esc, fmtInt, fmtMoney, fmtPct, fmtDay, spark
         } catch { /* Missing or unsafe evidence URLs remain plain text. */ }
         return text(label);
     };
-    const accountLink = a => `<a class="link" href="#/account360/summary/account/${encodeURIComponent(a.id)}">${esc(a.name || a.id)}</a>`;
+    const accountLink = a => `<a class="link" data-focus-key="account360:${esc(a.id)}" href="#/account360/summary/account/${encodeURIComponent(a.id)}">${esc(a.name || a.id)}</a>`;
     const header = (title, note) => `<section class="page-head"><div><h1>${esc(title)}</h1><p class="lede">${esc(note)}</p></div></section>`;
     const states = { ok: "Has data", no_rows: "No rows (not zero)", missing: "No data", stale: "Stale",
         not_connected: "Not connected", not_authorized: "Not authorized", failed: "Collection failed", partial: "Partial" };
     function source(account, feed) {
         const info = feedOf(account, feed);
-        return `<p class="seller-source"><span class="chip">New internal feed</span> ${esc(info.source || FEED_LABELS[feed])}`
-            + ` · Data date: ${date(info.as_of)} · Collected: ${date(info.collected_at)} · <strong>${esc(states[info.state] || "No data")}</strong>`
-            + `${info.reason ? `<br>${esc(info.reason)}` : ""}</p>`;
+        const state = feed === "contacts" && info.state === "no_rows" ? "No contacts returned" : states[info.state] || "No data";
+        return `<p class="seller-source"><strong>${esc(state)}</strong> · ${esc(FEED_LABELS[feed])} · Collected ${date(info.collected_at)}`
+            + `${info.reason ? `<br>${esc(info.reason)}` : ""}</p>`
+            + `<details class="source-detail"><summary>Source dates & coverage</summary><p>${esc(info.source || FEED_LABELS[feed])} · Data date: ${date(info.as_of)}</p>`
+            + (info.coverage ? Object.entries(info.coverage).map(([key, value]) =>
+                `<p><strong>${esc(key)}</strong>: ${esc(value.state)} · ${esc(value.reason || "")} · Discovered ${integer(value.discovered)} · Hydrated ${integer(value.hydrated)} · Deferred ${integer(value.deferred)}</p>`
+                + (value.errors?.length ? `<p>${value.errors.map(esc).join("; ")}</p>` : "")).join("") : "") + "</details>";
     }
     function bookSources(model, keys) {
         return `<p class="seller-source">${keys.map(key => {
@@ -50,8 +55,69 @@ export function createSellerViews({ esc, fmtInt, fmtMoney, fmtPct, fmtDay, spark
     function simpleTable(headings, rows, empty = "No data") {
         if (!rows.length) return `<p class="empty">${esc(empty)}</p>`;
         return `<div class="table-wrap"><table><thead><tr>${headings.map(h => `<th scope="col">${esc(h)}</th>`).join("")}</tr></thead><tbody>`
-            + rows.map(row => `<tr>${row.map((value, i) => i === 0 ? `<th scope="row">${value}</th>` : `<td>${value}</td>`).join("")}</tr>`).join("")
+            + rows.map(row => `<tr>${row.map((value, i) => i === 0 ? `<th scope="row">${value}</th>` : `<td data-label="${esc(headings[i])}">${value}</td>`).join("")}</tr>`).join("")
             + "</tbody></table></div>";
+    }
+    const exact = value => value == null ? noData : esc(value.toLocaleString("en-US", { maximumFractionDigits: 6 }));
+    const compactMoney = (value, kind = "ARR") => value == null ? noData
+        : `<span class="num" aria-label="${esc(value.toLocaleString("en-US"))} USD ${esc(kind)}">${esc(fmtMoney(value))}</span>`;
+    const health = a => `<span class="health ${["Red", "Yellow", "Green"].includes(a.products?.ghcp?.health?.category) ? a.products.ghcp.health.category : ""}">${text(a.products?.ghcp?.health?.category)}</span>`;
+    const disclosure = (label, body, meta = "") => `<details class="panel"><summary>${esc(label)}</summary>${meta}${body}</details>`;
+    function select(ui, key, label, options, fallback = options[0]?.[0]) {
+        const value = options.some(([k]) => k === ui.sellerOptions?.[key]) ? ui.sellerOptions[key] : fallback;
+        return `<label class="workspace-select">${esc(label)}<select data-seller-option="${key}" data-focus-key="seller-option:${key}">${options.map(([k, text]) =>
+            `<option value="${esc(k)}"${k === value ? " selected" : ""}>${esc(text)}</option>`).join("")}</select></label>`;
+    }
+    function metrics(items) {
+        return `<dl class="workspace-metrics">${items.map(([label, value, detail]) =>
+            `<div><dt>${esc(label)}</dt><dd>${value}</dd><dd class="metric-note">${detail || ""}</dd></div>`).join("")}</dl>`;
+    }
+    function lineChart(series, label, unit = "Billed USD") {
+        const points = (series?.points || []).filter(([day]) => dayOf(day));
+        const known = points.filter(([, value]) => typeof value === "number" && Number.isFinite(value));
+        if (!known.length) return `<p class="empty">No reported ${esc(unit)} in this window.</p>`;
+        const min = Math.min(0, ...known.map(p => p[1])), max = Math.max(0, ...known.map(p => p[1]));
+        const low = Date.parse(points[0][0]), span = Date.parse(points.at(-1)[0]) - low || 1;
+        const y = value => 165 - (value - min) / (max - min || 1) * 142;
+        let path = "", drawing = false;
+        const dots = points.map(([day, value]) => {
+            if (typeof value !== "number" || !Number.isFinite(value)) { drawing = false; return ""; }
+            const x = 72 + (Date.parse(day) - low) / span * 580;
+            path += `${drawing ? "L" : "M"}${x.toFixed(1)} ${y(value).toFixed(1)} `;
+            drawing = true;
+            return `<circle cx="${x}" cy="${y(value)}" r="3"><title>${esc(day)}: ${esc(value)} ${esc(unit)}</title></circle>`;
+        }).join("");
+        const axis = [...new Set([max, (max + min) / 2, min])].map(value => `<line class="grid-line" x1="72" x2="652" y1="${y(value)}" y2="${y(value)}"/><text x="64" y="${y(value) + 4}" text-anchor="end">${esc(unit.includes("USD") ? fmtMoney(value) : fmtInt(value))}</text>`).join("");
+        const indices = [...new Set([0, Math.floor(points.length / 2), points.length - 1])];
+        return `<figure class="history-chart"><figcaption>${esc(label)} <span>${esc(unit)} · ${esc(points[0][0])} to ${esc(points.at(-1)[0])}</span></figcaption>`
+            + `<svg viewBox="0 0 680 205" role="img" aria-label="${esc(label)}. ${esc(unit)}. Missing points break the line; exact values follow.">${axis}<path class="history-line" d="${path}"/>${dots}`
+            + indices.map(i => `<text x="${72 + (Date.parse(points[i][0]) - low) / span * 580}" y="192" text-anchor="${i === 0 ? "start" : i === points.length - 1 ? "end" : "middle"}">${esc(points[i][0].slice(0, 7))}</text>`).join("") + "</svg></figure>"
+            + `<details><summary>Exact values & reporting coverage</summary>${simpleTable(["Date", unit, ...(series.coverage ? ["Reporting accounts"] : [])],
+                points.map(([day, value], i) => [date(day), exact(value), ...(series.coverage ? [`${series.coverage[i]}/${series.total}`] : [])]))}</details>`;
+    }
+    function bars(rows, label, unit) {
+        const known = rows.filter(r => r.value != null);
+        const scale = Math.max(1, ...known.map(r => Math.abs(r.value)));
+        return `<figure class="bar-chart"><figcaption>${esc(label)} <span>${esc(unit)}</span></figcaption>`
+            + known.map(r => `<div class="bar-row"><span>${esc(r.name)}</span><span class="bar-track"><i class="${r.value < 0 ? "negative-bar" : ""}" style="width:${Math.abs(r.value) / scale * 100}%"></i></span><strong>${compactMoney(r.value, unit)}</strong></div>`).join("")
+            + (!known.length ? '<p class="empty">No reported values.</p>' : "") + "</figure>"
+            + `<details><summary>Exact values, including unknown products</summary>${simpleTable(["Product", unit], rows.map(r => [text(r.name), exact(r.value)]))}</details>`;
+    }
+    function accountTrend(a, model, ui) {
+        const products = productRows(a, model.date);
+        const chosen = ui.sellerOptions?.product || "all";
+        const product = products.some(p => p.key === chosen) ? chosen : null;
+        const measure = ui.sellerOptions?.measure || "billed";
+        const telemetry = { ghe: [a.products?.ghe?.series?.metered, "GHE account-wide metered users", "Users"],
+            copilot: [a.products?.ghcp?.series?.assigned, "Copilot assigned seats", "Seats"],
+            security: [a.products?.ghas?.series?.committers, "Security active committers", "Committers"] };
+        const [data, label, unit] = telemetry[measure] || [billedSeries(a, model.date, product), `${product ? labelOf(product) : "All products"} · closed-month billing`, "Billed USD"];
+        const count = ui.sellerOptions?.period === "6" ? 6 : 13;
+        return panel("Product consumption", `<div class="workspace-toolbar">${select(ui, "measure", "Measure", [["billed", "Invoice billing"], ["ghe", "GHE metered users"], ["copilot", "Copilot assigned seats"], ["security", "Security committers"]])}`
+            + (measure === "billed" ? select(ui, "product", "Product", [["all", "All products"], ...products.map(p => [p.key, p.name])])
+                + select(ui, "period", "Closed months", [["13", "13 months"], ["6", "6 months"]]) : "") + "</div>"
+            + lineChart({ ...data, points: measure === "billed" ? (data?.points || []).slice(-count) : data?.points || [] }, label, unit),
+        measure === "billed" ? source(a, "invoices") : `<p class="seller-source">Daily observations in the stored telemetry window; not added across dates. Account source date ${date(a.as_of)}.</p>`);
     }
     function change(value) {
         if (!value) return noData;
@@ -75,12 +141,12 @@ export function createSellerViews({ esc, fmtInt, fmtMoney, fmtPct, fmtDay, spark
         ["Status", "status"], ["Details", "description"]];
     function productTable(a, model) {
         return panel("Products & consumption", simpleTable(
-            ["Product", "Status", "Seats", "Used %", "ARR", "Billed LTM", "Billed last month (security split)", "30-day view", "90-day view", "Data date"],
+            ["Product", "Status", "Seats", "Used %", "ARR", "Billed LTM", "Billed last month (security split)", "1-month change", "3-month change", "Data date"],
             productRows(a, model.date).map(p => [text(p.name), text(p.status), integer(p.seats), percent(p.utilization), money(p.arr),
                 `${money(p.billed, "Billed")}<span class="sub">${p.billingSource === "p06" ? "p06 collected LTM aggregate" : `${p.months}/12 months with invoice rows`}</span>`, money(p.lcm, "Billed"),
                 change(monthlyChange(p.trend, 1)), `${trend(p.trend, `${p.name} closed-month billing`)}${change(monthlyChange(p.trend, 3))}`, date(p.as_of)])),
             `<p class="seller-source">Ready now: p02 contracts / p04 seats / p06 security split. Account data: ${date(a.as_of)}. `
-            + "New internal feed: invoices. 30/90-day views compare closed calendar months (1/3 months), not rolling daily spend. Missing product rows do not prove whitespace. GHE Cloud usage is not inferred from account-wide GHE usage.</p>" + source(a, "invoices"));
+            + "Invoices compare closed calendar months (1/3 months), not rolling daily spend. Missing product rows do not prove whitespace. GHE Cloud usage is not inferred from account-wide GHE usage.</p>" + source(a, "invoices"));
     }
     function readyPanel(a) {
         const r = a.seller?.ready || {};
@@ -104,7 +170,9 @@ export function createSellerViews({ esc, fmtInt, fmtMoney, fmtPct, fmtDay, spark
         for (const r of openRows(a, "risks")) rows.push([text(r.priority), text(r.title), text(r.reason)]);
         for (const r of openRows(a, "support").filter(r => ["urgent", "high", "p1", "p2"].includes(String(r.priority).toLowerCase())))
             rows.push([text(r.priority), text(r.title), "Review the open support escalation before renewal."]);
-        return panel("Why talk now & next-best actions", simpleTable(["Priority", "Action", "Evidence"], rows, "No evidence-backed action in the current snapshot."),
+        return panel("Why talk now & next-best actions", rows.length ? `<ul class="brief-actions">${rows.map(([priority, title, evidence]) =>
+            `<li><span class="chip">${priority}</span><h3>${title}</h3><p>${evidence}</p></li>`).join("")}</ul>`
+            : '<p class="empty">No evidence-backed action in the current snapshot.</p>',
             `<p class="seller-source">Pulse rules and current internal risk/support records · ${date(model.date)}</p>`);
     }
     function consumptionDetails(a, model) {
@@ -153,9 +221,18 @@ export function createSellerViews({ esc, fmtInt, fmtMoney, fmtPct, fmtDay, spark
     }
     function security(a) {
         const cq = a.products?.ghas?.code_quality;
-        return recordPanel(a, "protection", [["Date", "date", date], ["Private repositories", "private_repos", integer], ["Code protected repos", "code_repos", integer],
+        const latest = latestRows(a, "protection")[0];
+        const ratio = key => latest && typeof latest.private_repos === "number" && latest.private_repos > 0
+            && typeof latest[key] === "number" && latest[key] >= 0 && latest[key] <= latest.private_repos ? latest[key] / latest.private_repos : null;
+        return metrics([["Code protection", percent(ratio("code_repos")), "Share of reported private repositories"],
+            ["Secret protection", percent(ratio("secret_repos")), "Separate, overlapping population"],
+            ["Active committers", integer(a.products?.ghas?.committers), `Account snapshot ${date(a.as_of)}`]])
+            + `<div class="workspace-columns">${["code_repos", "secret_repos"].map((key, i) => panel(i ? "Secret protection history" : "Code protection history",
+                lineChart({ points: currentRows(a, "protection").map(r => [r.date, r[key]]).sort(([a], [b]) => a.localeCompare(b)) },
+                    i ? "Secret-protected repositories" : "Code-protected repositories", "Repositories"), source(a, "protection"))).join("")}</div>`
+            + disclosure("Exact protection populations", recordPanel(a, "protection", [["Date", "date", date], ["Private repositories", "private_repos", integer], ["Code protected repos", "code_repos", integer],
             ["Secret protected repos", "secret_repos", integer], ["All commits", "commits", integer], ["Code protected commits", "code_commits", integer],
-            ["Secret protected commits", "secret_commits", integer]])
+            ["Secret protected commits", "secret_commits", integer]]))
             + panel("Code Security / Secret Protection billing", simpleTable(["Product", "Latest complete month"], [
                 ["Code Security", money(a.billing_lcm?.ghcs, "Billed")], ["Secret Protection", money(a.billing_lcm?.ghsp, "Billed")]]),
             `<p class="seller-source">Ready now · p06 C360 account attributes · ${date(a.as_of)}</p>`)
@@ -179,7 +256,33 @@ export function createSellerViews({ esc, fmtInt, fmtMoney, fmtPct, fmtDay, spark
             + recordPanel(a, "retention", [["Period end", "date", date], ["Period start", "start", date], ["ARR type", "arr_type"], ["Segment", "arr_segment"],
                 ["NDRR (revenue, not MAU)", "ndrr", percent], ["GDRR (revenue, not MAU)", "gdrr", percent]]);
     }
-    function activity(a, model) {
+    function contacts(a, ui = {}, preview = false) {
+        const directory = contactDirectory(a, preview ? "" : ui.sellerOptions?.contactsQuery || "");
+        const rows = preview ? directory.slice(0, 4) : directory;
+        return panel("Contacts (POCs)", (preview ? "" : `<label class="workspace-search">Find a contact<input type="search" data-seller-search="contactsQuery" data-focus-key="contacts-search" value="${esc(ui.sellerOptions?.contactsQuery || "")}" placeholder="Name, role or email"></label>`)
+            + simpleTable(["Contact", "Role", "Email", "CRM activity", "Observed interaction"], rows.map(p =>
+                [text(p.name || p.id), text(p.role), text(p.email), date(p.last_activity), p.interaction
+                    ? `${date(p.interaction.last)}<span class="sub">Exact email match · ${text(p.interaction.sources.join(", "))}</span>`
+                    : '<span class="none">No matched email / Gong interaction</span>']),
+            feedOf(a, "contacts").state === "no_rows" ? "No contacts returned" : "No contacts available in this snapshot.")
+            + (preview ? `<a href="#/account360/contacts/account/${encodeURIComponent(a.id)}">${contactCount(a) == null ? "View contact directory" : `View all ${integer(contactCount(a))} recorded contacts`}</a>` : "")
+            + '<p class="note">Every stable-ID Salesforce Contact is included. CRM activity is not proof of a conversation.</p>', source(a, "contacts"));
+    }
+    function stack(a, preview = false) {
+        const groups = stackGroups(a);
+        const rows = preview ? groups.slice(0, 4) : groups;
+        return panel("Reported tech stack", rows.length ? `<div class="stack-list">${rows.map(g =>
+            `<article><div class="stack-heading"><h3>${esc(g.technology)}</h3><span class="chip">${esc(g.category)}</span></div>`
+            + `<p><strong>${esc(STACK_STATUS[g.status])}</strong> · as of ${date(g.as_of)}</p>`
+            + (g.evidence.some(r => r.source_state === "retained") ? '<p class="note">Includes retained evidence; collection is incomplete.</p>' : "")
+            + `<details><summary>${g.evidence.length} supporting ${g.evidence.length === 1 ? "source" : "sources"}</summary>${g.evidence.map(r =>
+                `<div class="evidence"><p>${link(r.source_url, r.source_type === "gong" ? "Gong / CRM source" : "SE issue source")} · ${date(r.observed_at)} · ${esc(STACK_STATUS[r.usage_status] || "Mention only")}</p>`
+                + `<blockquote>${esc(r.evidence_quote)}</blockquote><p class="note">${r.source_current === false ? "Superseded source version" : text(r.verification_state)} · ${r.source_state === "retained" ? "Retained from last successful read" : "Collector-verified source version"} · Collected ${date(r.collected_at)}${r.reason ? ` · ${esc(r.reason)}` : ""}</p></div>`).join("")}</details></article>`).join("")}</div>`
+            + (preview ? `<a href="#/account360/stack/account/${encodeURIComponent(a.id)}">Inspect all stack evidence</a>` : "")
+            : '<p class="empty">No verified SE / Gong stack evidence. Missing evidence is not an empty technology stack.</p>',
+        source(a, "tech_stack"));
+    }
+    function activity(a, model, ui = {}) {
         const summary = activitySummary(a);
         const emails = summary.emails;
         const threads = new Map();
@@ -196,114 +299,146 @@ export function createSellerViews({ esc, fmtInt, fmtMoney, fmtPct, fmtDay, spark
             day.setUTCMonth(day.getUTCMonth() - 5 + i);
             return day.toISOString().slice(0, 7);
         });
-        const issueRows = currentRows(a, "issues");
-        const issueTrend = months.map(month => [text(month), integer(issueRows.length ? issueRows.filter(r => String(r.date || "").startsWith(month)).length : null)]);
-        const emailTrend = months.map(month => [text(month), integer(emails.length ? emails.filter(r => String(r.date || "").startsWith(month)).length : null)]);
-        return panel("Email recency & volume", `<p>Last email: ${date(summary.lastEmail)} · Observed threads: ${integer(summary.threads)}</p>`
-            + simpleTable(["Month", "Observed messages"], emailTrend), source(a, "emails"))
-            + panel("Email threads & correspondents", simpleTable(["Thread", "Messages", "Latest", "Matched Salesforce contacts"], [...threads.values()].map(t =>
+        const sourceFilter = ui.sellerOptions?.engagementSource || "all", issueFilter = ui.sellerOptions?.issueState || "all";
+        const issueRows = rowsOf(a, "issues").filter(r => issueFilter === "all" || (issueFilter === "closed"
+            ? String(r.status || "").toLowerCase().startsWith("closed") : String(r.status || "").toLowerCase() === "open"));
+        const timeline = [["emails", rowsOf(a, "emails")], ["gong", rowsOf(a, "gong")], ["issues", issueRows]]
+            .filter(([key]) => sourceFilter === "all" || sourceFilter === key)
+            .flatMap(([key, rows]) => rows.map(r => ({ ...r, feed: key }))).sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
+        const volume = { points: months.map(month => [`${month}-01`, timeline.length ? timeline.filter(r => dayOf(r.date)?.startsWith(month)).length : null]) };
+        return panel("Engagement timeline", `<div class="workspace-toolbar">${select(ui, "engagementSource", "Source", [["all", "All sources"], ["emails", "Email"], ["gong", "Gong"], ["issues", "Account-linked issues"]])}`
+            + select(ui, "issueState", "Issue state", [["all", "All states"], ["open", "Open"], ["closed", "Closed"]]) + "</div>"
+            + `<p class="note">Observed records only, not total account engagement. Retained rows remain visible; see each source's freshness below.</p>`
+            + `<ol class="engagement-timeline">${timeline.map(r => `<li><time>${date(r.date)}</time><div><span class="chip">${esc(FEED_LABELS[r.feed])}</span> <span>${text(r.status)}</span><h3>${link(r.url, r.title || r.id)}</h3>`
+                + (r.description ? `<details><summary>Source summary</summary><p class="evidence-text">${esc(r.description)}</p></details>` : "")
+                + `<span class="sub">${esc(states[feedOf(a, r.feed).state] || "No data")}</span></div></li>`).join("")}</ol>`
+            + (!timeline.length ? '<p class="empty">No observed engagement for these filters.</p>' : "")
+            + `<details><summary>Observed monthly volume</summary>${lineChart(volume, "Selected engagement records", "Records")}</details>`,
+        ["emails", "gong", "issues"].map(key => source(a, key)).join(""))
+            + disclosure("Email threads & correspondents", simpleTable(["Thread", "Messages", "Latest", "Matched Salesforce contacts"], [...threads.values()].map(t =>
                 [link(t.url, t.title), integer(t.count), date(t.dates.sort().at(-1)), text([...t.people].join(", "))])), source(a, "emails"))
-            + panel("People we have spoken to (points of contact)", simpleTable(["Contact", "Role", "Email", "Evidence sources", "Last contact"],
+            + disclosure("Contacts with matched interactions", simpleTable(["Contact", "Role", "Email", "Evidence sources", "Last contact"],
                 summary.spoken.map(p => [text(p.name), text(p.role), text(p.email), text(p.sources.join(", ")), date(p.last)])),
             source(a, "contacts") + "<p>Only exact email matches to Salesforce customer contacts count here. The contact list below alone does not prove a conversation.</p>")
-            + recordPanel(a, "contacts", [["Known contact", "name"], ["Role", "role"], ["Email", "email"], ["Last CRM activity", "last_activity", date]])
-            + panel("SE issues over time", simpleTable(["Created month", "Observed issues"], issueTrend)
-                + "<p>Creation dates and current statuses, not reconstructed historical status transitions.</p>", source(a, "issues"))
-            + recordPanel(a, "issues", recordColumns)
-            + recordPanel(a, "pocs", [["Proof of concept", "title", (v, r) => link(r.url, v)], ["End date", "date", date],
-                ["Status", "status"], ["Details", "description"]])
-            + recordPanel(a, "gong", [["Call", "title", (v, r) => link(r.url, v)], ["Date", "date", date],
-                ["Participants", "participants", v => text((v || []).map(p => p.name || p.email).filter(Boolean).join(", "))]])
-            + recordPanel(a, "timeline", [["Activity", "title"], ["Date", "date", date], ["Type", "type"], ["Attendees (source text)", "attendees"],
+            + disclosure("Success timeline, notes & partners", recordPanel(a, "timeline", [["Activity", "title"], ["Date", "date", date], ["Type", "type"], ["Attendees (source text)", "attendees"],
                 ["Products discussed (not proof of stack)", "products"], ["Notes", "notes"]])
-            + recordPanel(a, "notes", recordColumns) + recordPanel(a, "partners", recordColumns)
+            + recordPanel(a, "notes", recordColumns) + recordPanel(a, "partners", recordColumns))
             + panel("Gong & web signals", simpleTable(["Signal", "Source", "Date"], (model.signals || []).filter(s => s.account_id === a.id && ["gong", "web"].includes(s.source))
                 .map(s => [link(s.url, s.title), text(s.source), date(s.date)])), `<p class="seller-source">Evidence-backed signals · ${date(model.date)}</p>`)
-            + recordPanel(a, "tech_stack", [["Category", "category"], ["Recorded existing tool", "value"], ["Evidence field", "field"], ["PoC end date", "date", date]]);
+            ;
     }
     function account360(model, ui) {
         const a = model.accounts.find(a => a.id === ui.account);
-        if (!a) return header("Account 360", "Choose an account from Top 50 or an account preview.") + top50(model, ui);
+        if (!a) return top50(model, ui, true);
         const tab = ACCOUNT_TABS.includes(ui.subview) ? ui.subview : "summary";
-        const names = ["Summary", "Commercial", "Products & consumption", "Security", "Success & support", "Activity"];
-        const nav = `<nav class="copilot-subnav" aria-label="Account 360 sections">${ACCOUNT_TABS.map((key, i) =>
-            `<a href="#/account360/${key}/account/${encodeURIComponent(a.id)}"${tab === key ? ' aria-current="page"' : ""}>${names[i]}</a>`).join("")}</nav>`;
-        const content = tab === "commercial" ? commercial(a, model) : tab === "products" ? productTable(a, model) + consumptionDetails(a, model)
-            : tab === "security" ? security(a) : tab === "success" ? success(a) : tab === "activity" ? activity(a, model)
-                : productTable(a, model) + whyNow(a, model) + readyPanel(a)
-                    + renderRecommendations(model.recommendations, { accountId: a.id, now: ui.now });
-        return header(a.name || a.id, "Account 360 · Internal sources only · Read-only seller intelligence")
-            + `<p>${money(a.arr)} · Renewal: ${date(a.renewal)} · Data date: ${date(a.as_of)}</p>` + nav + content;
+        const content = tab === "commercial" ? commercial(a, model) : tab === "products" ? accountTrend(a, model, ui) + productTable(a, model) + disclosure("Invoice quantities, runners & model costs", consumptionDetails(a, model))
+            : tab === "security" ? security(a) : tab === "success" ? success(a) : tab === "activity" ? activity(a, model, ui)
+                : tab === "contacts" ? contacts(a, ui) : tab === "stack" ? stack(a)
+                    : `<div class="workspace-columns">${accountTrend(a, model, ui)}${whyNow(a, model)}</div>`
+                        + `<div class="workspace-columns">${contacts(a, ui, true)}${stack(a, true)}</div>`
+                        + panel("Recent engagement", simpleTable(["Source", "Last observed", "Open SE issues"],
+                            [["Email", date(activitySummary(a).lastEmail), integer(openSeCount(a))],
+                                ["Gong", date(activitySummary(a).lastMeeting), `<a href="#/account360/activity/account/${encodeURIComponent(a.id)}">View engagement</a>`]]))
+                        + renderRecommendations(model.recommendations, { accountId: a.id, now: ui.now });
+        const billing = billedLtm(a, model.date);
+        return `<div class="account-toolbar"><a class="button" href="${esc(ui.returnHash || "#/account360")}">Back to accounts</a>`
+            + `<label class="workspace-select">Switch account<select data-account-switch data-focus-key="account-switch">${allAccounts(model).map(r =>
+                `<option value="${esc(r.id)}"${r.id === a.id ? " selected" : ""}>${esc(r.name || r.id)}</option>`).join("")}</select></label></div>`
+            + header(a.name || a.id, `Account 360 / ${ACCOUNT_LABELS[tab]}`)
+            + `<div class="account-identity">${link(a.sfdc_url, "Salesforce account")}${a.parent ? ` · ${esc(a.parent)}` : ""} · Copilot health ${health(a)} · Snapshot ${date(a.as_of)}</div>`
+            + metrics([["Account ARR · USD", compactMoney(a.arr), "Recurring revenue"],
+                ["Observed billed LTM · USD", compactMoney(billing.value, "Billed"), billing.months == null ? "Collected LTM aggregate" : `${billing.months}/12 months reporting`],
+                ["Renewal", date(a.renewal), `${integer(a.renewing_in_days)} days`],
+                ["Recorded contacts (POCs)", integer(contactCount(a)), esc(states[feedOf(a, "contacts").state] || "No data")]]) + content;
     }
-    function top50(model, ui) {
+    function top50(model, ui, directory = false) {
         const basis = ["arr", "billed", "renewal"].includes(ui.sellerRank) ? ui.sellerRank : "arr";
-        const ranked = rankAccounts(model, basis, ui.query || "");
+        const ranked = directory ? allAccounts(model, ui.query || "") : rankAccounts(model, basis, ui.query || "");
         const cols = [
-            { key: "name", label: "Account", value: a => a.name, cell: a => `${accountLink(a)}<span class="sub">Rank ${a.rank}</span>` },
-            { key: "arr", label: "ARR", numeric: true, value: a => a.arr, cell: a => money(a.arr) },
-            { key: "billed", label: "Billed LTM", numeric: true, value: a => billedLtm(a, model.date).value, cell: a => money(billedLtm(a, model.date).value, "Billed") },
-            { key: "products", label: "Product ARR / billed / seats / used %", value: a => a.name, cell: a => productRows(a, model.date)
-                .filter(p => p.status === "Owned" || p.status === "Metered").map(p => `<span class="sub">${esc(p.name)}: ${money(p.arr)} / ${money(p.billed, "Billed")} / ${integer(p.seats)} seats / ${percent(p.utilization)} used</span>`).join("") || noData },
-            { key: "trend", label: "30 / 90-day consumption view", value: a => monthlyChange(billedSeries(a, model.date))?.delta ?? null,
-                cell: a => `${trend(billedSeries(a, model.date), "Closed-month [Billed] USD")}<span class="sub">1m ${change(monthlyChange(billedSeries(a, model.date), 1))} / 3m ${change(monthlyChange(billedSeries(a, model.date), 3))}</span>` },
-            { key: "renewal", label: "Renewal", numeric: true, value: a => a.renewing_in_days, cell: a => `${date(a.renewal)}<span class="sub">${integer(a.renewing_in_days)} days</span>` },
-            { key: "health", label: "Copilot health", value: a => a.products?.ghcp?.health?.category, cell: a => text(a.products?.ghcp?.health?.category) },
-            { key: "issues", label: "Open SE issues", numeric: true, value: a => observedCount(a, "issues", openRows(a, "issues")), cell: a => integer(observedCount(a, "issues", openRows(a, "issues"))) },
-            { key: "email", label: "Last email / Gong call", value: a => activitySummary(a).lastEmail, cell: a => `${date(activitySummary(a).lastEmail)}<span class="sub">${date(activitySummary(a).lastMeeting)}</span>` },
-            { key: "pocs", label: "People / proofs of concept", value: a => observedCount(a, "pocs"), cell: a =>
-                `${integer(activitySummary(a).spoken.length || null)} people / ${integer(observedCount(a, "pocs"))} PoCs` },
-            { key: "stack", label: "Tech stack", value: a => currentRows(a, "tech_stack").map(r => r.value).join(", "), cell: a =>
-                `${text(currentRows(a, "tech_stack").map(r => r.value).join(", "))}<span class="sub">PoC evidence only; ZoomInfo not connected</span>` },
-            { key: "asof", label: "Source dates", value: a => a.as_of, cell: a => `Account: ${date(a.as_of)}<span class="sub">Invoices: ${date(feedOf(a, "invoices").as_of)} · ${text(states[feedOf(a, "invoices").state])}</span>` },
+            { key: "name", label: "Account", value: a => a.name, cell: a => `${directory ? "" : `<span class="rank">${a.rank}</span>`}${accountLink(a)}` },
+            { key: "arr", label: "ARR · USD", numeric: true, value: a => a.arr, cell: a => compactMoney(a.arr) },
+            { key: "billed", label: "Billed LTM · USD", numeric: true, value: a => billedLtm(a, model.date).value, cell: a =>
+                `${compactMoney(billedLtm(a, model.date).value, "Billed")}<span class="row-trend">${trend(billedSeries(a, model.date), "13 closed months [Billed] USD")}</span>` },
+            { key: "renewal", label: "Renewal", numeric: true, value: a => a.renewing_in_days, cell: a => `${date(a.renewal)}<span class="sub">${a.renewing_in_days == null ? "Unknown date" : `${integer(a.renewing_in_days)} days`}</span>` },
+            { key: "health", label: "Copilot health", value: a => a.products?.ghcp?.health?.category, cell: health },
+            { key: "contacts", label: "Contacts", numeric: true, value: contactCount, cell: a => `${integer(contactCount(a))}<span class="sub">${esc(states[feedOf(a, "contacts").state] || "Uncollected")}</span>` },
+            { key: "email", label: "Last engagement", value: a => [activitySummary(a).lastEmail, activitySummary(a).lastMeeting].filter(Boolean).sort().at(-1),
+                cell: a => `${date([activitySummary(a).lastEmail, activitySummary(a).lastMeeting].filter(Boolean).sort().at(-1))}<span class="sub">Email / Gong</span>` },
         ];
-        return header("Top 50 accounts", "Top 50 membership uses the selected rank basis before search. Ties: account name, then ID. Missing values sort last; no missing ARR is treated as zero.")
-            + `<section class="panel seller-panel" aria-labelledby="h-top50"><div class="panel-head"><h2 id="h-top50">My top 50 <span class="count-text">${ranked.length}</span></h2>`
+        if (ui.sellerOptions?.issuesColumn) cols.push({ key: "issues", label: "Open SE", numeric: true, value: openSeCount, cell: a => integer(openSeCount(a)) });
+        if (ui.sellerOptions?.stackColumn) cols.push({ key: "stack", label: "Stack evidence", value: a => stackGroups(a).length, cell: a => `${stackGroups(a).length} tools with evidence` });
+        if (ui.sellerOptions?.productsColumn) cols.push({ key: "products", label: "Product footprint", value: a => a.name, cell: a => text(productRows(a, model.date).filter(p => ["Owned", "Metered"].includes(p.status)).map(p => p.name).join(", ")) });
+        return header(directory ? "All accounts" : "Top 50 accounts", directory ? "Your complete owned book. Search any account, then open its briefing." : "Your ranked shortlist. Scan the book, then open an account briefing.")
+            + `<section class="panel seller-panel compact-accounts" aria-labelledby="h-top50"><div class="panel-head"><h2 id="h-top50">${directory ? "All accounts" : "My top 50"} <span class="count-text">${ranked.length}</span></h2>`
             + `<label class="search">Search <input type="search" data-search data-focus-key="seller-search" value="${esc(ui.query || "")}" maxlength="80"></label></div>`
-            + `<div class="seller-ranks" role="group" aria-label="Rank basis">${[["arr", "ARR (descending)"], ["billed", "Observed Billed LTM (descending)"], ["renewal", "Days to renewal (ascending)"]]
-                .map(([key, label]) => `<button class="button tiny${key === basis ? " selected" : ""}" data-filter="seller-rank" data-value="${key}" data-focus-key="seller-rank:${key}" aria-pressed="${key === basis}">${label}</button>`).join("")}</div>`
-            + '<p class="seller-source">Ready now: account, contracts, health and renewal. New internal feeds: invoices and activity. Click column headings to sort these 50; use rank basis to change membership. Billing trends use closed-month 1/3-month comparisons.</p>'
-            + `<div data-region="top50">${table(ui, { id: "top50", columns: cols, rows: ranked, defaultSort: basis, defaultDir: basis === "renewal" ? 1 : -1, empty: "No accounts match this Top 50." })}</div></section>`;
+            + `<div class="workspace-toolbar">${directory ? '<a href="#/top50">View ranked Top 50</a>' : `<div class="seller-ranks" role="group" aria-label="Rank basis">${[["arr", "Rank by ARR"], ["billed", "Rank by billed LTM"], ["renewal", "Rank by renewal"]]
+                .map(([key, label]) => `<button class="button tiny${key === basis ? " selected" : ""}" data-filter="seller-rank" data-value="${key}" data-focus-key="seller-rank:${key}" aria-pressed="${key === basis}">${label}</button>`).join("")}</div>`}`
+            + `<details class="column-picker"><summary>Optional columns</summary>${[["issuesColumn", "Open SE issues"], ["stackColumn", "Stack availability"], ["productsColumn", "Product footprint"]].map(([key, label]) =>
+                `<label><input type="checkbox" data-seller-column="${key}" data-focus-key="${key}"${ui.sellerOptions?.[key] ? " checked" : ""}>${label}</label>`).join("")}</details></div>`
+            + `<p class="note">${directory ? "All owned accounts are searchable." : "Ranking selects the 50 before search; column sorting changes their order, not membership."} Missing values stay unknown. Billing history: closed months.</p>`
+            + `<div data-region="top50">${table(ui, { id: directory ? "directory" : "top50", columns: cols, rows: ranked, defaultSort: basis, defaultDir: basis === "renewal" ? 1 : -1, empty: "No accounts match this list." })}</div></section>`;
     }
-    function renewalTable(model, horizon = 120) {
-        const accounts = model.accounts.filter(a => a.renewing_in_days != null && a.renewing_in_days >= 0 && a.renewing_in_days <= horizon)
+    function renewalTable(model, horizon = 120, selected = null) {
+        const accounts = (selected || allAccounts(model).filter(a => a.renewing_in_days != null && a.renewing_in_days >= 0 && a.renewing_in_days <= horizon))
             .sort((a, b) => a.renewing_in_days - b.renewing_in_days);
         return simpleTable(["Account", "Renewal", "Days", "Expected renewal ARR", "Copilot health", "30d seat-usage change", "Open Gainsight risks", "Support escalations"],
             accounts.map(a => [accountLink(a), date(a.renewal), integer(a.renewing_in_days), money(a.open_renewal_arr), text(a.products?.ghcp?.health?.category),
                 integer(usageTrend(a)?.delta), integer(observedCount(a, "risks", openRows(a, "risks"))),
                 integer(observedCount(a, "support", openRows(a, "support").filter(r => ["urgent", "high", "p1", "p2"].includes(String(r.priority).toLowerCase()))))]));
     }
-    function overview(model) {
+    function radar(model, ui) {
+        const buckets = renewalBuckets(model);
+        const selected = buckets.find(b => b.key === ui.sellerOptions?.renewalBucket) || buckets[0];
+        return panel("Renewal radar", `<div class="renewal-buckets">${buckets.map(b =>
+            `<div><strong>${b.accounts.length}</strong><span>${esc(b.label)}</span></div>`).join("")}</div>`
+            + select(ui, "renewalBucket", "Inspect bucket", buckets.map(b => [b.key, b.label]))
+            + simpleTable(["Account", "Renewal", "Expected renewal ARR · USD"], selected.accounts.map(a =>
+                [accountLink(a), date(a.renewal), compactMoney(a.open_renewal_arr)]), "No accounts in this bucket.")
+            + '<p class="note">Disjoint date buckets. Unknown and overdue dates are separate; expected renewal ARR is not invoiced revenue.</p>');
+    }
+    function overview(model, ui = {}) {
         const accounts = model.accounts.filter(a => a.in_book !== false);
         const billed = knownSum(accounts.map(a => billedLtm(a, model.date).value));
         const renewing = accounts.filter(a => a.renewing_in_days != null && a.renewing_in_days >= 0 && a.renewing_in_days <= 90);
-        const forecasts = accounts.map(a => a.seller?.ready?.forecast_bill);
+        const reporting = accounts.filter(a => billedLtm(a, model.date).value != null);
+        const incomplete = reporting.filter(a => billedLtm(a, model.date).months !== 12).length;
         const stats = [
-            ["Book ARR", money(knownSum(accounts.map(a => a.arr)))],
-            ["Observed Billed LTM", money(billed, "Billed")],
-            ["Copilot month forecast (not billed MTD)", money(knownSum(forecasts), "Usage est.")],
-            ["Open pipeline net ARR", money(knownSum(accounts.map(a => a.open_pipeline_net_arr)))],
-            ["Renewals within 90 days (known dates)", integer(accounts.some(a => a.renewing_in_days != null) ? renewing.length : null)],
-            ["At-risk renewals (known signals)", integer(renewing.filter(renewalRisk).length || null)],
+            ["Book ARR · USD", compactMoney(knownSum(accounts.map(a => a.arr))), `${accounts.filter(a => a.arr != null).length}/${accounts.length} accounts reporting`],
+            ["Observed billed LTM · USD", compactMoney(billed, "Billed"), `${reporting.length}/${accounts.length} accounts · ${incomplete} partial / aggregate histories`],
+            ["Open pipeline net ARR · USD", compactMoney(knownSum(accounts.map(a => a.open_pipeline_net_arr))), "Expected recurring revenue, not invoices"],
+            ["Renewals within 90 days", integer(accounts.some(a => a.renewing_in_days != null) ? renewing.length : null), `${renewing.filter(renewalRisk).length} with known risk signals · known dates only`],
         ];
         const mix = new Map();
         for (const a of accounts) for (const p of productRows(a, model.date)) {
             const rows = mix.get(p.key) || []; rows.push(p); mix.set(p.key, rows);
         }
-        return panel("Book money summary", `<dl class="seller-metrics">${stats.map(([name, value]) => `<div><dt>${esc(name)}</dt><dd>${value}</dd></div>`).join("")}</dl>`,
-            `<p class="seller-source">Ready now + new internal feeds · Snapshot ${date(model.date)}. Observed subtotals only; check coverage below. ARR, invoiced billing and usage forecasts are never added together.</p>` + readySources(model) + bookSources(model, ["invoices"]))
-            + panel("All-product mix", simpleTable(["Product", "Known ARR", "Observed Billed LTM", "3-month billing change", "Explicit whitespace / unknown"],
-                [...mix].map(([key, rows]) => [text(labelOf(key)), money(knownSum(rows.map(r => r.arr))), money(knownSum(rows.map(r => r.billed)), "Billed"),
-                    change(bookConsumption(model).find(p => p.product === key)?.quarter),
-                    `${rows.filter(r => r.status === "Whitespace").length} / ${rows.filter(r => r.status === "No data").length}`])),
-            '<p class="seller-source">Contracts: p02. Billed: account consumption invoices. Three-month changes use accounts reporting both months. Product absence is unknown, not automatic whitespace.</p>' + readySources(model) + bookSources(model, ["invoices"]))
-            + panel("Renewal radar · 120 days", renewalTable(model), readySources(model) + bookSources(model, ["risks", "support"]));
+        const measure = ui.sellerOptions?.contribution === "arr" ? "arr" : "billed";
+        const contributions = [...mix].map(([key, rows]) => ({ name: labelOf(key), value: knownSum(rows.map(r => r[measure])) }));
+        return header("Your book", `${accounts.length} owned accounts · Snapshot ${model.date}`)
+            + metrics(stats)
+            + `<div class="workspace-columns">${panel("Product contribution", select(ui, "contribution", "Measure", [["billed", "Observed billed LTM"], ["arr", "Contract ARR"]])
+                + bars(contributions, measure === "arr" ? "Contract ARR by product" : "Observed billed LTM by product", measure === "arr" ? "ARR USD" : "Billed USD")
+                + '<p class="note">Observed product subtotals, not a share of book total. Unallocated family ARR is never repeated across products.</p>')}`
+            + `<div class="attention-column">${actionsPanel(model, ui, { key: "overview", limit: 8 })}`
+            + newSignalsPanel(model, ui)
+            + '<div class="queue-links"><a href="#/signals">All signals</a><a href="#/recommendations">Recommendations</a></div></div></div>'
+            + `<div class="workspace-columns">${panel("Consumption movement", lineChart(portfolioSeries(model), "Closed-month invoiced history")
+                + '<p class="note">Reporting cohorts change. Unmatched total movement is not growth. See matched comparisons in Consumption.</p>'
+                + '<a href="#/consumption">Explore consumption</a>', bookSources(model, ["invoices"]))}${radar(model, ui)}</div>`
+            + `<div class="product-cards">${["ghe", "ghas", "ghcp"].map(family => productCard(model, family)).join("")}</div>`
+            + changesPanel(model, ui, { key: "overview", limit: 8 })
+            + `<div class="workspace-toolbar"><a class="button" href="#/account360">View all accounts</a><a href="#/data">Coverage & freshness</a></div>`
+            + disclosure("Metric definitions & source dates", '<p>ARR, invoiced billing, pipeline and usage forecasts are different measures and are never added together. LTM includes observed months, not imputed zeros.</p>' + readySources(model) + bookSources(model, ["invoices"]));
     }
-    function consumption(model) {
+    function consumption(model, ui = {}) {
         const products = bookConsumption(model);
+        const selected = products.some(p => p.product === ui.sellerOptions?.consumptionProduct) ? ui.sellerOptions.consumptionProduct : null;
         const movers = model.accounts.map(a => ({ a, delta: monthlyChange(billedSeries(a, model.date)) }))
             .filter(r => r.delta).sort((a, b) => b.delta.delta - a.delta.delta);
         const units = model.accounts.flatMap(a => currentRows(a, "invoices").map(r => ({ ...r, account: a })));
         return header("Consumption", "Closed-month invoiced USD only. Missing account-months stay unknown. MoM and 3-month changes use matched reporting accounts, not unmatched totals.")
+            + panel("Billed history", select(ui, "consumptionProduct", "Product", [["all", "All products"], ...products.map(p => [p.product, p.name])])
+                + lineChart(portfolioSeries(model, selected), "13 closed months"), bookSources(model, ["invoices"]))
             + panel("Billed by product", simpleTable(["Product", "Last complete month", "MoM (matched)", "3-month change (matched)", "13-month trend", "Reporting accounts"],
                 products.map(p => [text(p.name), money(p.latest, "Billed"), change(p.mom), change(p.quarter),
                     trend(p.series, `${p.name} [Billed] USD`), `${p.reporting}/${model.accounts.length}`])),
@@ -312,26 +447,31 @@ export function createSellerViews({ esc, fmtInt, fmtMoney, fmtPct, fmtDay, spark
                 ...movers.filter(r => r.delta.delta > 0).slice(0, 5),
                 ...movers.filter(r => r.delta.delta < 0).slice(-5).reverse(),
             ].map(r => [accountLink(r.a), change(r.delta)])), bookSources(model, ["invoices"]))
-            + panel("Billed quantity by unit (never combined)", simpleTable(["Account", "Month", "Product", "UOM", "Billed units", "Billed USD"], units.map(r =>
-                [accountLink(r.account), date(r.date), text(labelOf(r.product)), text(r.uom), integer(r.units), money(r.amount, "Billed")])), bookSources(model, ["invoices"]))
-            + panel("Actions latest usage", simpleTable(["Account", "Date", "Hosted minutes / 28d", "Self-hosted minutes / 28d", "Jobs / 28d", "Active days / 28d"],
+            + disclosure("Billed quantity by unit (never combined)", simpleTable(["Account", "Month", "Product", "UOM", "Billed units", "Billed USD"], units.map(r =>
+                [accountLink(r.account), date(r.date), text(labelOf(r.product)), text(r.uom), integer(r.units), money(r.amount, "Billed")])) + bookSources(model, ["invoices"]))
+            + disclosure("Actions latest usage", simpleTable(["Account", "Date", "Hosted minutes / 28d", "Self-hosted minutes / 28d", "Jobs / 28d", "Active days / 28d"],
                 model.accounts.flatMap(a => latestRows(a, "actions").map(r => [accountLink(a), date(r.date), integer(r.hosted_minutes),
                     integer(r.self_hosted_minutes), integer(r.jobs), integer(r.active_days)]))), '<p class="seller-source">New internal feed · c360.fact_actions_metrics (experimental). Each account links to runner/job history.</p>');
     }
-    function pipeline(model) {
+    function pipeline(model, ui = {}) {
         const months = new Map();
         for (const a of model.accounts) if (a.renewal) {
             const month = a.renewal.slice(0, 7);
             const values = months.get(month) || []; values.push(a); months.set(month, values);
         }
-        const opportunities = model.accounts.flatMap(a => currentRows(a, "opportunities").map(r => [accountLink(a), text(r.title), date(r.date),
-            text(r.status), text(r.type), money(r.expected_arr), money(r.new_arr), money(r.upsell_arr), money(r.contraction_arr), money(r.churn_arr)]));
+        const opportunities = model.accounts.flatMap(a => currentRows(a, "opportunities").map(r => ({ ...r, account: a })));
+        const opportunityColumns = [{ key: "account", label: "Account", value: r => r.account.name, cell: r => accountLink(r.account) },
+            ...[["title", "Opportunity"], ["date", "Close"], ["status", "Stage"], ["type", "Type"]].map(([key, label]) =>
+                ({ key, label, value: r => r[key], cell: r => key === "date" ? date(r[key]) : text(r[key]) })),
+            ...[["expected_arr", "Expected ARR"], ["new_arr", "New ARR"], ["upsell_arr", "Upsell ARR"], ["contraction_arr", "Contraction ARR"], ["churn_arr", "Churn ARR"]]
+                .map(([key, label]) => ({ key, label, numeric: true, value: r => r[key], cell: r => money(r[key]) }))];
         return header("Pipeline & renewals", "Expected license ARR is pipeline, not billed revenue. Revenue retention is distinct from Copilot MAU retention.")
-            + panel("Renewals by calendar month", simpleTable(["Month", "Accounts", "Known expected renewal ARR", "Known at-risk accounts"], [...months].sort(([a], [b]) => a.localeCompare(b))
+            + radar(model, ui)
+            + disclosure("Renewals by calendar month", simpleTable(["Month", "Accounts", "Known expected renewal ARR", "Known at-risk accounts"], [...months].sort(([a], [b]) => a.localeCompare(b))
                 .map(([month, accs]) => [text(month), integer(accs.length), money(knownSum(accs.map(a => a.open_renewal_arr))), integer(accs.filter(renewalRisk).length)])),
             `<p class="seller-source">Ready now · p06 account renewal dates · ${date(model.date)}</p>`)
             + panel("Renewals with health, usage and risk", renewalTable(model), readySources(model) + bookSources(model, ["risks", "support"]))
-            + panel("License opportunities", simpleTable(["Account", "Opportunity", "Close", "Stage", "Type", "Expected ARR", "New ARR", "Upsell ARR", "Contraction ARR", "Churn ARR"], opportunities),
+            + panel("License opportunities", table(ui, { id: "opportunities", columns: opportunityColumns, rows: opportunities, defaultSort: "date", defaultDir: 1, empty: "No current license opportunities." }),
             '<p class="seller-source">New internal feed · rev_source license opportunity fact + opportunity_dim. Current stages, not historical stage snapshots.</p>' + bookSources(model, ["opportunities"]))
             + panel("Revenue retention", simpleTable(["Account", "Period end", "ARR type", "Segment", "NDRR", "GDRR", "Source date"],
                 model.accounts.flatMap(a => currentRows(a, "retention").map(r => [accountLink(a), date(r.date), text(r.arr_type), text(r.arr_segment),
@@ -341,12 +481,21 @@ export function createSellerViews({ esc, fmtInt, fmtMoney, fmtPct, fmtDay, spark
                     budgetMoney(r.spend, "Usage est.", r.currency), text(r.currency)]))),
             '<p class="seller-source">Revenue MCP get_budgets. Missing enterprise mapping or seller access remains No data. Per-user budgets are excluded; currency is not inferred.</p>' + bookSources(model, ["budgets"]));
     }
-    function coverage(model) {
-        return panel("Accounts x sources coverage", simpleTable(["Account", ...Object.values(FEED_LABELS)], model.accounts.map(a =>
-            [accountLink(a), ...Object.keys(FEED_LABELS).map(key => {
-                const f = feedOf(a, key);
-                return `<span title="${esc(f.reason || f.source || FEED_LABELS[key])}">${esc(states[f.state] || "No data")}</span><span class="sub">Data: ${date(f.as_of)}<br>Collected: ${date(f.collected_at)}</span>`;
-            })])), '<p>Has data is not proof of complete coverage. No rows does not mean zero. Stale/failed retained rows never contribute to current seller rollups. Account-level Gainsight gaps may reflect CO-covered parent/sibling attribution.</p>');
+    function coverage(model, ui = {}) {
+        const entries = allAccounts(model, ui.query || "").flatMap(a => Object.keys(FEED_LABELS).map(key => ({ a, key, f: feedOf(a, key) })));
+        const filtered = entries.filter(({ key, f }) => (!ui.sellerOptions?.coverageSource || ui.sellerOptions.coverageSource === "all" || key === ui.sellerOptions.coverageSource)
+            && (!ui.sellerOptions?.coverageState || ui.sellerOptions.coverageState === "all" || f.state === ui.sellerOptions.coverageState));
+        return header("Coverage & freshness", "Collection freshness is separate from the date of the source evidence.")
+            + metrics([["Account / source pairs", integer(entries.length), "Internal sources only"],
+                ["Current rows", integer(entries.filter(r => r.f.state === "ok").length), "Not proof of complete discovery"],
+                ["Partial or stale", integer(entries.filter(r => ["partial", "stale"].includes(r.f.state)).length), "Retained evidence remains inspectable"],
+                ["Failed reads", integer(entries.filter(r => r.f.state === "failed").length), "Unknown, not empty"]])
+            + panel("Account / source matrix", `<div class="workspace-toolbar"><label class="workspace-search">Account<input type="search" data-search data-focus-key="coverage-search" value="${esc(ui.query || "")}"></label>`
+                + select(ui, "coverageSource", "Source", [["all", "All sources"], ...Object.entries(FEED_LABELS)])
+                + select(ui, "coverageState", "State", [["all", "All states"], ...Object.entries(states)]) + "</div>"
+                + simpleTable(["Account", "Source", "State", "Dates & details"], filtered.map(({ a, key, f }) =>
+                    [accountLink(a), esc(FEED_LABELS[key]), esc(states[f.state] || "No data"), `<details><summary>Data ${date(f.as_of)} · Collected ${date(f.collected_at)}</summary>${source(a, key)}</details>`]))
+                + '<p class="note">No rows does not mean zero. Failed or stale sources do not contribute to current rollups. Gainsight gaps may reflect parent/sibling attribution.</p>');
     }
     function productExtras(model, family) {
         return panel(family === "ghe" ? "GHE whitespace & deployment" : "Security billing & whitespace", simpleTable(

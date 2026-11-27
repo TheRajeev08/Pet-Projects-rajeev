@@ -17,6 +17,12 @@
 }
 
 :root[data-color-mode="dark"], body[data-color-mode="dark"] {
+    color-scheme: dark;
+    --paper: var(--background-color-default, #0d1117);
+    --ink: var(--text-color-default, #e6edf3);
+    --muted: var(--text-color-muted, #9198a1);
+    --line: var(--border-color-default, #3d444d);
+    --accent: var(--true-color-blue, #4493f8);
     --positive: #56d364;
     --caution: #e3b341;
     --accent-ink: #ffffff;
@@ -24,6 +30,11 @@
 
 @media (prefers-color-scheme: dark) {
     :root:not([data-color-mode="light"]) {
+        --paper: var(--background-color-default, #0d1117);
+        --ink: var(--text-color-default, #e6edf3);
+        --muted: var(--text-color-muted, #9198a1);
+        --line: var(--border-color-default, #3d444d);
+        --accent: var(--true-color-blue, #4493f8);
         --positive: #56d364;
         --caution: #e3b341;
     }
@@ -82,7 +93,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .button.tiny { min-height: 28px; padding: 4px 9px; }
 .navigation {
     position: sticky; top: 0; z-index: 9; display: flex; gap: 3px;
-    overflow-x: auto; padding: 0 clamp(18px, 3vw, 42px);
+    flex-wrap: wrap; padding: 0 clamp(18px, 3vw, 42px);
     background: var(--paper); border-bottom: 1px solid var(--line);
     scrollbar-width: thin;
 }
@@ -459,12 +470,15 @@ svg.plot .line { stroke-linecap: round; stroke-linejoin: round; stroke-width: 2;
 .embedded .shell { min-height: 0; }
 .embedded main { max-width: none; padding: 0 0 20px; }
 .embedded .notices { padding: 0; }
-.embedded h1 { font-size: 20px; letter-spacing: -.025em; }
+.embedded h1 { font-size: 28px; letter-spacing: -.025em; }
 .embedded h2 { font-size: 16px; letter-spacing: -.02em; }
 .embedded .page-head { margin-bottom: 20px; }
 .embedded .metric-strip { margin: 20px 0; }
 .embedded .metric.is-key { background: var(--paper); }
 .embedded .metric.is-key .value { color: var(--ink); }
+.embedded .metric-strip { gap: 12px; background: transparent; border: 0; }
+.embedded .metric { border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.embedded .metric .value { font-variant-numeric: tabular-nums; }
 .embedded .side-section { padding: 16px 0; border-top: 1px solid var(--line); border-radius: 0; background: transparent; }
 .embedded .table-wrap { max-height: none; overflow: visible; }
 .embedded th, .embedded td { white-space: normal; overflow-wrap: anywhere; }

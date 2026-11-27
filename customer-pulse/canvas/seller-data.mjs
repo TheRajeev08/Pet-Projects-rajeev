@@ -2,12 +2,14 @@
 import { ACCOUNT_VIEWS, isNumber, isDay, seriesChange } from "./model.mjs";
 
 export const ACCOUNT_TABS = ACCOUNT_VIEWS;
+export const ACCOUNT_LABELS = { summary: "Summary", products: "Products & consumption", commercial: "Commercial",
+    security: "Security", contacts: "Contacts (POCs)", activity: "Engagement", stack: "Tech stack", success: "Success & support" };
 export const FEED_LABELS = {
     invoices: "Consumption invoices", actions: "Actions usage", protection: "Repository protection", model_cost: "Copilot model cost",
     selfserve: "Self-serve Team", mrr: "Recurring revenue", opportunities: "License opportunities", support: "Support tickets",
     services: "Services bookings", retention: "Revenue retention", risks: "Gainsight risks", sentiment: "Gainsight sentiment",
-    success: "Success plans", timeline: "Gainsight timeline", contacts: "Salesforce contacts", issues: "SE linked issues",
-    pocs: "Proofs of concept", gong: "Gong calls", notes: "Account notes", partners: "Partners", hierarchy: "Child accounts",
+    success: "Success plans", timeline: "Gainsight timeline", contacts: "Salesforce contacts", issues: "Account-linked issues",
+    gong: "Gong calls", notes: "Account notes", partners: "Partners", hierarchy: "Child accounts",
     github_accounts: "Enterprise mapping", budgets: "Enterprise budgets", emails: "Outlook email metadata", tech_stack: "Tech stack",
 };
 export const moneyTypes = ["ARR", "Billed", "Usage est.", "Model est.", "MRR", "Booked", "Budget", "Services est."];
@@ -17,7 +19,7 @@ export const knownSum = values => {
 };
 export const feedOf = (account, key) => account?.seller?.feeds?.[key] || {
     state: key === "tech_stack" ? "not_connected" : "missing", source: FEED_LABELS[key], as_of: null, records: [],
-    reason: key === "tech_stack" ? "ZoomInfo is not connected. No verified internal tech-stack evidence." : "Internal feed has not been collected.",
+    reason: key === "tech_stack" ? "No verified SE issue or Gong stack evidence collected." : "Internal feed has not been collected.",
 };
 export const rowsOf = (account, key) => (feedOf(account, key).records || []).filter(r => r && typeof r === "object");
 export const currentRows = (account, key) => feedOf(account, key).state === "ok" ? rowsOf(account, key) : [];
@@ -123,6 +125,12 @@ export function observedCount(account, key, rows = currentRows(account, key)) {
     const all = currentRows(account, key);
     return all.length && (rows.length || all.every(r => r.status)) ? rows.length : null;
 }
+export function openSeCount(account) {
+    const rows = currentRows(account, "issues");
+    if (!rows.length || rows.some(r => typeof r.se_issue !== "boolean")) return null;
+    const se = rows.filter(r => r.se_issue);
+    return se.every(r => r.status) ? se.filter(r => String(r.status).toLowerCase() === "open").length : null;
+}
 export function activitySummary(account) {
     const emails = currentRows(account, "emails");
     const calls = currentRows(account, "gong");
@@ -145,6 +153,60 @@ export function activitySummary(account) {
     const recency = rows => rows.map(r => dayOf(r.date)).filter(Boolean).sort().at(-1) || null;
     return { emails, spoken, lastEmail: recency(emails), lastMeeting: recency(calls),
         threads: emails.length ? new Set(emails.map(r => r.thread).filter(Boolean)).size || null : null };
+}
+/** Stable contact identities, including retained/no-email records; interaction is a separate attribute. */
+export function contactDirectory(account, query = "") {
+    const people = new Map(activitySummary(account).spoken.map(p => [p.email.toLowerCase(), p]));
+    const contacts = new Map(rowsOf(account, "contacts").filter(p => typeof p.id === "string" && p.id).map(p => [p.id, p]));
+    return [...contacts.values()].map(p => ({ ...p, interaction: typeof p.email === "string" ? people.get(p.email.toLowerCase()) || null : null }))
+        .filter(p => [p.name, p.role, p.email, p.id].some(v => String(v || "").toLowerCase().includes(query.trim().toLowerCase())))
+        .sort((a, b) => String(a.name || a.id).localeCompare(String(b.name || b.id)) || a.id.localeCompare(b.id));
+}
+export function contactCount(account) {
+    const info = feedOf(account, "contacts");
+    const count = contactDirectory(account).length;
+    return count || ["ok", "no_rows"].includes(info.state) ? count : null;
+}
+export function allAccounts(model, query = "") {
+    return model.accounts.filter(a => a.in_book !== false).filter(a =>
+        [a.name, a.id, a.parent, a.industry, a.country, a.segment].some(v => String(v || "").toLowerCase().includes(query.trim().toLowerCase())));
+}
+export function renewalBuckets(model) {
+    const accounts = allAccounts(model);
+    return [
+        ["0-30", "0–30 days", n => n >= 0 && n <= 30],
+        ["31-60", "31–60 days", n => n > 30 && n <= 60],
+        ["61-90", "61–90 days", n => n > 60 && n <= 90],
+        ["91-120", "91–120 days", n => n > 90 && n <= 120],
+        ["overdue", "Overdue", n => n < 0], ["later", "Later", n => n > 120],
+        ["unknown", "Unknown date", n => !isNumber(n)],
+    ].map(([key, label, accept]) => ({ key, label, accounts: accounts.filter(a =>
+        (key === "unknown" || isNumber(a.renewing_in_days)) && accept(a.renewing_in_days)) }));
+}
+export function portfolioSeries(model, product = null) {
+    const accounts = allAccounts(model).map(a => billedSeries(a, model.date, product));
+    return { points: Array.from({ length: 13 }, (_, i) => [`${monthOffset(model.date, i - 13)}-01`,
+        knownSum(accounts.map(s => s.points[i][1]))]),
+    coverage: Array.from({ length: 13 }, (_, i) => accounts.filter(s => isNumber(s.points[i][1])).length), total: accounts.length };
+}
+export const STACK_STATUS = { reported_in_use: "Reported in use", evaluating: "Evaluating", planned: "Planned",
+    historical: "Historical / discontinued", mention_only: "Mention only", conflicting: "Conflicting evidence" };
+export function stackGroups(account) {
+    const groups = new Map();
+    for (const r of rowsOf(account, "tech_stack").filter(r => r.schema === 1 && r.technology && r.source_url && r.evidence_quote)) {
+        const key = `${r.category}:${r.technology.toLowerCase()}`;
+        const group = groups.get(key) || { technology: r.technology, category: r.category, evidence: [] };
+        group.evidence.push(r);
+        groups.set(key, group);
+    }
+    return [...groups.values()].map(g => {
+        const current = g.evidence.filter(r => r.verification_state === "quote_verified" && r.source_current !== false);
+        const states = new Set(current.map(r => r.usage_status).filter(s => s !== "mention_only"));
+        const conflict = states.has("reported_in_use") && states.size > 1;
+        return { ...g, status: conflict ? "conflicting" : [...states][0] || "mention_only",
+            as_of: current.map(r => dayOf(r.observed_at)).filter(Boolean).sort().at(-1) || null };
+    }).sort((a, b) => (a.status === "reported_in_use" ? -1 : 1) - (b.status === "reported_in_use" ? -1 : 1)
+        || a.category.localeCompare(b.category) || a.technology.localeCompare(b.technology));
 }
 export function renewalRisk(account) {
     const health = account.products?.ghcp?.health?.category;

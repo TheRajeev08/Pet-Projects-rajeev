@@ -17,6 +17,7 @@ const DASH = "No data";
 const ids = list => list.map(item => item.id);
 const captures = (html, pattern) => [...html.matchAll(pattern)].map(match => match[1]);
 const rowIds = html => captures(html, /<th scope="row"><button type="button" class="link account-link" data-account="([^"]+)"/g);
+const directoryIds = html => captures(html, /data-focus-key="account360:([^"]+)"/g);
 const actionIds = html => captures(html, /data-focus-key="(?:done|reopen):([^"]+)"/g);
 const occurrences = (html, text) => html.split(text).length - 1;
 
@@ -417,7 +418,7 @@ describe("views.mjs", () => {
         assert.ok(top.includes(">1 new High</span>"));
         assert.ok(top.includes("Snapshot Oct 27, 2026 · built "));
         assert.ok(renderTopbar({ ...model, sources: model.sources.slice(0, 2) }).includes(">1 source needs attention</a>"));
-        assert.ok(renderTopbar({ ...model, sources: model.sources.slice(0, 1) }).includes('<a class="pill ok" href="#/data" data-view="data">All sources current</a>'));
+        assert.ok(renderTopbar({ ...model, sources: model.sources.slice(0, 1) }).includes('<a class="pill ok" href="#/data" data-view="data">Core snapshot current</a>'));
         const nav = renderNav(model, { view: "overview" });
         assert.ok(nav.includes('<a href="#/overview" data-view="overview" aria-current="page">Overview</a>'));
         assert.ok(nav.includes('data-view="ghe">GHE<span class="count high" title="3 open actions, 1 High">3</span></a>'));
@@ -476,20 +477,18 @@ describe("views.mjs", () => {
     test("long lists stop at their limits and expand with Show all", () => {
         const model = bigModel();
         const overview = renderView(model, { view: "overview", now: NOW });
-        assert.equal(rowIds(section(overview, "h-accounts")).length, ROW_LIMIT);
-        assert.equal(moreButton(overview, "table:accounts"), "Show all 60 accounts (collapsed)");
+        const directory = renderView(model, { view: "account360", now: NOW });
+        assert.equal(directoryIds(section(directory, "h-top50")).length, ROW_LIMIT);
+        assert.equal(moreButton(directory, "table:directory"), "Show all 60 accounts (collapsed)");
         assert.equal(actionIds(section(overview, "h-actions-overview")).length, 8);
         assert.equal(moreButton(overview, "actions:overview"), "Show all 12 (collapsed)");
         assert.equal(occurrences(section(overview, "h-changes-overview"), '<li class="change-row'), 8);
         assert.equal(moreButton(overview, "changes:overview"), "Show all 9 (collapsed)");
-        assert.equal(occurrences(section(overview, "h-renewals"), "<li><div>"), 6);
-        assert.equal(moreButton(overview, "renewals"), "Show all 7 (collapsed)");
         const expanded = renderView(model, { view: "overview", now: NOW, expanded: new Set(["table:accounts", "actions:overview", "changes:overview", "renewals"]) });
-        assert.equal(rowIds(section(expanded, "h-accounts")).length, 60);
+        assert.equal(directoryIds(section(renderView(model, { view: "account360", expanded: new Set(["table:directory"]) }), "h-top50")).length, 60);
         assert.equal(actionIds(section(expanded, "h-actions-overview")).length, 12);
         assert.equal(occurrences(section(expanded, "h-changes-overview"), '<li class="change-row'), 9);
-        assert.equal(occurrences(section(expanded, "h-renewals"), "<li><div>"), 7);
-        for (const key of ["table:accounts", "actions:overview", "changes:overview", "renewals"]) assert.equal(moreButton(expanded, key), "Show fewer (expanded)");
+        for (const key of ["actions:overview", "changes:overview"]) assert.equal(moreButton(expanded, key), "Show fewer (expanded)");
         const ghe = renderView(model, { view: "ghe", now: NOW });
         assert.equal(rowIds(section(ghe, "h-table-ghe")).length, ROW_LIMIT);
         assert.equal(moreButton(ghe, "table:ghe"), "Show all 60 accounts (collapsed)");
@@ -500,24 +499,24 @@ describe("views.mjs", () => {
 
     test("account tables sort by any column and keep missing values last", () => {
         const model = syntheticModel();
-        const order = sort => rowIds(section(renderView(model, { view: "overview", now: NOW, sort: sort ? { accounts: sort } : undefined }), "h-accounts"));
-        assert.deepEqual(order(), ["t-2", "t-3", "t-1"]);
+        const order = sort => directoryIds(section(renderView(model, { view: "account360", now: NOW, sort: sort ? { directory: sort } : undefined }), "h-top50"));
+        assert.deepEqual(order(), ["t-1", "t-2", "t-3"]);
         assert.deepEqual(order({ key: "arr", dir: -1 }), ["t-1", "t-2", "t-3"]);
         assert.deepEqual(order({ key: "arr", dir: 1 }), ["t-3", "t-2", "t-1"]);
         assert.deepEqual(order({ key: "name", dir: -1 }), ["t-3", "t-2", "t-1"]);
         assert.deepEqual(order({ key: "bogus", dir: 1 }), ["t-1", "t-2", "t-3"]);
         assert.deepEqual(order({ key: "renewal", dir: -1 }), ["t-1", "t-2", "t-3"]);
-        assert.ok(renderView(model, { view: "overview", now: NOW, sort: { accounts: { key: "arr", dir: -1 } } }).includes('aria-sort="descending"'));
+        assert.ok(renderView(model, { view: "account360", now: NOW, sort: { directory: { key: "arr", dir: -1 } } }).includes('aria-sort="descending"'));
     });
 
     test("search filters account tables and escapes the query", () => {
         const model = syntheticModel();
-        const overview = renderView(model, { view: "overview", now: NOW, query: "  BETA " });
-        assert.deepEqual(rowIds(section(overview, "h-accounts")), ["t-2"]);
-        assert.ok(overview.includes('Accounts <span class="count-text">1</span>'));
-        assert.deepEqual(rowIds(section(renderView(model, { view: "overview", now: NOW, query: "testland" }), "h-accounts")).length, 3);
-        const none = renderView(model, { view: "overview", now: NOW, query: '<x> & "y"' });
-        assert.ok(none.includes("No accounts match “&lt;x&gt; &amp; &quot;y&quot;”."));
+        const overview = renderView(model, { view: "account360", now: NOW, query: "  BETA " });
+        assert.deepEqual(directoryIds(section(overview, "h-top50")), ["t-2"]);
+        assert.ok(overview.includes('All accounts <span class="count-text">1</span>'));
+        assert.deepEqual(directoryIds(section(renderView(model, { view: "account360", now: NOW, query: "testland" }), "h-top50")).length, 3);
+        const none = renderView(model, { view: "account360", now: NOW, query: '<x> & "y"' });
+        assert.ok(none.includes("No accounts match this list."));
         assert.ok(none.includes('value="&lt;x&gt; &amp; &quot;y&quot;"'));
         assert.ok(renderView(model, { view: "copilot", subview: "seats", now: NOW, query: "zzz" }).includes("No Copilot accounts match “zzz”."));
         model.accounts[0].products.ghcp = {};
@@ -634,7 +633,7 @@ describe("Python engine → canvas contract", { skip: NO_PYTHON }, () => {
         const nimbus = model.accounts.find(account => account.name === "Nimbus & <Orbit> Ltd");
         assert.ok(renderView(model, { view: "overview", now: NOW }).includes("Nimbus &amp; &lt;Orbit&gt; Ltd"));
         assert.ok(renderDrawer(model, { account: nimbus.id }).includes('<h2 id="drawer-title">Nimbus &amp; &lt;Orbit&gt; Ltd</h2>'));
-        assert.deepEqual(rowIds(section(renderView(model, { view: "overview", now: NOW, query: "orbit" }), "h-accounts")), [nimbus.id]);
+        assert.deepEqual(directoryIds(section(renderView(model, { view: "account360", now: NOW, query: "orbit" }), "h-top50")), [nimbus.id]);
         assert.equal(resolveAccount(model, "nimbus"), nimbus.id);
     });
 

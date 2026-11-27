@@ -7,12 +7,12 @@ import {
 } from "./model.mjs";
 import { renderRecommendations } from "./recommendations.mjs";
 import { createSellerViews } from "./seller-views.mjs";
-import { bookFeedCoverage } from "./seller-data.mjs";
+import { ACCOUNT_LABELS, bookFeedCoverage } from "./seller-data.mjs";
 
 export const ROW_LIMIT = 50;
-export const VIEW_LABELS = { overview: "Overview", top50: "Top 50", account360: "Account 360", consumption: "Consumption",
+export const VIEW_LABELS = { overview: "Overview", top50: "Top 50", account360: "Accounts", consumption: "Consumption",
     copilot: "Copilot", impact: "Impact", ghe: "GHE", ghas: "Security", pipeline: "Pipeline & renewals",
-    signals: "Signals", recommendations: "Recommendations", data: "Data" };
+    signals: "Signals", recommendations: "Recommendations", data: "Coverage & freshness" };
 export const VIEW_FAMILY = { copilot: "ghcp", ghe: "ghe", ghas: "ghas" };
 const FAMILY_VIEW = { ghcp: "copilot", ghe: "ghe", ghas: "ghas" };
 const PRODUCT_TITLES = { ghe: "GitHub Enterprise", ghas: "GitHub Advanced Security", ghcp: "GitHub Copilot" };
@@ -145,11 +145,12 @@ export function renderTopbar(model, ui = {}) {
         const issues = model.sources.filter(source => source.state !== "ok");
         middle += issues.length
             ? `<a class="pill warn" href="#/data" data-view="data">${issues.length} ${plural(issues.length, "source")} need${issues.length === 1 ? "s" : ""} attention</a>`
-            : '<a class="pill ok" href="#/data" data-view="data">All sources current</a>';
+            : '<a class="pill ok" href="#/data" data-view="data">Core snapshot current</a>';
+        middle += '<a class="pill" href="#/data">Account feed coverage</a>';
         const high = newHighCount(model);
         if (high) middle += `<span class="pill hot" title="New High-priority actions, seat changes and verified open signals since the last digest">${high} new High</span>`;
     }
-    return `<div class="brand"><span class="mark" aria-hidden="true">P</span><div class="brand-text"><span class="product-name">Customer Pulse</span>`
+    return `<div class="brand"><button class="button nav-toggle" data-command="menu" aria-controls="nav" aria-expanded="${Boolean(ui.menuOpen)}">Menu</button><span class="mark" aria-hidden="true">P</span><div class="brand-text"><span class="product-name">Customer Pulse</span>`
         + `<span class="freshness">${model ? esc(freshness(model)) : ui.loading ? "Loading the snapshot…" : "No snapshot loaded"}</span></div></div>`
         + `<div class="top-actions">${middle}<button type="button" class="button subtle" data-command="reload">Reload</button>`
         + `<button type="button" class="button primary" data-command="refresh"${busy ? ' aria-disabled="true"' : ""}>${busy ? "Refreshing…" : "Refresh"}</button></div>`;
@@ -171,8 +172,15 @@ function tabCount(model, view) {
 }
 
 export function renderNav(model, ui = {}) {
-    return VIEWS.map(view => `<a href="#/${view}" data-view="${view}"${ui.view === view ? ' aria-current="page"' : ""}>`
-        + `${VIEW_LABELS[view]}${model ? tabCount(model, view) : ""}</a>`).join("");
+    const groups = [["Portfolio", ["overview", "top50", "account360", "consumption", "pipeline"]],
+        ["Products", ["copilot", "impact", "ghe", "ghas"]], ["Work queue", ["signals", "recommendations"]], ["Data", ["data"]]];
+    const context = ui.view === "account360" && ui.account && model?.accounts.find(a => a.id === ui.account);
+    return `<button class="button nav-close" data-command="close-menu">Close menu</button>`
+        + groups.map(([label, views]) => `<div class="nav-group"><p class="nav-label">${label}</p>${views.map(view =>
+            `<a href="#/${view}" data-view="${view}"${ui.view === view ? ' aria-current="page"' : ""}>`
+            + `${VIEW_LABELS[view]}${model ? tabCount(model, view) : ""}</a>`).join("")}</div>`).join("")
+        + (context ? `<div class="nav-group account-context" role="navigation" aria-label="Account 360 sections"><p class="nav-label">${esc(context.name || context.id)}</p>`
+            + Object.entries(ACCOUNT_LABELS).map(([key, label]) => `<a href="#/account360/${key}/account/${encodeURIComponent(context.id)}" data-focus-key="account-section:${key}"${(ui.subview || "summary") === key ? ' aria-current="page"' : ""}>${esc(label)}</a>`).join("") + "</div>" : "");
 }
 
 export function renderNotices(model, ui = {}) {
@@ -863,7 +871,8 @@ function embedFrame(ui, { name, title, src }) {
 }
 
 export function renderView(model, ui = {}) {
-    const seller = createSellerViews({ esc, fmtInt, fmtMoney, fmtPct, fmtDay, sparkline, table, actionsFor, renderRecommendations });
+    const seller = createSellerViews({ esc, fmtInt, fmtMoney, fmtPct, fmtDay, sparkline, table, actionsFor, renderRecommendations,
+        actionsPanel, changesPanel, productCard, newSignalsPanel });
     if (ui.view === "top50") return seller.top50(model, ui);
     if (ui.view === "account360") return seller.account360(model, ui);
     if (ui.view === "consumption") return seller.consumption(model, ui);
@@ -880,8 +889,8 @@ export function renderView(model, ui = {}) {
     if (VIEW_FAMILY[ui.view]) return renderProduct(model, ui, VIEW_FAMILY[ui.view]) + seller.productExtras(model, VIEW_FAMILY[ui.view]);
     if (ui.view === "signals") return renderSignals(model, ui);
     if (ui.view === "recommendations") return renderRecommendations(model.recommendations, { filter: ui.recommendationFilter, query: ui.query, now: ui.now });
-    if (ui.view === "data") return renderData(model) + seller.coverage(model);
-    return seller.overview(model) + renderOverview(model, ui);
+    if (ui.view === "data") return seller.coverage(model, ui) + `<details class="panel"><summary>Source definitions & action rules</summary>${renderData(model)}</details>`;
+    return seller.overview(model, ui);
 }
 
 export function renderUnavailable(error) {

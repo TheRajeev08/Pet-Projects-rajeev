@@ -12,8 +12,11 @@ Then open the **Customer Pulse** canvas. It reads `~/CustomerPulse/model.json` (
 
 ## Using it
 
-- **Tabs:** Overview, Top 50, Account 360, Consumption, Copilot, Impact, GHE, Security, Pipeline & renewals, Signals, Recommendations and Data. The existing `#/ghas` route now displays Security. `#/account360/activity/account/<id>` opens a full-page account section.
-- **Seller screens:** Top 50 has an explicit rank basis and stable tie/missing-value rules. Account 360 separates commercial, consumption, security, support and engagement evidence. New feeds are read-only and show source/collection dates, retained/stale evidence and unavailable coverage. Top 50 people counts require exact Salesforce Contact-email matches in actual conversation metadata.
+- **Navigation:** Portfolio, Products, Work queue and Data groups replace the horizontal tab strip. At narrow widths, Menu exposes the same destinations with keyboard focus trapping and Escape dismissal. Old hashes remain valid, including `#/ghas` and `#/account360/activity/account/<id>`. Account sections share the navigation rather than adding another sidebar.
+- **Overview:** one integrated book briefing with four typed KPIs, product contribution, closed-month consumption, disjoint renewal buckets, existing actions/signals and product summaries. ARR, invoices and expected pipeline are separate measures. Chart disclosures provide exact values; gaps are not zero and changing coverage is not presented as growth.
+- **Seller screens:** Top 50 separates rank membership from column sorting and keeps product detail out of ordinary rows. Optional columns expose open verified-SE counts, stack availability and product footprint. Accounts searches the entire owned book. Returning from an account restores the originating list's search, rank, sort, scroll and focus.
+- **Contacts (POCs):** every stable-ID Salesforce Contact is included, even without email or engagement. Shared email addresses do not merge contact identities. CRM activity and exact-email-matched email/Gong interaction are separate attributes. Retained contacts remain inspectable, with their source state visible. Proofs-of-concept displays and their stack fallback are removed; historical raw records are untouched.
+- **Tech stack:** only versioned SE issue/comment and Gong evidence is shown. Explicit reported use, evaluation, plans, historical use, mentions and conflicts are distinct. An exact quote is not independent verification of today's deployment. Quotes, source links/dates, retained versions and incomplete collection remain inspectable. Activity can include non-SE account-linked issues; these are not automatically counted as SE requests or treated as stack evidence.
 - **Drill down:** click an account name anywhere (a table, an action or a seat change) to open the account panel. Product cards on the Overview open their tab, and table headers sort.
 - **Seat changes:** Overview, product tabs, account panels and `get_summary` use explicit **increased by** or **decreased by** wording with from/to values. Contract changes say **seats under contract**. Saved snapshots gain this wording without a data refresh; reporting interruptions/resumptions, migrations, trends, reverted labels and reporting-gap dates retain their distinct meanings.
 - **Actions:** mark them Done or Dismiss them; Undo and Reopen bring them back. Choices are saved in `~/CustomerPulse/state/actioned.json` and never sent anywhere.
@@ -59,15 +62,10 @@ The server listens on `127.0.0.1` on a random port. It serves a fixed list of fi
 
 ## Develop
 
-Preview the page in a normal browser with any `CP_HOME` that holds a `model.json`, such as one built from the synthetic fixtures in `../tests/fixtures.py`:
+Use the checked-in synthetic fixture generator with an explicit temporary directory:
 
 ```bash
-CP_HOME=/path/to/demo-home node --input-type=module -e '
-import { createRefreshCoordinator, pulsePaths, startCanvasServer } from "./customer-pulse/canvas/server.mjs";
-const paths = pulsePaths();
-const refresh = createRefreshCoordinator({ modelPath: paths.model, launch: async () => {} });
-console.log((await startCanvasServer({ paths, refresh })).url);
-'
+node customer-pulse/canvas/tests/workspace-preview.mjs /absolute/path/to/synthetic-preview
 ```
 
 Run the tests from the repository root:
@@ -77,9 +75,27 @@ node --test customer-pulse/canvas/tests/
 node --test customer-pulse/canvas/copilot/tests/
 ```
 
-Use synthetic data only. This repository is public.
+The printed localhost URL serves 64 synthetic accounts, including missing attributes,
+shared-email contacts and source-linked stack examples. Live refresh is disabled.
+Both Pulse and Copilot model roots and classic HTML are pinned beneath the explicit
+directory. Never omit the Copilot pin: otherwise the server can fall back to the real
+`~/CopilotConsumptionDashboard` even when Pulse itself is synthetic.
 
-The suites cover null-preserving totals and coverage, mismatches (including Pulse zero), unassigned/over-assigned seats, trusted slug joins, escaping, filters, routes/deep links, embed messaging/chrome, per-account adoption sums, the compact endpoint and its degradation, and additive summary compatibility. For a live-data preview, copy only both model files into temporary directories and set a temporary `CP_HOME/config.json` with `copilot_home` pointing to the temporary Copilot directory. Never point development write routes at the live homes or commit customer data or screenshots.
+Use synthetic data only. This repository is public. Do not commit generated models
+or screenshots with customer information. A live release, extension reload, source
+backfill or automation change requires a separate decision.
+
+The suites cover null-preserving totals and coverage, mismatches (including Pulse zero), unassigned/over-assigned seats, trusted slug joins, escaping, filters, routes/deep links, embed messaging/chrome, per-account adoption sums, the compact endpoint and its degradation, and additive summary compatibility. Seller regressions cover contact completeness, source-linked synthetic citations, full-book selection, ranking, renewal buckets, charts and conflicting/superseded stack evidence.
+
+### Visual system
+
+This is an operational seller workspace: host-provided light/dark tokens, system
+fonts, blue selection, restrained labeled health colors and tabular numbers. The
+196px sidebar collapses at 900px; content columns and tables also respond to their
+container width. KPI cards use a muted surface; work/evidence panels remain quiet.
+Ordinary Top 50 rows target 66px. At 1280x800, check at least six complete rows and
+no document-level horizontal scrolling. Verify 390/768/1024/1280/1440px layouts,
+keyboard account switching/return, reduced motion, light/dark and zoom reflow.
 
 # Salesforce recommendations
 

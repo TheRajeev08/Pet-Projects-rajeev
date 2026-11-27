@@ -21,7 +21,7 @@ export const SOURCE_STATES = {
 };
 export const VIEWS = ["overview", "top50", "account360", "consumption", "copilot", "impact", "ghe", "ghas", "pipeline", "signals", "recommendations", "data"];
 export const COPILOT_VIEWS = ["desk", "accounts", "trends", "changes", "notes"];
-export const ACCOUNT_VIEWS = ["summary", "commercial", "products", "security", "success", "activity"];
+export const ACCOUNT_VIEWS = ["summary", "commercial", "products", "security", "success", "activity", "contacts", "stack"];
 export const TYPE_LABELS = { GHSP: "Secret Protection", GHCS: "Code Security", "Visual Studio": "Visual Studio bundle" };
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
