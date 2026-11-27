@@ -1,7 +1,7 @@
 // Explicitly synthetic, reproducible review data. Both product roots stay beneath the supplied home.
 import fs from "node:fs";
 import path from "node:path";
-import { syntheticAccount, syntheticAction, syntheticModel, writeJson } from "./helpers.mjs";
+import { syntheticAccount, syntheticAction, syntheticModel } from "./helpers.mjs";
 
 export function workspaceModel() {
     const model = syntheticModel();
@@ -67,20 +67,28 @@ export function workspaceModel() {
 }
 
 export function createWorkspaceHome(home) {
+    if (!path.isAbsolute(home)) throw new Error("Provide an absolute synthetic preview directory.");
+    if (fs.existsSync(home)) {
+        const stat = fs.lstatSync(home);
+        if (!stat.isDirectory() || stat.isSymbolicLink() || fs.readdirSync(home).length) {
+            throw new Error("Refusing preview destination: use a new or empty directory, never an existing dashboard.");
+        }
+    }
     fs.mkdirSync(home, { recursive: true });
     const copilot = path.join(home, "synthetic-copilot");
     fs.mkdirSync(copilot, { recursive: true });
+    const writeNewJson = (file, data) => fs.writeFileSync(file, JSON.stringify(data), { flag: "wx" });
     const model = workspaceModel();
     model.copilot = { model_path: path.join(copilot, "model.json") };
-    writeJson(path.join(home, "config.json"), { copilot_home: copilot, owner_name: model.owner });
-    writeJson(path.join(home, "model.json"), model);
-    writeJson(path.join(home, "status.json"), { overall: "ok", date: model.date, generated_at: model.generated_at });
-    writeJson(path.join(copilot, "model.json"), {
+    writeNewJson(path.join(home, "config.json"), { copilot_home: copilot, owner_name: model.owner });
+    writeNewJson(path.join(home, "model.json"), model);
+    writeNewJson(path.join(home, "status.json"), { overall: "ok", date: model.date, generated_at: model.generated_at });
+    writeNewJson(path.join(copilot, "model.json"), {
         data_date: model.date, generated_at: model.generated_at, missing_sources: [], sources: {}, definitions: {},
         asof: {}, changes: [], accounts: model.accounts.map(a => ({ id: a.id, name: a.name, consuming: true,
             assigned: 182, active_28d: 160, engaged_1d28: 132, arr: a.arr, integrations: [], factors: [], health: "Green" })),
         portfolio: { owned: 64, consuming: 64, a7: [110, 120], gross: [200, 210], at_risk: [2, 1] }, enterprises: [],
     });
-    fs.writeFileSync(path.join(copilot, "dashboard.html"), "<!doctype html><title>Synthetic classic preview</title><h1>Synthetic classic preview</h1><p>No customer data.</p>");
+    fs.writeFileSync(path.join(copilot, "dashboard.html"), "<!doctype html><title>Synthetic classic preview</title><h1>Synthetic classic preview</h1><p>No customer data.</p>", { flag: "wx" });
     return model;
 }

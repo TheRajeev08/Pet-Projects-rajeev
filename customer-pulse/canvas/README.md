@@ -62,7 +62,9 @@ The server listens on `127.0.0.1` on a random port. It serves a fixed list of fi
 
 ## Develop
 
-Use the checked-in synthetic fixture generator with an explicit temporary directory:
+Use the checked-in synthetic fixture generator with an explicit new or empty
+temporary directory. Nonempty and symbolic-link destinations are refused before
+the first write; existing dashboard files are never overwritten:
 
 ```bash
 node customer-pulse/canvas/tests/workspace-preview.mjs /absolute/path/to/synthetic-preview
