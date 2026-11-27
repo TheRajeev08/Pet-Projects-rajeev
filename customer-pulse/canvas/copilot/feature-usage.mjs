@@ -10,7 +10,7 @@ const money = value => numeric(value) ? new Intl.NumberFormat("en-US", {
     style: "currency", currency: "USD", maximumFractionDigits: 2,
 }).format(value) + " [Usage est.]" : "No data";
 const METRICS = ["l7", "p7", "l28", "aiu28", "u7", "up7", "u28"];
-function usable(row) {
+export function usableIntegration(row) {
     if (!row) return null;
     const values = {};
     for (const key of METRICS) {
@@ -34,7 +34,7 @@ export function featureUsage(model, enterprise = null, account = null) {
             const matches = available && Array.isArray(entity.integrations)
                 ? entity.integrations.filter(row => row.integration === feature.integration) : [];
             // A duplicate or incomplete slice is not safe to silently combine.
-            const row = matches.length === 1 ? usable(matches[0]) : null;
+            const row = matches.length === 1 ? usableIntegration(matches[0]) : null;
             const policy = account ? "unknown" : entity.settings?.surfaces?.[feature.surface] || "unknown";
             return { entity, row, policy, gap: policy === "enabled" && zero28(row) };
         });

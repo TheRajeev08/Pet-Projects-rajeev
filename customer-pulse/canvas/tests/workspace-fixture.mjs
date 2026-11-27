@@ -64,7 +64,8 @@ export function workspaceModel() {
                 as_of: "2026-11-25", open_pipeline_net_arr: i % 3 ? 35000 : null, open_renewal_arr: 80000,
                 ghe: { contracted: gheModel === "metered" ? 0 : 240, metered: volumeGhe ? 0 : 220, billing: gheModel, as_of: "2026-11-25",
                     metered_as_of: "2026-11-26", series: { metered: series }, by_type: { "GitHub Enterprise Cloud": { seats: 240, arr: 110000 } } },
-                ghcp: { contracted: 200, assigned: 182, health: { category: ["Green", "Yellow", "Red"][i % 3] }, series: { assigned: series }, funnel: { assigned: 182, active_1d28: 160, engaged_1d28: 132 } },
+                ghcp: { contracted: 200, contracted_as_of: "2026-11-25", assigned: 182, as_of: "2026-11-24",
+                    health: { category: ["Green", "Yellow", "Red"][i % 3], date: "2026-11-24" }, series: { assigned: series }, funnel: { assigned: 182, active_1d28: 160, engaged_1d28: 132 } },
                 ghas: { contracted: 130, committers: 98, series: { committers: series }, by_type: { GHCS: { seats: 130, arr: 46000 } },
                     ...(ghasVolume ? { licensing_model: "Volume", plan: "Volume - Bundled" }
                         : i % 4 === 0 ? { licensing_model: "Metered", plan: "Metered - Unbundled" } : {}) },
@@ -97,13 +98,26 @@ export function workspaceModel() {
 /** The synthetic Copilot dashboard model the preview serves, with the builder-generated impact subset merged in. */
 export function workspaceCopilotModel(model = workspaceModel()) {
     const impact = syntheticImpact();
+    const cutoffs = { "03": "2026-11-26", "07": model.date, "08": "2026-11-24", "11": "2026-11-23" };
+    const sources = Object.fromEntries([...Object.keys(cutoffs), "13", "15"].map(q => [q, { collected_from: model.generated_at }]));
+    const first = impact.enterprises[0];
+    first.collected_from = "2026-11-23";
+    first.impact = { dataAvailable: true, cohortWindowDays: 28, impact: { productivityGainsTotalMerged: 274 } };
+    first.has_impact = true;
+    first.settings = { collected_from: "2026-11-24", surfaces: { "IDE chat": "enabled", "Coding agent": "disabled", "Code review": "unconfigured" } };
     return {
-        data_date: model.date, generated_at: model.generated_at, missing_sources: [], sources: impact.sources,
+        data_date: model.date, generated_at: model.generated_at, missing_sources: [], sources: { ...impact.sources, ...sources },
         stale_sources: impact.stale_sources, definitions: impact.definitions,
-        asof: { "07": model.date, ...impact.asof }, changes: [], accounts: model.accounts.map((a, i) => ({ id: a.id, name: a.name, consuming: true,
+        asof: { ...cutoffs, ...impact.asof }, changes: [], accounts: model.accounts.map((a, i) => ({ id: a.id, name: a.name, consuming: true,
+            a7: i === 1 ? [0, null] : [120 + i, 109 + i],
+            gross: [142, 136, null, 128, 115, 110, 102, 105, 85, 92, 84, 74, 71],
             aiu: [868, 820, 850, 760, 732, 780, 695, 642, 665, 590, 562, 585, 510].map((units, week) =>
                 (i + week) % 11 === 0 ? null : units + i * 8),
-            assigned: 182, active_28d: 160, engaged_1d28: 132, arr: a.arr, integrations: [], factors: [], health: "Green",
+            assigned: 182, active_28d: 160, engaged_1d28: 132, arr: a.arr, factors: [], health_cat: "Green",
+            integrations: i ? [] : [["IDE chat", "vscode-chat", 286, 1440], ["Copilot CLI", "copilot-cli", 88, 640],
+                ["Code review", "copilot-pr-reviews", 54, 300], ["Coding agent", "copilot-developer", 40, 180]].map(([surface, integration, l28, aiu28]) =>
+                ({ surface, integration, l28, aiu28, feature_metrics_known: { l28: true, aiu28: true } })),
+            models: i ? [] : [{ model: "Synthetic model A", l28: 351 }, { model: "Synthetic model B", l28: 117 }],
             ...impact.accounts[a.id] })),
         portfolio: { owned: 64, consuming: 64, a7: [110, 120], gross: [200, 210], at_risk: [2, 1], ...impact.portfolio },
         enterprises: impact.enterprises, cca_opportunities: impact.cca_opportunities,

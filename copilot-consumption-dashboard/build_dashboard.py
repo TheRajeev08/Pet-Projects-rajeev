@@ -736,7 +736,7 @@ def build(day, raw, meta):
 
     asof = {}
     arr_dates = sorted({period(p["date"]) for r in raw.get("09", []) for p in chunk(r["s"], r["cols"])})
-    for q in ("03", "04", "06", "07", "08", "10", "12", "14", "16", "17", "18", "20", "21", "22"):
+    for q in ("03", "04", "06", "07", "08", "10", "11", "12", "14", "16", "17", "18", "20", "21", "22"):
         rows = raw.get(q) or []
         if rows and rows[0].get("asof"):
             asof[q] = rows[0]["asof"][:10]

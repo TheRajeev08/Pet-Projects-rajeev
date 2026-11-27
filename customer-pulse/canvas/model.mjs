@@ -1,6 +1,8 @@
 // Pure data helpers shared by the canvas server, the extension and the browser. No DOM or Node APIs.
 
-import { impactPayload } from "./copilot/code-impact.mjs";
+import { impactPayload, impactSourceState } from "./copilot/code-impact.mjs";
+import { usableIntegration } from "./copilot/feature-usage.mjs";
+import { impactState, productivity } from "./copilot/impact.mjs";
 
 export const SCHEMA = 1;
 export const PRIORITIES = ["High", "Medium", "Notify", "Info"];
@@ -23,7 +25,7 @@ export const SOURCE_STATES = {
 };
 export const VIEWS = ["overview", "top50", "account360", "consumption", "copilot", "impact", "ghe", "ghas", "pipeline", "signals", "recommendations", "data"];
 export const COPILOT_VIEWS = ["desk", "accounts", "trends", "changes", "notes"];
-export const ACCOUNT_VIEWS = ["summary", "commercial", "products", "security", "success", "activity", "contacts", "stack"];
+export const ACCOUNT_VIEWS = ["summary", "copilot", "commercial", "products", "security", "success", "activity", "contacts", "stack"];
 export const TYPE_LABELS = { GHSP: "Secret Protection", GHCS: "Code Security", "Visual Studio": "Visual Studio bundle" };
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -352,6 +354,55 @@ function weeklyAiUnits(owned, dashboard, cutoff) {
     return { points, coverage, total: owned.length };
 }
 
+function accountCopilotMetrics(accounts, dashboard, model) {
+    if (!model) return null;
+    const sources = Object.fromEntries(["02", "03", "06", "07", "08", "11", "13", "15"].map(id =>
+        [id, { ...impactSourceState(model, id), cutoff: model.asof?.[id] ?? null, collected: model.sources?.[id]?.collected_from ?? null }]));
+    const reported = id => ["collected", "stale"].includes(sources[id].state);
+    const enterprises = new Map();
+    for (const e of model.enterprises || []) {
+        if (!reported("13") || !reported("15") || !e.slug || e.match?.source !== "warehouse" ||
+            e.match.confidence !== "confirmed" || e.match.candidates?.length !== 1) continue;
+        const id = e.match.candidates[0].id;
+        const status = impactState(e);
+        const reporting = status.state === "available" && e.impact?.dataAvailable !== false;
+        const merged = e.impact?.impact?.productivityGainsTotalMerged;
+        const details = { slug: e.slug, state: !reporting && status.state === "available" ? "Impact not available" : status.label, impactDate: e.collected_from ?? null,
+            merged: reporting && String(merged ?? "").trim() ? productivity(e) : null,
+            cohortDays: reporting ? numberOrNull(e.impact?.cohortWindowDays) : null, settingsDate: e.settings?.collected_from ?? null,
+            policies: e.settings?.surfaces ?? null };
+        if (!enterprises.has(id)) enterprises.set(id, []);
+        enterprises.get(id).push(details);
+    }
+    const readings = Object.create(null);
+    for (const { id } of accounts) {
+        const a = dashboard.get(id);
+        if (!a) continue;
+        const surfaces = new Map();
+        for (const slice of reported("08") ? a.integrations || [] : []) {
+            const row = usableIntegration(slice), key = row.surface || "Unattributed";
+            if (!surfaces.has(key)) surfaces.set(key, []);
+            surfaces.get(key).push(row);
+        }
+        const completeSum = (rows, key) => rows.every(row => isNumber(row[key])) ? rows.reduce((v, row) => v + row[key], 0) : null;
+        readings[id] = {
+            assigned: reported("06") ? numberOrNull(a.h_assigned?.[0]) : null,
+            snapshotAssigned: reported("02") ? numberOrNull(a.c360_assigned) : null,
+            active28: reported("03") ? numberOrNull(a.a28?.[0]) : null,
+            snapshotActive: reported("02") ? numberOrNull(a.c360_active_1d28) : null,
+            engaged28: reported("02") ? numberOrNull(a.engaged_1d28) : null,
+            weekly: reported("03") ? (a.a7 || []).slice(0, 2).map(numberOrNull) : [],
+            health: reported("06") ? a.health_cat ?? null : null,
+            aiu: reported("07") ? (a.aiu || []).slice(0, 13).map(numberOrNull) : [],
+            gross: reported("07") ? (a.gross || []).slice(0, 13).map(numberOrNull) : [],
+            surfaces: [...surfaces].map(([name, rows]) => ({ name, aiu: completeSum(rows, "aiu28"), gross: completeSum(rows, "l28") })),
+            models: reported("11") ? (a.models || []).map(r => ({ name: r.model || "Unattributed", gross: r.l28 > 0 ? numberOrNull(r.l28) : null })) : [],
+            enterprises: enterprises.get(id) || [],
+        };
+    }
+    return { sources, readings };
+}
+
 /** Pulse is authoritative for licenses and adoption; weekly AI units come from the Copilot usage snapshot. */
 export function copilotLicenses(pulseModel, copilotModel = null) {
     const dashboard = new Map((copilotModel?.accounts || []).map(account => [account.id, account]));
@@ -398,6 +449,7 @@ export function copilotLicenses(pulseModel, copilotModel = null) {
         flags: Object.fromEntries(["unassigned", "over_assigned", "engaged_lt_50", "renewing_90", "source_mismatch"]
             .map(flag => [flag, rows.filter(row => row.flags[flag]).length])),
         impact: copilotModel ? impactPayload(copilotModel) : null,
+        accountMetrics: accountCopilotMetrics(pulseModel.accounts, dashboard, copilotModel),
         reconciliation: copilotModel ? "available" : "unavailable",
         note: copilotModel ? null : "Copilot dashboard reconciliation unavailable. Showing Pulse figures only." };
 }

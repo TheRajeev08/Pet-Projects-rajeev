@@ -66,7 +66,7 @@ class EnterpriseModelTests(unittest.TestCase):
     def test_no_account_fanout_or_monthly_count_change(self):
         raw = {
             "01": [{"Id": "syn-a", "Name": "Synthetic Account"}],
-            "11": [{"id": "syn-a", "model": "Account-only Model", "l7": 99, "p7": 88, "l28": 9999}],
+            "11": [{"id": "syn-a", "model": "Account-only Model", "l7": 99, "p7": 88, "l28": 9999, "asof": "2030-01-05"}],
             "13": OWNED,
             "15": [{"slug": r["slug"], "sf_id": "syn-a", "model_count": 19} for r in OWNED],
             "18": [feed()],
@@ -79,6 +79,7 @@ class EnterpriseModelTests(unittest.TestCase):
         self.assertIsNone(one["impact"])
         self.assertEqual(one["adoption"]["model_count"], 19)
         self.assertEqual(model["accounts"][0]["models"][0]["l28"], 9999)
+        self.assertEqual(model["asof"]["11"], "2030-01-05")
         self.assertEqual(model["asof"]["18"], "2030-01-07")
 
     def test_missing_empty_zero_and_unavailable_are_distinct(self):
