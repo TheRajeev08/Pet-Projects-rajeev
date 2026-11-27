@@ -1,5 +1,5 @@
 import {
-    LANES, SOURCE_NAMES, accountPlays, accountStatus, adoptionTotals, dataCaveats, getQueue, hasSources,
+    LANES, OUTCOME_SOURCES, SOURCE_NAMES, accountPlays, accountStatus, adoptionTotals, dataCaveats, getQueue, hasSources,
     hasSurfaceSignal, integrityIssues, isNewMetric, queueByLane, riskProfile, summarize, validateModel,
 } from "./insights.mjs";
 import {
@@ -9,6 +9,7 @@ import {
 } from "./impact.mjs";
 import { renderRecommendations } from "../recommendations.mjs";
 import { featureUsagePanel } from "./feature-usage.mjs";
+import { codeImpactAccountHtml, codeImpactEnterpriseHtml, codeImpactPortfolioHtml, impactPayload } from "./code-impact.mjs";
 
 const app = document.querySelector("#app");
 const embedded = new URLSearchParams(location.search).get("embed") === "1";
@@ -226,7 +227,10 @@ function renderNotices() {
         messages.push({ tone: "error", text: `Could not load the updated model; showing the prior snapshot. ${state.loadError}` });
     }
     if (state.model?.missing_sources?.length) {
-        messages.push({ tone: "warning", text: `Missing sources: ${state.model.missing_sources.map(id => SOURCE_NAMES[id] || id).join(", ")}. Related totals and suggested plays are withheld.` });
+        const core = state.model.missing_sources.filter(id => !OUTCOME_SOURCES.includes(id));
+        const outcome = state.model.missing_sources.filter(id => OUTCOME_SOURCES.includes(id));
+        if (core.length) messages.push({ tone: "warning", text: `Missing sources: ${core.map(id => SOURCE_NAMES[id] || id).join(", ")}. Related totals and suggested plays are withheld.` });
+        if (outcome.length) messages.push({ tone: "warning", text: `Not collected in this refresh: ${outcome.map(id => SOURCE_NAMES[id] || id).join(", ")}. The code review, coding agent and AI units sections say where they are not reported.` });
     }
     const carried = staleSourceNote(state.model);
     if (carried) messages.push({ tone: "warning", text: carried });
@@ -724,6 +728,15 @@ function modelPanel(enterprise = null) {
         `Shares include unattributed allocation and are undefined when total value is zero. Model names are source labels; monthly adoption model counts are unchanged.</p>`;
 }
 
+const impactCache = new WeakMap();
+function impactFor(model) {
+    if (!impactCache.has(model)) impactCache.set(model, impactPayload(model));
+    return impactCache.get(model);
+}
+
+const impactAccountLink = (id, name) => id && state.model.accounts.some(account => account.id === id)
+    ? `<button class="account-link" type="button" data-account="${H(id)}">${H(name || id)}</button>` : H(name || id || "");
+
 function renderImpact() {
     const m = state.model;
     if (!Array.isArray(m.enterprises) || !m.enterprises.length) {
@@ -821,6 +834,7 @@ function renderImpact() {
                 `</tbody></table></div>` +
                 `<p class="meta">User counts are per-integration distinct counts and are not summed across surfaces. Absence of UBB does not prove a feature is unused where enablement is unknown.</p></section>`;
         })() +
+        `<section class="section code-impact-section">${codeImpactPortfolioHtml(impactFor(m), { level: 2, accountLink: impactAccountLink })}</section>` +
         `<section class="section" id="feature-usage">${featureUsagePanel(m)}</section>` +
         `<section class="section model-usage">${modelPanel()}</section>` +
         `<section class="section"><div class="section-top"><div><h2>All enterprises</h2>` +
@@ -869,7 +883,8 @@ function renderEnterprise() {
         `${H([enterprise.plan, enterprise.deployment, enterprise.industry, enterprise.region].filter(Boolean).join(" / ") || "GitHub enterprise")}` +
         `${enterprise.impact?.reportDateRange ? ` &middot; ${H(enterprise.impact.reportDateRange)}` : ""}</div></div>` +
         `<div class="detail-actions"><span class="status ${state_.state === "available" ? "active" : state_.state === "uncollected" ? "unknown" : "inactive"}">${H(state_.label)}</span></div></div>` +
-        `<nav class="detail-nav" aria-label="Enterprise sections"><a href="#enterprise-feature-usage">Review &amp; agent usage</a><a href="#enterprise-surfaces">Surfaces</a>` +
+        `<nav class="detail-nav" aria-label="Enterprise sections"><a href="#enterprise-code-review">Code review</a><a href="#enterprise-coding-agent">Coding agent</a>` +
+        `<a href="#enterprise-feature-usage">Review &amp; agent usage</a><a href="#enterprise-surfaces">Surfaces</a>` +
         `<a href="#enterprise-models">Models</a>` +
         `<a href="#enterprise-adoption">Adoption breadth</a><a href="#enterprise-phases">Phases</a>` +
         `<a href="#enterprise-trend">Trend</a><a href="#enterprise-roi">Cost &amp; ROI</a></nav>` +
@@ -890,6 +905,7 @@ function renderEnterprise() {
 
     if (!impact) {
         return head +
+            `<section class="detail-section code-impact-section">${codeImpactEnterpriseHtml(impactFor(m), enterprise, { level: 2 })}</section>` +
             `<section class="detail-section" id="enterprise-feature-usage">${featureUsagePanel(m, enterprise)}</section>` +
             `<section class="detail-section" id="enterprise-surfaces"><h2>Surfaces, CLI and agents</h2>` +
             surfacePanel(enterprise) + `</section>` +
@@ -916,6 +932,7 @@ function renderEnterprise() {
             `<p class="meta">Engaged developers compared with the non-engaged baseline in the same enterprise. ` +
             `A larger multiplier is not automatically better &mdash; the direction says which way it goes.</p>` +
             `<div class="impact-grid">${mult.map(multiplierCard).join("")}</div></section>` : "") +
+        `<section class="detail-section code-impact-section">${codeImpactEnterpriseHtml(impactFor(m), enterprise, { level: 2 })}</section>` +
         `<section class="detail-section" id="enterprise-feature-usage">${featureUsagePanel(m, enterprise)}</section>` +
         `<section class="detail-section" id="enterprise-surfaces"><h2>Surfaces, CLI and agents</h2>` +
         `<p class="meta">Where Copilot spend and users actually sit, and whether each surface is switched on.</p>` +
@@ -1099,7 +1116,7 @@ function renderAccount() {
         `${accountLink(a.sf_url_id || a.id, "Open in Salesforce")}</div></div>` +
         `<nav class="detail-nav" aria-label="Account sections"><a href="#account-priorities">Priorities</a>` +
         `<a href="#account-trajectory">13-week trajectory</a><a href="#account-impact">Adoption evidence</a>` +
-        `<a href="#account-workflows">Workflows</a><a href="#account-commercial">Commercial context</a>` +
+        `<a href="#account-workflows">Workflows</a><a href="#account-code-impact">Code review &amp; agent</a><a href="#account-commercial">Commercial context</a>` +
         `<a href="#account-evidence">Data integrity</a></nav>` +        (integrity.length ? `<div class="inline-note warning"><strong>Check the commercial data.</strong><ul>` +
             integrity.map(text => `<li>${H(text)}</li>`).join("") + `</ul></div>` : "") +
         `<div class="fact-strip">${[
@@ -1153,6 +1170,7 @@ function renderAccount() {
         (hasSources(m, "11") ? detailTable(["Model", "7d $", "Prior 7d $", "28d $"], modelRows,
             "No recorded model UBB") : empty("Model source missing", "The model breakdown is withheld.")) +
         `</div></div></section>` +
+        `<section class="detail-section code-impact-section" id="account-code-impact">${codeImpactAccountHtml(impactFor(m), a.id, { level: 2, accountLink: impactAccountLink })}</section>` +
         forecastWhitespace(a) + `<section class="detail-section" id="account-commercial"><h2>Commercial context</h2>` +
         `<p class="meta">Use these as conversation context, not a forecast or invoiced-revenue calculation.</p>` +
         `${facts([
@@ -1201,7 +1219,7 @@ function renderNotes() {
     const caveats = dataCaveats(m);
     const sourceRows = Object.entries(SOURCE_NAMES).map(([id, name]) => {
         const entry = m.sources[id];
-        return [H(id), H(name), m.missing_sources.includes(id) ? "Missing" : num(entry?.rows),
+        return [H(id), H(name), m.missing_sources.includes(id) ? "Missing" : !entry && OUTCOME_SOURCES.includes(id) ? "Not in snapshot" : num(entry?.rows),
             label(m.asof?.[id]), label(entry?.collected_from?.replace("T", " ").slice(0, 19))];
     });
     const glossary = [

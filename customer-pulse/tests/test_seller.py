@@ -129,8 +129,9 @@ class SellerTests(fx.HomeCase):
         account = {"id": A}
         seller.enrich([account], {}, TODAY, dashboard={}, store={"accounts": {A: {"pocs": entry(pocs)}}})
         stack = account["seller"]["feeds"]["tech_stack"]
-        self.assertEqual(stack["state"], "ok")
-        self.assertEqual(stack["records"][0]["value"], "Synthetic scanner")
+        self.assertEqual(stack["state"], "not_connected")
+        self.assertEqual(stack["records"], [])
+        self.assertEqual(account["seller"]["feeds"]["pocs"]["records"], pocs)
 
     def test_workiq_envelope_exact_correspondents_and_no_email_bodies(self):
         planned = task("emails")

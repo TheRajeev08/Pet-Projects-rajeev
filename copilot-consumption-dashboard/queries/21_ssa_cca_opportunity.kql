@@ -1,0 +1,34 @@
+// qid:21 db:service_sales_analytics — latest month of Copilot coding agent (CCA) expansion opportunity and new-logo readiness for owned billable owners (enterprise or organization)
+// Columns come from github/airflow fill SQL (cca_expansion_opportunity_monthly_snapshot, cca_new_logo_readiness_monthly_snapshot), not getschema; run `| getschema` on both before the first collection.
+// Scope is exact owned Salesforce account ids, or exact owned enterprise ids for enterprise-type owners. Names, m0-m4 hierarchy, owner/segment/territory and expansion_pitch are not selected.
+let sf = database("c360").entity_salesforce_account
+    | where sales_owner == "{{OWNER_NAME}}" and measurement_date > ago(14d)
+    | summarize by sf = tostring(entity_id);
+let ent = database("c360").entity_all
+    | where entity_type == "Enterprise Account" and measurement_date > ago(14d) and sales_owner == "{{OWNER_NAME}}"
+    | summarize by eid = tostring(tolong(entity_id));
+let expansionMonth = toscalar(cca_expansion_opportunity_monthly_snapshot | summarize max(month_end_date));
+let readinessMonth = toscalar(cca_new_logo_readiness_monthly_snapshot | summarize max(month_end_date));
+let expansion = cca_expansion_opportunity_monthly_snapshot
+    | where month_end_date == expansionMonth
+    | extend oid = tostring(billable_owner_id), otype = tostring(billable_owner_type), sfid = tostring(salesforce_account_id)
+    | where sfid in (sf) or (tolower(otype) has "enterprise" and oid in (ent))
+    | project kind = "expansion", owner_id = oid, owner_type = otype, sf_id = sfid, month = format_datetime(month_end_date, "yyyy-MM-dd"),
+        d = pack("stage", cca_adoption_stage, "share", pr_share, "penetration", repo_penetration, "frequency", frequency,
+            "cca_repos", cca_repo_count, "repos", total_active_repo_count, "untapped_repos", untapped_repos,
+            "score", expansion_opportunity_score, "band", expansion_score_band, "lift", weighted_avg_lift,
+            "cca_prs_low_medium", total_cca_prs_low_medium, "speed_multiplier", speed_multiplier,
+            "lift_summary", lift_summary, "lead_time_summary", lead_time_summary,
+            "untapped_summary", untapped_repos_summary, "action", recommended_action);
+let readiness = cca_new_logo_readiness_monthly_snapshot
+    | where month_end_date == readinessMonth
+    | extend oid = tostring(billable_owner_id), otype = tostring(billable_owner_type), sfid = tostring(salesforce_account_id)
+    | where sfid in (sf) or (tolower(otype) has "enterprise" and oid in (ent))
+    | project kind = "new_logo", owner_id = oid, owner_type = otype, sf_id = sfid, month = format_datetime(month_end_date, "yyyy-MM-dd"),
+        d = pack("repos", total_active_repo_count, "non_cca_prs", non_cca_pr_count, "score", readiness_score,
+            "pr_volume_score", pr_volume_score, "lead_time_score", lead_time_score, "repo_score", repo_score,
+            "lead_time_summary", lead_time_summary, "opportunity_summary", opportunity_summary, "action", recommended_action);
+union expansion, readiness
+| summarize rows = make_list(pack("kind", kind, "owner_id", owner_id, "owner_type", owner_type, "sf_id", sf_id, "month", month, "d", d))
+| extend asof = format_datetime(coalesce(expansionMonth, readinessMonth), "yyyy-MM-dd"),
+    expansion_month = format_datetime(expansionMonth, "yyyy-MM-dd"), readiness_month = format_datetime(readinessMonth, "yyyy-MM-dd")

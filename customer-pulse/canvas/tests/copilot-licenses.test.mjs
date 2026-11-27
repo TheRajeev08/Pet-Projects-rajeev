@@ -76,6 +76,32 @@ test("filters count searched customers and totals follow the active filter", () 
     assert.doesNotMatch(html, /data-account="b"/);
 });
 
+test("Overview AIU trend uses reported owned-account units by week ending, not spend or imputed zeros", () => {
+    const model = fixture();
+    model.accounts[2].in_book = false;
+    const usage = { asof: { "07": "2030-01-04" }, accounts: [
+        { id: "a", aiu: [0, 1.5, null, 8], gross: [4000], billable: [2000] },
+        { id: "b", aiu: [null, 7, null, 2] }, { id: "c", aiu: [500, 500] }, { id: "other", aiu: [700] },
+    ] };
+    const data = copilotLicenses(model, usage);
+    assert.equal(data.aiuTrend.total, 3);
+    assert.equal(data.aiuTrend.points.length, 13);
+    assert.deepEqual(data.aiuTrend.points.slice(-4), [["2029-12-14", 10], ["2029-12-21", null], ["2029-12-28", 8.5], ["2030-01-04", 0]]);
+    assert.deepEqual(data.aiuTrend.coverage.slice(-4), [2, 0, 2, 1]);
+    const html = renderView(model, { view: "overview", copilotLicenses: data });
+    const grid = html.slice(html.indexOf('aria-label="Product overview"'), html.indexOf("Book ARR"));
+    const order = ['href="#/ghe"', 'href="#/ghas"', 'href="#/copilot"', "Copilot AIU trend", "Weekly AI units consumed"];
+    assert.ok(order.every((item, i) => grid.includes(item) && (!i || grid.indexOf(item) > grid.indexOf(order[i - 1]))));
+    assert.equal(html.match(/class="product-card"/g)?.length, 3);
+    assert.match(grid, /Week ending/);
+    assert.match(grid, /Latest week: 1\/3 owned accounts reporting/);
+    for (const cp of [null, { ...usage, asof: {} }, { ...usage, missing_sources: ["07"] }, { ...usage, stale_sources: { "07": "2029-12-01" } }]) {
+        const unavailable = copilotLicenses(model, cp);
+        assert.equal(unavailable.aiuTrend, null);
+        assert.match(renderView(model, { view: "overview", copilotLicenses: unavailable }), /Weekly AI unit history is unavailable/);
+    }
+});
+
 test("Portfolio and drawer escape data, preserve nulls, show source disagreement and every customer", () => {
     const model = fixture();
     const data = copilotLicenses(model, dashboard);

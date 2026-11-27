@@ -6,13 +6,14 @@ import {
     copilotLicenses, copilotRowTotals, copilotRowsFor, copilotFilterCounts,
 } from "./model.mjs";
 import { renderRecommendations } from "./recommendations.mjs";
+import { codeImpactPortfolioHtml, codeImpactSummaryHtml, impactApplies } from "./copilot/code-impact.mjs";
 import { createSellerViews } from "./seller-views.mjs";
-import { bookFeedCoverage } from "./seller-data.mjs";
+import { ACCOUNT_LABELS, bookFeedCoverage } from "./seller-data.mjs";
 
 export const ROW_LIMIT = 50;
-export const VIEW_LABELS = { overview: "Overview", top50: "Top 50", account360: "Account 360", consumption: "Consumption",
-    copilot: "Copilot", impact: "Impact", ghe: "GHE", ghas: "Security", pipeline: "Pipeline & renewals",
-    signals: "Signals", recommendations: "Recommendations", data: "Data" };
+export const VIEW_LABELS = { overview: "Overview", top50: "Top 50", account360: "Accounts", consumption: "Consumption",
+    copilot: "Copilot", impact: "Impact", ghe: "GHE", ghas: "GHAS", pipeline: "Pipeline & renewals",
+    signals: "Signals", recommendations: "Recommendations", data: "Coverage & freshness" };
 export const VIEW_FAMILY = { copilot: "ghcp", ghe: "ghe", ghas: "ghas" };
 const FAMILY_VIEW = { ghcp: "copilot", ghe: "ghe", ghas: "ghas" };
 const PRODUCT_TITLES = { ghe: "GitHub Enterprise", ghas: "GitHub Advanced Security", ghcp: "GitHub Copilot" };
@@ -145,11 +146,12 @@ export function renderTopbar(model, ui = {}) {
         const issues = model.sources.filter(source => source.state !== "ok");
         middle += issues.length
             ? `<a class="pill warn" href="#/data" data-view="data">${issues.length} ${plural(issues.length, "source")} need${issues.length === 1 ? "s" : ""} attention</a>`
-            : '<a class="pill ok" href="#/data" data-view="data">All sources current</a>';
+            : '<a class="pill ok" href="#/data" data-view="data">Core snapshot current</a>';
+        middle += '<a class="pill" href="#/data">Account feed coverage</a>';
         const high = newHighCount(model);
         if (high) middle += `<span class="pill hot" title="New High-priority actions, seat changes and verified open signals since the last digest">${high} new High</span>`;
     }
-    return `<div class="brand"><span class="mark" aria-hidden="true">P</span><div class="brand-text"><span class="product-name">Customer Pulse</span>`
+    return `<div class="brand"><button class="button nav-toggle" data-command="menu" aria-controls="nav" aria-expanded="${Boolean(ui.menuOpen)}">Menu</button><span class="mark" aria-hidden="true">P</span><div class="brand-text"><span class="product-name">Customer Pulse</span>`
         + `<span class="freshness">${model ? esc(freshness(model)) : ui.loading ? "Loading the snapshot…" : "No snapshot loaded"}</span></div></div>`
         + `<div class="top-actions">${middle}<button type="button" class="button subtle" data-command="reload">Reload</button>`
         + `<button type="button" class="button primary" data-command="refresh"${busy ? ' aria-disabled="true"' : ""}>${busy ? "Refreshing…" : "Refresh"}</button></div>`;
@@ -171,8 +173,15 @@ function tabCount(model, view) {
 }
 
 export function renderNav(model, ui = {}) {
-    return VIEWS.map(view => `<a href="#/${view}" data-view="${view}"${ui.view === view ? ' aria-current="page"' : ""}>`
-        + `${VIEW_LABELS[view]}${model ? tabCount(model, view) : ""}</a>`).join("");
+    const groups = [["Portfolio", ["overview", "top50", "account360", "consumption", "pipeline"]],
+        ["Products", ["copilot", "impact", "ghe", "ghas"]], ["Work queue", ["signals", "recommendations"]], ["Data", ["data"]]];
+    const context = ui.view === "account360" && ui.account && model?.accounts.find(a => a.id === ui.account);
+    return `<button class="button nav-close" data-command="close-menu">Close menu</button>`
+        + groups.map(([label, views]) => `<div class="nav-group"><p class="nav-label">${label}</p>${views.map(view =>
+            `<a href="#/${view}" data-view="${view}"${ui.view === view ? ' aria-current="page"' : ""}>`
+            + `${VIEW_LABELS[view]}${model ? tabCount(model, view) : ""}</a>`).join("")}</div>`).join("")
+        + (context ? `<div class="nav-group account-context" role="navigation" aria-label="Account 360 sections"><p class="nav-label">${esc(context.name || context.id)}</p>`
+            + Object.entries(ACCOUNT_LABELS).map(([key, label]) => `<a href="#/account360/${key}/account/${encodeURIComponent(context.id)}" data-focus-key="account-section:${key}"${(ui.subview || "summary") === key ? ' aria-current="page"' : ""}>${esc(label)}</a>`).join("") + "</div>" : "");
 }
 
 export function renderNotices(model, ui = {}) {
@@ -662,7 +671,7 @@ function whitespacePanel(model, ui, family) {
     return `<section class="panel" aria-labelledby="h-ws-${family}"><div class="panel-head"><h2 id="h-ws-${family}">${esc(title)} <span class="count-text">${list.length}</span></h2></div>${html}</section>`;
 }
 
-function renderProduct(model, ui, family) {
+function renderProduct(model, ui, family, history) {
     const windowDays = model.changes_window_days || 7;
     const rows = model.accounts.filter(account => hasProduct(account, family) && matches(account, ui.query));
     const key = FAMILY_VIEW[family];
@@ -671,7 +680,7 @@ function renderProduct(model, ui, family) {
         ? '<p class="note">For editor, model and premium-request detail, open the Copilot adoption canvas.</p>' : "";
     return `<section class="page-head"><div><p class="eyebrow">${esc(longDay(model.date))}</p><h1>${esc(PRODUCT_TITLES[family])}</h1>`
         + `<p class="lede">${fmtInt(model.kpis?.[family]?.accounts)} ${plural(model.kpis?.[family]?.accounts, "account")} with ${esc(FAMILY_LABELS[family])}</p></div></section>`
-        + kpiStrip(model, family) + (family === "ghcp" ? copilotMix(model) : "")
+        + kpiStrip(model, family) + (family === "ghcp" ? copilotMix(model) : "") + history
         + `<div class="columns"><div class="col-main">${actionsPanel(model, ui, { family, key, title: "Actions" })}</div>`
         + `<div class="col-side">${changesPanel(model, ui, { family, key })}</div></div>`
         + `<section class="panel" aria-labelledby="h-table-${key}"><div class="panel-head"><h2 id="h-table-${key}">${esc(FAMILY_LABELS[family])} accounts <span class="count-text">${rows.length}</span></h2>`
@@ -689,7 +698,7 @@ function copilotHead(model, ui) {
         + `<a class="full-screen" href="copilot/#/${current || "desk"}" target="_blank" rel="noopener noreferrer">Open full screen</a></div>`;
 }
 
-function renderCopilotPortfolio(model, ui) {
+function renderCopilotPortfolio(model, ui, history) {
     const data = ui.copilotLicenses || copilotLicenses(model);
     const totals = data.totals;
     const fallback = !ui.copilotLicenses;
@@ -714,7 +723,7 @@ function renderCopilotPortfolio(model, ui) {
     const reconciliationOnly = data.rows.filter(row => row.reconciliationOnly).length;
     const rows = filtered.map(row => ({ ...accountIndex(model).get(row.account_id), copilot: row }));
     const filters = [["all", "All"], ["attention", "Needs attention"], ["unassigned", "Unassigned licenses"], ["engaged_lt_50", "Engaged under 50%"], ["renewing_90", "Renewing within 90 days"]];
-    return '<div class="copilot-page">' + copilotHead(model, ui) + kpis
+    return '<div class="copilot-page">' + copilotHead(model, ui) + kpis + history
         + (ui.copilotLicensesLoading ? '<div class="copilot-loading" role="status"><span class="loading-bar" aria-hidden="true"></span>Loading license reconciliation…</div>' : "")
         + (ui.copilotLicensesError ? `<p class="note" role="status">${esc(ui.copilotLicensesError)}</p>` : !fallback && data.note ? `<p class="note">${esc(data.note)}</p>` : "")
         + (reconciliationOnly ? `<p class="note">${reconciliationOnly} additional ${plural(reconciliationOnly, "account")} shown for reconciliation: the dashboard reports licenses but Pulse has no current Copilot seats. Pulse remains authoritative.</p>` : "")
@@ -723,7 +732,16 @@ function renderCopilotPortfolio(model, ui) {
             `<button type="button" class="button tiny${filter === key ? " selected" : ""}" data-filter="copilot" data-value="${key}" aria-pressed="${filter === key}">${label} <span class="count">${counts[key]}</span></button>`).join("")}</div>`
         + copilotTable(model, ui, rows, model.changes_window_days || 7) + "</div></section>"
         + `<div class="columns"><div class="col-main">${actionsPanel(model, ui, { family: "ghcp", key: "copilot", title: "Actions" })}</div><div class="col-side">${changesPanel(model, ui, { family: "ghcp", key: "copilot" })}</div></div>`
-        + copilotMix(model) + whitespacePanel(model, ui, "ghcp") + "</div>";
+        + copilotImpactSection(model, ui) + copilotMix(model) + whitespacePanel(model, ui, "ghcp") + "</div>";
+}
+
+function copilotImpactSection(model, ui) {
+    const head = '<div class="panel-head"><h2 id="h-code-impact">Code review &amp; coding agent impact</h2></div>';
+    if (ui.copilotLicensesLoading) return `<section class="panel copilot-impact" aria-labelledby="h-code-impact">${head}<div class="copilot-loading" role="status"><span class="loading-bar" aria-hidden="true"></span>Loading Copilot outcome metrics…</div></section>`;
+    const impact = ui.copilotLicenses?.impact;
+    if (!impact) return ui.copilotLicenses ? `<section class="panel copilot-impact" aria-labelledby="h-code-impact">${head}<p class="note">Copilot dashboard snapshot unavailable, so code review, coding agent and feature-level AI units are not shown.</p></section>` : "";
+    return '<section class="panel copilot-impact">'
+        + codeImpactPortfolioHtml(impact, { level: 2, id: "copilot-code-impact", accountLink: (id, name) => accountLink(model, id, name) }) + "</section>";
 }
 
 function signalRow(model, signal, { showAccount = true } = {}) {
@@ -863,13 +881,14 @@ function embedFrame(ui, { name, title, src }) {
 }
 
 export function renderView(model, ui = {}) {
-    const seller = createSellerViews({ esc, fmtInt, fmtMoney, fmtPct, fmtDay, sparkline, table, actionsFor, renderRecommendations });
+    const seller = createSellerViews({ esc, fmtInt, fmtMoney, fmtPct, fmtDay, sparkline, table, actionsFor, renderRecommendations,
+        actionsPanel, changesPanel, productCard, newSignalsPanel });
     if (ui.view === "top50") return seller.top50(model, ui);
     if (ui.view === "account360") return seller.account360(model, ui);
     if (ui.view === "consumption") return seller.consumption(model, ui);
     if (ui.view === "pipeline") return seller.pipeline(model, ui);
     if (ui.view === "copilot") {
-        if (!ui.subview || ui.subview === "seats") return renderCopilotPortfolio(model, ui) + seller.copilotExtras(model);
+        if (!ui.subview || ui.subview === "seats") return renderCopilotPortfolio(model, ui, seller.familyHistory(model, ui)) + seller.copilotExtras(model);
         return copilotHead(model, ui) + embedFrame(ui, { name: "copilot-dashboard", title: "Copilot adoption dashboard",
             src: ui.embedSrc || `copilot/?embed=1${ui.account || ui.copilotAccount ? `&view=${ui.subview}` : ""}#/${ui.account || ui.copilotAccount ? `account/${encodeURIComponent(ui.account || ui.copilotAccount)}` : ui.subview}` });
     }
@@ -877,11 +896,11 @@ export function renderView(model, ui = {}) {
         return '<nav class="copilot-subnav" aria-label="Impact views"><a href="copilot/#/impact" target="_blank" rel="noopener noreferrer">Open Copilot Impact in its own tab</a></nav>'
             + embedFrame(ui, { name: "copilot-impact", title: "Copilot Impact dashboard", src: "copilot/?embed=1#/impact" });
     }
-    if (VIEW_FAMILY[ui.view]) return renderProduct(model, ui, VIEW_FAMILY[ui.view]) + seller.productExtras(model, VIEW_FAMILY[ui.view]);
+    if (VIEW_FAMILY[ui.view]) return renderProduct(model, ui, VIEW_FAMILY[ui.view], seller.familyHistory(model, ui)) + seller.productExtras(model, VIEW_FAMILY[ui.view]);
     if (ui.view === "signals") return renderSignals(model, ui);
     if (ui.view === "recommendations") return renderRecommendations(model.recommendations, { filter: ui.recommendationFilter, query: ui.query, now: ui.now });
-    if (ui.view === "data") return renderData(model) + seller.coverage(model);
-    return seller.overview(model) + renderOverview(model, ui);
+    if (ui.view === "data") return seller.coverage(model, ui) + `<details class="panel"><summary>Source definitions & action rules</summary>${renderData(model)}</details>`;
+    return seller.overview(model, ui);
 }
 
 export function renderUnavailable(error) {
@@ -1040,7 +1059,9 @@ export function renderDrawer(model, ui = {}) {
     const support = isObject(account.support) ? [isNumber(account.support.tickets_28d) ? `${fmtInt(account.support.tickets_28d)} tickets in 28 days` : null,
         isNumber(account.support.csat_ltm) ? `CSAT ${account.support.csat_ltm <= 1 ? fmtPct(account.support.csat_ltm) : esc(account.support.csat_ltm)} (12 months)` : null].filter(Boolean).join(" · ") : "";
     const cpPanel = copilotPanel(account, windowDays,
-        (ui.copilotLicenses || copilotLicenses(model)).rows.find(row => row.account_id === account.id));
+        (ui.copilotLicenses || copilotLicenses(model)).rows.find(row => row.account_id === account.id))
+        + (ui.copilotLicenses?.impact && (hasProduct(account, "ghcp") || impactApplies(ui.copilotLicenses.impact, account.id))
+            ? codeImpactSummaryHtml(ui.copilotLicenses.impact, account.id, { level: 3, href: `#/account360/products/account/${encodeURIComponent(account.id)}` }) : "");
     return `<div class="backdrop" data-close></div><aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title">`
         + `<header class="drawer-head"><div><h2 id="drawer-title">${esc(account.name || account.id)}</h2>${sub ? `<p class="sub">${sub}</p>` : ""}</div>`
         + `<div class="drawer-tools">${sfdc ? `<a class="button subtle tiny" href="${esc(sfdc)}" target="_blank" rel="noopener noreferrer">Open in Salesforce</a>` : ""}${close}</div></header>`

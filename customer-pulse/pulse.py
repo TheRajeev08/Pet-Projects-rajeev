@@ -9,7 +9,7 @@ import traceback
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from pulse import collect, digest, model, paths, privacy, queries, seller, signals  # noqa: E402
+from pulse import collect, digest, model, paths, privacy, queries, seller, signals, stack_evidence  # noqa: E402
 from pulse.util import LockBusy, RunLock, atomic_write_json, read_json  # noqa: E402
 
 
@@ -195,6 +195,24 @@ def cmd_seller(a):
     return 2 if out.get("missing") else 0
 
 
+def cmd_stack(a):
+    if not os.environ.get("CP_HOME"):
+        raise ValueError("Set CP_HOME explicitly for evidence collection")
+    cfg = paths.load_config()
+    with RunLock(paths.lock_path()):
+        if a.cmd == "stack-plan":
+            snapshot = read_json(paths.model_path())
+            if not snapshot:
+                raise ValueError("Build the owned-book model before planning evidence")
+            result = stack_evidence.plan(snapshot, cfg, _today(a))
+        elif a.cmd == "stack-hydrate":
+            result = stack_evidence.hydrate(cfg)
+        else:
+            result = stack_evidence.ingest(json.load(sys.stdin), _today(a))
+    print(json.dumps(result, indent=2))
+    return 2 if a.cmd == "stack-hydrate" and any(v["state"] != "ok" for feeds in result.get("coverage", {}).values() for v in feeds.values()) else 0
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="pulse.py", description=__doc__)
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -267,6 +285,11 @@ def main(argv=None):
         s.add_argument("--no-sf", action="store_true")
         s.add_argument("--source-status", action="append", default=[])
         s.set_defaults(fn=cmd_seller)
+
+    for command in ("stack-plan", "stack-hydrate", "stack-ingest"):
+        s = sub.add_parser(command, help="bounded SE/Gong evidence stage; explicit CP_HOME, no scheduling")
+        s.add_argument("--today")
+        s.set_defaults(fn=cmd_stack)
 
     a = p.parse_args(argv)
     try:

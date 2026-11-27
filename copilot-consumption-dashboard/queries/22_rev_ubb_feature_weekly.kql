@@ -1,0 +1,12 @@
+// qid:22 db:rev_source — per owned Salesforce account: 13 weekly points (wk 0 = most recent 7 days) of gross spend and AI units by integration (feature), for the AIU-by-feature trend
+let asof = toscalar(salesforce_account_daily_ubb_revenue_fact | where measurement_date > ago(21d) | summarize max(measurement_date));
+salesforce_account_daily_ubb_revenue_fact
+| where sales_owner_id == "{{OWNER_ID}}" and measurement_date > asof - 91d
+| join kind=leftouter ubb_integration_model_dim on ubb_integration_model_id
+| extend wk = toint((asof - measurement_date) / 7d)
+| where wk < 13
+| summarize wg = round(sum(gross_usage_in_dollar), 2), wa = round(sum(ai_units_consumed), 1) by id = salesforce_account_id, integration, wk
+| where wg != 0 or wa != 0
+| order by id asc, integration asc, wk asc
+| summarize s = make_list(pack_array(wk, integration, wg, wa)) by id
+| extend asof = asof, cols = "wk,integration,gross,aiu"

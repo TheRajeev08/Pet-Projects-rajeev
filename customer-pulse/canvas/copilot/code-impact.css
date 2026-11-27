@@ -1,0 +1,172 @@
+/* Copilot code review, coding agent and AI units by feature.
+   Shared by Pulse (Products › Copilot, Account 360, drawer) and the embedded Copilot dashboard.
+   Uses the host theme tokens; falls back where one stylesheet lacks a token. */
+.ci-panel {
+    --ci-1: var(--accent, #0969da);
+    --ci-2: #8250df;
+    --ci-3: var(--positive, #1a7f37);
+    --ci-4: var(--caution, #9a6700);
+    --ci-5: var(--muted, #59636e);
+    --ci-radius: var(--radius, 10px);
+    --ci-warn: color-mix(in srgb, var(--caution, #9a6700) 12%, var(--paper, #fff));
+    display: grid;
+    gap: 16px;
+    min-width: 0;
+    color: var(--ink);
+}
+:root[data-color-mode="dark"] .ci-panel, body[data-color-mode="dark"] .ci-panel { --ci-2: #a371f7; }
+@media (prefers-color-scheme: dark) {
+    :root:not([data-color-mode="light"]) body:not([data-color-mode="light"]) .ci-panel { --ci-2: #a371f7; }
+}
+
+.ci-panel h2, .ci-panel h3, .ci-panel h4, .ci-panel h5 { margin: 0; line-height: 1.3; }
+.ci-panel > h2, .ci-panel > h3 { font-size: 18px; }
+.ci-card > h3, .ci-card > h4 { font-size: 15px; }
+.ci-card h4, .ci-card h5 { font-size: 13px; margin-top: 6px; }
+.ci-intro { margin: -6px 0 0; max-width: 78ch; color: var(--muted); font-size: 13px; line-height: 1.5; }
+
+div.ci-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; min-width: 0; }
+.ci-card {
+    container: ci-card / inline-size;
+    display: grid;
+    align-content: start;
+    gap: 12px;
+    min-width: 0;
+    padding: 18px;
+    border: 1px solid var(--line);
+    border-radius: var(--ci-radius);
+    background: var(--paper);
+}
+.ci-wide { grid-column: 1 / -1; }
+.ci-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; min-width: 0; }
+
+/* KPI tiles wrap without leaving an empty cell: 3 → one row or a column, 4 → one row or 2×2, 5 → one row or 3 + 2. */
+.ci-kpis { display: flex; flex-wrap: wrap; gap: 1px; overflow: hidden;
+    border: 1px solid var(--line); border-radius: 8px; background: var(--line); }
+.ci-kpi { display: grid; flex: 1 1 140px; align-content: start; gap: 3px; min-width: 0; padding: 12px 14px; background: var(--paper); }
+.ci-kpis.ci-n3 > .ci-kpi { flex-basis: clamp(calc(33.333% - 1px), calc((420px - 100%) * 999), 100%); }
+.ci-kpis.ci-n4 > .ci-kpi { flex-basis: clamp(calc(25% - 1px), calc((560px - 100%) * 999), calc(50% - 1px)); }
+.ci-kpis.ci-n5 > .ci-kpi { flex-basis: clamp(calc(20% - 1px), calc((700px - 100%) * 999), calc(33.333% - 1px)); }
+.ci-kpi-label { color: var(--muted); font-size: 12px; font-weight: 600; }
+.ci-kpi-value { font-size: 22px; font-weight: 650; line-height: 1.15; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.ci-kpi-sub { color: var(--muted); font-size: 11px; line-height: 1.4; }
+
+.ci-note { margin: 0; padding: 10px 12px; border-radius: 8px; background: var(--wash); font-size: 12px; line-height: 1.5; }
+.ci-note.warning { background: var(--ci-warn); }
+.ci-meta, .ci-source { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
+.ci-source { padding-top: 8px; border-top: 1px solid var(--line); }
+.ci-na { color: var(--muted); font-size: .7em; font-weight: 500; }
+.ci-flag, .ci-tag { display: inline-block; padding: 0 6px; border-radius: 999px; font-size: 10px; font-weight: 600;
+    line-height: 16px; vertical-align: middle; white-space: nowrap; }
+.ci-tag { color: var(--muted); background: var(--wash); border: 1px solid var(--line); }
+.ci-flag { color: var(--caution, #9a6700); background: var(--ci-warn); }
+.ci-cell-sub { display: block; color: var(--muted); font-size: 10px; }
+
+.ci-table { min-width: 0; max-width: 100%; overflow-x: auto; }
+.ci-table table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.ci-table th, .ci-table td { padding: 7px 6px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+.ci-table th { color: var(--muted); font-size: 11px; font-weight: 600; line-height: 1.3; }
+.ci-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ci-table tbody tr:last-child td { border-bottom: 0; }
+
+.ci-details { min-width: 0; }
+.ci-details > summary { cursor: pointer; color: var(--accent); font-size: 12px; font-weight: 600; }
+.ci-details[open] > summary { margin-bottom: 8px; }
+
+.ci-bars { display: grid; gap: 7px; }
+.ci-bar { display: grid; grid-template-columns: minmax(110px, 40%) minmax(0, 1fr) auto; align-items: center; gap: 10px; font-size: 12px; }
+.ci-bar-label { line-height: 1.3; overflow-wrap: anywhere; }
+.ci-bar-track { height: 9px; overflow: hidden; border-radius: 999px; background: var(--wash); }
+.ci-bar-fill { display: block; height: 100%; border-radius: inherit; background: currentColor; }
+.ci-bar-value { min-width: 48px; text-align: right; font-variant-numeric: tabular-nums; }
+
+/* The plot area has a fixed pixel height: lines stretch to the card, while tick text and points stay at their CSS size. */
+.ci-chart { container: ci-chart / inline-size; margin: 0; min-width: 0; }
+.ci-plot { position: relative; height: 168px; margin: 8px 20px 28px 50px; }
+.ci-plot svg { position: absolute; inset: 0; display: block; width: 100%; height: 100%; overflow: visible; }
+.ci-chart line.ci-grid { stroke: var(--line); stroke-width: 1; }
+.ci-chart g path { fill: none; stroke: currentColor; stroke-width: 2.25; stroke-linejoin: round; stroke-linecap: round; }
+.ci-chart g path.ci-dash { stroke-dasharray: 5 4; }
+.ci-tick { position: absolute; color: var(--muted); font-size: 11px; line-height: 1; white-space: nowrap;
+    font-variant-numeric: tabular-nums; pointer-events: none; }
+.ci-tick-y { right: calc(100% + 8px); transform: translateY(-50%); }
+.ci-tick-x { top: calc(100% + 9px); transform: translateX(-50%); }
+.ci-dot { position: absolute; box-sizing: border-box; width: 9px; height: 9px; border: 1.5px solid var(--paper);
+    border-radius: 50%; background: currentColor; transform: translate(-50%, -50%); }
+.ci-dot.ci-mtd { width: 10px; height: 10px; border: 2px solid currentColor; background: var(--paper); }
+.ci-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 6px; color: var(--muted); font-size: 11px; }
+.ci-key { display: inline-flex; align-items: center; gap: 6px; }
+.ci-key::before { content: ""; width: 14px; height: 0; border-top: 2.5px solid currentColor; }
+.ci-key-dash::before { border-top-style: dashed; }
+.ci-key-mtd { color: var(--muted); }
+.ci-key-mtd::before { width: 7px; height: 7px; border: 2px solid currentColor; border-radius: 50%; }
+.ci-legend .ci-key { color: var(--ink); }
+.ci-legend .ci-key::before { color: var(--key-color, currentColor); }
+
+.ci-s1 { color: var(--ci-1); --key-color: var(--ci-1); }
+.ci-s2 { color: var(--ci-2); --key-color: var(--ci-2); }
+.ci-s3 { color: var(--ci-3); --key-color: var(--ci-3); }
+.ci-s4 { color: var(--ci-4); --key-color: var(--ci-4); }
+.ci-s5 { color: var(--ci-5); --key-color: var(--ci-5); }
+.ci-legend .ci-key.ci-s1, .ci-legend .ci-key.ci-s2, .ci-legend .ci-key.ci-s3,
+.ci-legend .ci-key.ci-s4, .ci-legend .ci-key.ci-s5 { color: var(--ink); }
+.ci-legend .ci-key.ci-s1::before { border-color: var(--ci-1); }
+.ci-legend .ci-key.ci-s2::before { border-color: var(--ci-2); }
+.ci-legend .ci-key.ci-s3::before { border-color: var(--ci-3); }
+.ci-legend .ci-key.ci-s4::before { border-color: var(--ci-4); }
+.ci-legend .ci-key.ci-s5::before { border-color: var(--ci-5); }
+.ci-legend .ci-key-mtd::before { border-color: var(--muted); }
+
+.ci-bands { display: flex; flex-wrap: wrap; gap: 6px; }
+.ci-band { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border: 1px solid var(--band, var(--line));
+    border-radius: 999px; background: color-mix(in srgb, var(--band, var(--line)) 10%, var(--paper)); font-size: 11px; white-space: nowrap; }
+.ci-band strong { display: inline-grid; place-items: center; min-width: 18px; height: 18px; border-radius: 50%;
+    color: var(--paper); background: var(--band, var(--muted)); font-size: 10px; }
+.ci-band span { font-weight: 650; font-variant-numeric: tabular-nums; }
+.ci-table .ci-band { padding: 0; border: 0; background: none; }
+.ci-band-S { --band: var(--ci-3); }
+.ci-band-A { --band: var(--ci-1); }
+.ci-band-B { --band: var(--ci-2); }
+.ci-band-C { --band: var(--ci-4); }
+.ci-band-D { --band: var(--ci-5); }
+
+.ci-guidance { display: grid; gap: 6px; padding: 12px 14px; border: 1px solid color-mix(in srgb, var(--ci-2) 28%, var(--line));
+    border-radius: 8px; background: color-mix(in srgb, var(--ci-2) 6%, var(--paper)); font-size: 12px; line-height: 1.5; }
+.ci-guidance-list { display: grid; gap: 8px; margin: 0; padding-left: 18px; font-size: 12px; line-height: 1.5; }
+.ci-guidance-list em { color: var(--muted); }
+
+.ci-summary { gap: 10px; margin-top: 12px; }
+.ci-summary .ci-kpi { flex-basis: 120px; }
+.ci-summary .ci-kpi-value { font-size: 18px; }
+
+@media (max-width: 900px) {
+    div.ci-grid, .ci-pair { grid-template-columns: minmax(0, 1fr); }
+}
+/* Narrow cards (half-width columns, drawers) stack paired charts and tables, and give five KPIs two columns. */
+@container ci-card (max-width: 520px) {
+    .ci-pair { grid-template-columns: minmax(0, 1fr); }
+    .ci-kpis.ci-n5 > .ci-kpi { flex-basis: calc(50% - 1px); }
+}
+@container ci-chart (max-width: 440px) {
+    .ci-tick-x.ci-alt { display: none; }
+}
+/* Tables in very narrow cards use the same labelled-row layout as phones. */
+@container ci-card (max-width: 420px) {
+    .ci-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+    .ci-table tr { display: grid; gap: 2px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+    .ci-table td { display: flex; justify-content: space-between; gap: 12px; padding: 2px 0; border: 0; text-align: right; }
+    .ci-table td::before { content: attr(data-label); color: var(--muted); font-size: 11px; text-align: left; }
+    .ci-table td.num { text-align: right; white-space: normal; }
+}
+@media (max-width: 560px) {
+    .ci-card { padding: 14px; }
+    .ci-kpi-value { font-size: 19px; }
+    .ci-bar { grid-template-columns: minmax(0, 1fr) auto; }
+    .ci-bar-track { grid-column: 1 / -1; grid-row: 2; }
+    .ci-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+    .ci-table tr { display: grid; gap: 2px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+    .ci-table td { display: flex; justify-content: space-between; gap: 12px; padding: 2px 0; border: 0; text-align: right; }
+    .ci-table td::before { content: attr(data-label); color: var(--muted); font-size: 11px; text-align: left; }
+    .ci-table td.num { text-align: right; white-space: normal; }
+    .ci-plot { height: 148px; margin-left: 44px; }
+}

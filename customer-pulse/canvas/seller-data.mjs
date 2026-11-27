@@ -2,12 +2,14 @@
 import { ACCOUNT_VIEWS, isNumber, isDay, seriesChange } from "./model.mjs";
 
 export const ACCOUNT_TABS = ACCOUNT_VIEWS;
+export const ACCOUNT_LABELS = { summary: "Summary", products: "Products & consumption", commercial: "Commercial",
+    security: "Security", contacts: "Contacts (POCs)", activity: "Engagement", stack: "Tech stack", success: "Success & support" };
 export const FEED_LABELS = {
     invoices: "Consumption invoices", actions: "Actions usage", protection: "Repository protection", model_cost: "Copilot model cost",
     selfserve: "Self-serve Team", mrr: "Recurring revenue", opportunities: "License opportunities", support: "Support tickets",
     services: "Services bookings", retention: "Revenue retention", risks: "Gainsight risks", sentiment: "Gainsight sentiment",
-    success: "Success plans", timeline: "Gainsight timeline", contacts: "Salesforce contacts", issues: "SE linked issues",
-    pocs: "Proofs of concept", gong: "Gong calls", notes: "Account notes", partners: "Partners", hierarchy: "Child accounts",
+    success: "Success plans", timeline: "Gainsight timeline", contacts: "Salesforce contacts", issues: "Account-linked issues",
+    gong: "Gong calls", notes: "Account notes", partners: "Partners", hierarchy: "Child accounts",
     github_accounts: "Enterprise mapping", budgets: "Enterprise budgets", emails: "Outlook email metadata", tech_stack: "Tech stack",
 };
 export const moneyTypes = ["ARR", "Billed", "Usage est.", "Model est.", "MRR", "Booked", "Budget", "Services est."];
@@ -17,7 +19,7 @@ export const knownSum = values => {
 };
 export const feedOf = (account, key) => account?.seller?.feeds?.[key] || {
     state: key === "tech_stack" ? "not_connected" : "missing", source: FEED_LABELS[key], as_of: null, records: [],
-    reason: key === "tech_stack" ? "ZoomInfo is not connected. No verified internal tech-stack evidence." : "Internal feed has not been collected.",
+    reason: key === "tech_stack" ? "No verified SE issue or Gong stack evidence collected." : "Internal feed has not been collected.",
 };
 export const rowsOf = (account, key) => (feedOf(account, key).records || []).filter(r => r && typeof r === "object");
 export const currentRows = (account, key) => feedOf(account, key).state === "ok" ? rowsOf(account, key) : [];
@@ -48,20 +50,29 @@ export function latestRows(account, key, dimensions = []) {
 
 export const PRODUCTS = [
     ["ghec", "GHE Cloud", "ghe", "GitHub Enterprise Cloud"], ["ghcs", "Code Security", "ghas", "GHCS"],
-    ["ghsp", "Secret Protection", "ghas", "GHSP"], ["ghas", "Advanced Security (bundled)", "ghas", "Advanced Security"],
+    ["ghsp", "Secret Protection", "ghas", "GHSP"], ["ghas", "GHAS (bundled)", "ghas", "Advanced Security"],
     ["copilot", "Copilot", "ghcp"], ["copilot aiu", "Copilot AI credits"], ["actions", "Actions"], ["codespaces", "Codespaces"],
     ["code_quality", "Code Quality"], ["copilot_enterprise", "Copilot Enterprise"], ["GitHub Models", "Models inference"],
     ["git_lfs", "Git LFS"], ["packages", "Packages"], ["shared_storage", "Shared storage"], ["spark", "Spark"], ["sandboxes", "Sandboxes"],
 ];
 const productLabel = new Map(PRODUCTS.map(([key, label]) => [key, label]));
-export const labelOf = key => productLabel.get(key) || key || "Unmapped invoice product";
+export const GHAS_BILLING_PRODUCTS = ["ghcs", "ghsp", "code_quality", "ghas"];
+const normalizeName = name => name.trim().toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ");
+const invoiceNames = new Map(PRODUCTS.flatMap(([key, name, , type]) =>
+    [key, name, type, `GitHub ${name}`].filter(Boolean).map(alias => [normalizeName(alias), key])));
+export const invoiceProduct = name => typeof name === "string" ? invoiceNames.get(normalizeName(name)) ?? name : name;
+export const labelOf = key => productLabel.get(invoiceProduct(key)) || key || "Unmapped invoice product";
 
 export function billedSeries(account, today, product = null) {
-    const rows = currentRows(account, "invoices");
+    const totals = new Map();
+    for (const row of currentRows(account, "invoices")) {
+        if (!isNumber(row.amount) || (product !== null && invoiceProduct(row.product) !== product)) continue;
+        const month = monthOf(row.date);
+        totals.set(month, (totals.get(month) ?? 0) + row.amount);
+    }
     return { points: Array.from({ length: 13 }, (_, i) => {
         const month = monthOffset(today, i - 13);
-        const values = rows.filter(r => monthOf(r.date) === month && (product === null || r.product === product)).map(r => r.amount);
-        return [`${month}-01`, knownSum(values)];
+        return [`${month}-01`, totals.get(month) ?? null];
     }) };
 }
 export function billedLtm(account, today, product = null) {
@@ -81,7 +92,7 @@ export function monthlyChange(series, months = 1) {
 }
 export function productRows(account, today) {
     const invoices = currentRows(account, "invoices");
-    const extra = [...new Set(invoices.map(r => r.product).filter(Boolean))].filter(p => !productLabel.has(p)).map(p => [p, p]);
+    const extra = [...new Set(invoices.map(r => invoiceProduct(r.product)).filter(Boolean))].filter(p => !productLabel.has(p)).map(p => [p, p]);
     return [...PRODUCTS, ...extra].map(([key, name, family, type]) => {
         const p = account.products?.[family] || {};
         const contract = type ? p.by_type?.[type] : null;
@@ -95,7 +106,7 @@ export function productRows(account, today) {
         // GHE usage is account-wide, not safely attributable to the Cloud-only SKU.
         const billing = billedLtm(account, today, key);
         const owned = (seats ?? 0) > 0;
-        const metered = invoices.some(r => r.product === key && isNumber(r.amount));
+        const metered = invoices.some(r => invoiceProduct(r.product) === key && isNumber(r.amount));
         const explicitAbsent = isNumber(seats) && seats === 0;
         return { key, name, seats, used, utilization: seats > 0 && isNumber(used) ? used / seats : null,
             arr: key === "copilot" ? account.seller?.ready?.copilot_arr ?? null : contract?.arr ?? null,
@@ -123,6 +134,12 @@ export function observedCount(account, key, rows = currentRows(account, key)) {
     const all = currentRows(account, key);
     return all.length && (rows.length || all.every(r => r.status)) ? rows.length : null;
 }
+export function openSeCount(account) {
+    const rows = currentRows(account, "issues");
+    if (!rows.length || rows.some(r => typeof r.se_issue !== "boolean")) return null;
+    const se = rows.filter(r => r.se_issue);
+    return se.every(r => r.status) ? se.filter(r => String(r.status).toLowerCase() === "open").length : null;
+}
 export function activitySummary(account) {
     const emails = currentRows(account, "emails");
     const calls = currentRows(account, "gong");
@@ -146,6 +163,60 @@ export function activitySummary(account) {
     return { emails, spoken, lastEmail: recency(emails), lastMeeting: recency(calls),
         threads: emails.length ? new Set(emails.map(r => r.thread).filter(Boolean)).size || null : null };
 }
+/** Stable contact identities, including retained/no-email records; interaction is a separate attribute. */
+export function contactDirectory(account, query = "") {
+    const people = new Map(activitySummary(account).spoken.map(p => [p.email.toLowerCase(), p]));
+    const contacts = new Map(rowsOf(account, "contacts").filter(p => typeof p.id === "string" && p.id).map(p => [p.id, p]));
+    return [...contacts.values()].map(p => ({ ...p, interaction: typeof p.email === "string" ? people.get(p.email.toLowerCase()) || null : null }))
+        .filter(p => [p.name, p.role, p.email, p.id].some(v => String(v || "").toLowerCase().includes(query.trim().toLowerCase())))
+        .sort((a, b) => String(a.name || a.id).localeCompare(String(b.name || b.id)) || a.id.localeCompare(b.id));
+}
+export function contactCount(account) {
+    const info = feedOf(account, "contacts");
+    const count = contactDirectory(account).length;
+    return count || ["ok", "no_rows"].includes(info.state) ? count : null;
+}
+export function allAccounts(model, query = "") {
+    return model.accounts.filter(a => a.in_book !== false).filter(a =>
+        [a.name, a.id, a.parent, a.industry, a.country, a.segment].some(v => String(v || "").toLowerCase().includes(query.trim().toLowerCase())));
+}
+export function renewalBuckets(model) {
+    const accounts = allAccounts(model);
+    return [
+        ["0-30", "0–30 days", n => n >= 0 && n <= 30],
+        ["31-60", "31–60 days", n => n > 30 && n <= 60],
+        ["61-90", "61–90 days", n => n > 60 && n <= 90],
+        ["91-120", "91–120 days", n => n > 90 && n <= 120],
+        ["overdue", "Overdue", n => n < 0], ["later", "Later", n => n > 120],
+        ["unknown", "Unknown date", n => !isNumber(n)],
+    ].map(([key, label, accept]) => ({ key, label, accounts: accounts.filter(a =>
+        (key === "unknown" || isNumber(a.renewing_in_days)) && accept(a.renewing_in_days)) }));
+}
+export function portfolioSeries(model, product = null) {
+    const accounts = allAccounts(model).map(a => billedSeries(a, model.date, product));
+    return { points: Array.from({ length: 13 }, (_, i) => [`${monthOffset(model.date, i - 13)}-01`,
+        knownSum(accounts.map(s => s.points[i][1]))]),
+    coverage: Array.from({ length: 13 }, (_, i) => accounts.filter(s => isNumber(s.points[i][1])).length), total: accounts.length };
+}
+export const STACK_STATUS = { reported_in_use: "Reported in use", evaluating: "Evaluating", planned: "Planned",
+    historical: "Historical / discontinued", mention_only: "Mention only", conflicting: "Conflicting evidence" };
+export function stackGroups(account) {
+    const groups = new Map();
+    for (const r of rowsOf(account, "tech_stack").filter(r => r.schema === 1 && r.technology && r.source_url && r.evidence_quote)) {
+        const key = `${r.category}:${r.technology.toLowerCase()}`;
+        const group = groups.get(key) || { technology: r.technology, category: r.category, evidence: [] };
+        group.evidence.push(r);
+        groups.set(key, group);
+    }
+    return [...groups.values()].map(g => {
+        const current = g.evidence.filter(r => r.verification_state === "quote_verified" && r.source_current !== false);
+        const states = new Set(current.map(r => r.usage_status).filter(s => s !== "mention_only"));
+        const conflict = states.has("reported_in_use") && states.size > 1;
+        return { ...g, status: conflict ? "conflicting" : [...states][0] || "mention_only",
+            as_of: current.map(r => dayOf(r.observed_at)).filter(Boolean).sort().at(-1) || null };
+    }).sort((a, b) => (a.status === "reported_in_use" ? -1 : 1) - (b.status === "reported_in_use" ? -1 : 1)
+        || a.category.localeCompare(b.category) || a.technology.localeCompare(b.technology));
+}
 export function renewalRisk(account) {
     const health = account.products?.ghcp?.health?.category;
     return health === "Red" || openRows(account, "risks").length > 0 || openRows(account, "support")
@@ -155,12 +226,97 @@ export function usageTrend(account) {
     const s = account.products?.ghcp?.series?.assigned || account.products?.ghe?.series?.metered;
     return seriesChange(s, 30);
 }
-export function bookConsumption(model) {
-    const products = [...new Set(model.accounts.flatMap(a => currentRows(a, "invoices").map(r => r.product)))];
+// The invoice feed carries billing channels (for example Zuora or azure), not billing models, and only
+// consumption charges reach it, so any positive invoice is metered evidence. Volume evidence exists only
+// at these grains: split license MRR, the GHE contract model and the GHAS licensing model. Family-level
+// evidence is never allocated to a component, and Copilot has no license/metered split in any source.
+export const VOLUME_EVIDENCE = { ghec: "ghe", ghas: "ghas", ghcs: "ghcs", ghsp: "ghsp" };
+const COPILOT_SEAT_PRODUCTS = ["copilot", "copilot_enterprise"];
+const COPILOT_MRR = ["copilot_business_mrr", "copilot_enterprise_mrr", "copilot_standalone_mrr"];
+const positive = value => isNumber(value) && value > 0;
+function latestMrr(account) {
+    const rows = currentRows(account, "mrr").filter(row => monthOf(row.date));
+    const month = rows.map(row => monthOf(row.date)).sort().at(-1);
+    if (!month) return null;
+    const current = rows.filter(row => monthOf(row.date) === month);
+    return { month, value: key => knownSum(current.map(row => row[key])) };
+}
+function customerBillingEvidence(account, product, month) {
+    const metered = [], volume = [];
+    if (currentRows(account, "invoices").some(row => monthOf(row.date) === month
+        && invoiceProduct(row.product) === product && positive(row.amount)))
+        metered.push({ source: "invoices", label: "Consumption invoice", date: month });
+    const sku = VOLUME_EVIDENCE[product];
+    if (sku) {
+        const mrr = latestMrr(account);
+        if (mrr && positive(mrr.value(`${sku}_metered_mrr`))) metered.push({ source: "mrr", label: "Metered MRR", date: mrr.month });
+        if (mrr && positive(mrr.value(`${sku}_license_mrr`))) volume.push({ source: "mrr", label: "License MRR", date: mrr.month });
+    }
+    const ghe = account.products?.ghe || {};
+    if (product === "ghec") {
+        if (["volume", "mixed"].includes(ghe.billing) && !(isNumber(ghe.contracted) && ghe.contracted <= 0))
+            volume.push({ source: "ghe_contract", label: "GHE contract model", date: dayOf(ghe.as_of) });
+        if (["metered", "mixed"].includes(ghe.billing) && positive(ghe.metered))
+            metered.push({ source: "ghe_contract", label: "GHE metered users", date: dayOf(ghe.metered_as_of ?? ghe.as_of) });
+    }
+    const ghas = account.products?.ghas || {};
+    if (product === "ghas" && /^volume\b/i.test(String(ghas.licensing_model || ghas.plan || "").trim())
+        && (positive(ghas.contracted) || positive(ghas.arr)))
+        volume.push({ source: "ghas_licensing", label: "GHAS licensing model", date: dayOf(account.as_of) });
+    const mode = metered.length && volume.length ? "both" : metered.length ? "metered" : volume.length ? "volume" : null;
+    return mode && { mode, evidence: [...metered, ...volume] };
+}
+// Recurring Copilot revenue without a Copilot seat invoice in the 13-month window. This is not a volume proxy.
+// A no_rows invoice feed is a successful collection with zero invoices; stale, partial, failed or missing feeds are not.
+function copilotMrrWithoutInvoice(account, today) {
+    if (!["ok", "no_rows"].includes(feedOf(account, "invoices").state)) return null;
+    const mrr = latestMrr(account);
+    if (!mrr || !COPILOT_MRR.some(key => positive(mrr.value(key)))) return null;
+    const window = new Set(Array.from({ length: 13 }, (_, i) => monthOffset(today, i - 13)));
+    const invoiced = currentRows(account, "invoices").some(row => window.has(monthOf(row.date))
+        && COPILOT_SEAT_PRODUCTS.includes(invoiceProduct(row.product)) && positive(row.amount));
+    return invoiced ? null : { source: "mrr", label: "Copilot MRR, no Copilot invoice in 13 months", date: mrr.month };
+}
+const span = values => {
+    const sorted = [...new Set(values.filter(Boolean))].sort();
+    return !sorted.length ? null : sorted.length === 1 ? sorted[0] : `${sorted[0]} – ${sorted.at(-1)}`;
+};
+function evidenceBasis(model, book, product, month) {
+    const current = monthOf(model.date);
+    const mrrMonths = book.map(a => latestMrr(a)?.month);
+    const basis = [{ source: "invoices", label: "Consumption invoices", date: month, note: "last closed month" }];
+    if (VOLUME_EVIDENCE[product] || product === "copilot") {
+        const date = span(mrrMonths);
+        basis.push({ source: "mrr", label: "Recurring revenue", date,
+            note: date === current ? "current month" : date ? "MRR month" : "not reported" });
+    }
+    if (product === "ghec") basis.push({ source: "ghe_contract", label: "GHE contract model",
+        date: span(book.filter(a => a.products?.ghe?.billing).map(a => dayOf(a.products.ghe.as_of))), note: "contract snapshot" });
+    if (product === "ghas") basis.push({ source: "ghas_licensing", label: "GHAS licensing model",
+        date: span(book.filter(a => a.products?.ghas?.licensing_model || a.products?.ghas?.plan).map(a => dayOf(a.as_of))),
+        note: "account attributes" });
+    return basis;
+}
+export function bookConsumption(model, only = null) {
+    const book = allAccounts(model);
+    const products = only ?? [...new Set(["ghec", "copilot", ...GHAS_BILLING_PRODUCTS,
+        ...book.flatMap(a => currentRows(a, "invoices").map(r => invoiceProduct(r.product)).filter(Boolean))])];
+    const month = monthOffset(model.date, -1);
     return products.map(product => {
-        const accounts = model.accounts.map(a => ({ account: a, series: billedSeries(a, model.date, product) }));
+        const hasVolume = Boolean(VOLUME_EVIDENCE[product]);
+        const modes = { metered: [], volume: hasVolume ? [] : null, both: hasVolume ? [] : null };
+        const details = [];
+        const mrrOnly = product === "copilot" ? [] : null;
+        const accounts = book.map(a => {
+            const result = customerBillingEvidence(a, product, month);
+            if (result) { modes[result.mode].push(a); details.push({ account: a, ...result }); }
+            const other = mrrOnly && copilotMrrWithoutInvoice(a, model.date);
+            if (other) { mrrOnly.push(a); details.push({ account: a, mode: "mrr_only", evidence: [other] }); }
+            return { series: billedSeries(a, model.date, product) };
+        });
         const point = index => knownSum(accounts.map(a => a.series.points[index][1]));
-        const series = { points: Array.from({ length: 13 }, (_, i) => [`${monthOffset(model.date, i - 13)}-01`, point(i)]) };
+        const series = { points: Array.from({ length: 13 }, (_, i) => [`${monthOffset(model.date, i - 13)}-01`, point(i)]),
+            coverage: Array.from({ length: 13 }, (_, i) => accounts.filter(a => isNumber(a.series.points[i][1])).length), total: accounts.length };
         const comparable = months => {
             const pairs = accounts.filter(a => isNumber(a.series.points[12][1]) && isNumber(a.series.points[12 - months][1]));
             if (!pairs.length) return null;
@@ -168,8 +324,9 @@ export function bookConsumption(model) {
             const prior = knownSum(pairs.map(a => a.series.points[12 - months][1]));
             return { delta: current - prior, fraction: prior === 0 ? null : (current - prior) / Math.abs(prior), accounts: pairs.length };
         };
-        return { product, name: labelOf(product), series, latest: point(12), mom: comparable(1), quarter: comparable(3),
-            reporting: accounts.filter(a => isNumber(a.series.points[12][1])).length };
+        return { product, name: labelOf(product), series, modes, volumeAvailable: hasVolume, mrrOnly, details,
+            basis: evidenceBasis(model, book, product, month), month,
+            latest: point(12), mom: comparable(1), quarter: comparable(3), reporting: series.coverage[12] };
     });
 }
 

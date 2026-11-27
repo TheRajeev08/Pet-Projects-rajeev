@@ -52,6 +52,8 @@ function table(headers, rows) {
         `</tbody></table></div>`;
 }
 
+const OUTCOME_LABELS = { "19": "code review, monthly", "20": "coding agent adoption and EPI, monthly" };
+
 export function featureUsagePanel(model, enterprise = null, account = null, now = new Date()) {
     const data = featureUsage(model, enterprise, account);
     const source = account ? "08" : "14";
@@ -59,16 +61,25 @@ export function featureUsagePanel(model, enterprise = null, account = null, now 
     const age = cutoff ? (Date.parse(now.toISOString().slice(0, 10)) - Date.parse(cutoff)) / 86400000 : NaN;
     const carried = model.stale_sources?.[source];
     const scope = account ? "Salesforce account" : enterprise ? "GitHub enterprise" : "GitHub enterprise portfolio";
+    const collected = id => !!model.sources?.[id] && !model.missing_sources?.includes(id);
+    const outcomes = ["19", "20"].filter(collected);
+    const weeklyAiu = account ? collected("22")
+        : (enterprise ? [enterprise] : model.enterprises || []).some(e => (e.integrations || []).some(r => Array.isArray(r.weekly_aiu)));
     let html = `<h2>Code review &amp; cloud agent usage</h2>` +
         `<p class="meta">${scope}: metered UBB usage indicators, not every interaction. Usage value is gross list value, not an invoice. ` +
         `User signals are peak daily ${account ? "sums of model-slice counts and may double-count people" : "counts from a single model slice"}, ` +
         `not deduplicated unique users over the period. ` +
         `They are not summed across enterprises or features.</p>` +
-        `<div class="inline-note">Outcome metrics are not available: PRs created by cloud agent, PRs reviewed by Copilot, ` +
-        `merges and review comments acted on are not supplied by this dashboard's feeds. ` +
-        `Overall Impact throughput, merge time and ROI are not attributed to these features.</div>` +
+        (outcomes.length
+            ? `<div class="inline-note">PR outcomes come from separate sources and appear in the Copilot code review and coding agent sections` +
+              ` (${outcomes.map(id => escape(OUTCOME_LABELS[id])).join(", ")}). They are not derived from, or attributed to, the UBB usage below.</div>`
+            : `<div class="inline-note">Outcome metrics are not available: PRs created by cloud agent, PRs reviewed by Copilot, ` +
+              `merges and review comments acted on are not supplied by this dashboard's feeds. ` +
+              `Overall Impact throughput, merge time and ROI are not attributed to these features.</div>`) +
         `<p class="meta">Source cutoff: ${escape(cutoff || "not published")}` +
-        `${carried ? ` &middot; carried from ${escape(carried)}` : ""}. AI units are available for 28 days only; weekly trend is usage value.</p>` +
+        `${carried ? ` &middot; carried from ${escape(carried)}` : ""}. ${weeklyAiu
+            ? "Weekly AI units by feature are in the AI units section; the weekly trend here is usage value."
+            : "AI units are available for 28 days only; weekly trend is usage value."}</p>` +
         (!Number.isFinite(age) ? `<div class="inline-note warning">The source cutoff is unknown; freshness cannot be established.</div>` :
             age > 3 ? `<div class="inline-note warning">The source cutoff is more than 3 days old; these are retained readings.</div>` :
                 age < 0 ? `<div class="inline-note warning">The source cutoff is in the future; verify the refresh clock.</div>` : "") +

@@ -249,8 +249,312 @@ def build_model_usage(rows, owned, source):
     return out
 
 
-def build_enterprises(rows13, rows14, rows15, payloads, accounts, rows18=(), source18=None):
+# ---------------------------------------------------------------- CCR / CCA / AIU by feature (queries 19-22)
+CCR_COLS = ("month,prs,reviewed,ccr_prs,ccr_users,coverage,penetration,rate,benchmark,vs_industry,variants,orgs,"
+            "ccr_avg,ccr_p50,ccr_p90,gen_avg,gen_p50,gen_p90,ccr_avg_label,ccr_p50_label,ccr_p90_label,"
+            "gen_avg_label,gen_p50_label,gen_p90_label,lead_labels,lead_conflict")
+CCA_COLS = "month,cca_prs,prs,cca_repos,repos,cca_days,days,share,penetration,frequency,rate,stage,dup"
+CCA_TIER_COLS = ("tier,cca_prs,non_cca_prs,cca_epi_avg,non_cca_epi_avg,cca_epi_p50,non_cca_epi_p50,cca_epi_p90,"
+                 "non_cca_epi_p90,lift_avg,lift_p50,lift_p90,comparison,has_cca,has_non_cca,summary,interpretation,action")
+FEATURE_COLS = "wk,integration,gross,aiu"
+LEAD_STATS = ("avg", "p50", "p90")
+TIER_ORDER = {"low": 0, "medium": 1, "high": 2}
+CCA_BANDS = ("S", "A", "B", "C", "D")
+MONTHS = 13
+
+
+def text(v):
+    return v.strip() if isinstance(v, str) and v.strip() else None
+
+
+def truthy(v):
+    return v is True or v == 1 or (isinstance(v, str) and v.strip().lower() in ("true", "1"))
+
+
+def month_of(v):
+    v = text(v)
+    if not v:
+        return None
+    try:
+        return dt.date.fromisoformat(v[:10]).isoformat()
+    except ValueError:
+        return None
+
+
+def count_ratio(part, whole):
+    part, whole = num(part), num(whole)
+    return part / whole if part is not None and whole else None
+
+
+def build_ccr(rows19, run_day):
+    """Per enterprise ID: 13 months of CCR adoption and lead time (q19).
+
+    Enterprise totals repeat on every organization row upstream; the query keeps one value per
+    enterprise-month and nothing here sums across organizations. The current month is month to
+    date. Percentiles, penetration and the adoption score are published as reported, never averaged."""
+    out = {}
+    for r in rows19:
+        eid = str(r.get("enterprise_id") or "").strip()
+        if not eid:
+            continue
+        if eid in out:
+            out[eid] = {"status": "withheld", "reason": "The CCR source returned this enterprise twice"}
+            continue
+        run = month_of(r.get("asof")) or run_day
+        series, flags = {}, set()
+        for p in chunk(r.get("s"), r.get("cols") or CCR_COLS):
+            month = month_of(p.get("month"))
+            if not month:
+                continue
+            if month in series:
+                flags.add("duplicate_month")
+                continue
+            if (num(p.get("variants")) or 0) > 1:
+                flags.add("org_rows_disagree")
+            if truthy(p.get("lead_conflict")):
+                flags.add("lead_time_rows_disagree")
+            series[month] = {
+                "month": month, "mtd": month[:7] >= run[:7],
+                **{k: num(p.get(k)) for k in ("prs", "reviewed", "ccr_prs", "ccr_users", "coverage",
+                                              "penetration", "rate", "benchmark", "orgs")},
+                "vs_industry": text(p.get("vs_industry")),
+                "lead_days": {side: {s: num(p.get(f"{key}_{s}")) for s in LEAD_STATS}
+                              for side, key in (("ccr", "ccr"), ("general", "gen"))},
+                "lead_labels": {side: {s: text(p.get(f"{key}_{s}_label")) for s in LEAD_STATS}
+                                for side, key in (("ccr", "ccr"), ("general", "gen"))},
+                "label_basis": [x for x in (text(p.get("lead_labels")) or "").split("|") if x.strip()],
+                "variants": num(p.get("variants")),
+                "lead_conflict": truthy(p.get("lead_conflict")),
+            }
+        points = sorted(series.values(), key=lambda p: p["month"])[-MONTHS:]
+        complete = [p for p in points if not p["mtd"]]
+        out[eid] = {
+            "status": "observed" if points else "no_rows",
+            "enterprise_id": eid,
+            "sf_ids": sorted({str(x).strip() for x in (dec(r.get("sf_ids")) or []) if str(x).strip()}),
+            "industry": text(r.get("industry")),
+            "run_date": run,
+            "latest_month": complete[-1]["month"] if complete else None,
+            "series": points,
+            "flags": sorted(flags),
+        }
+    return out
+
+
+def rollup_ccr(payloads):
+    """Monthly CCR totals across enterprises. Only count-based ratios are recomputed."""
+    months = {}
+    for c in payloads:
+        for p in c.get("series") or []:
+            m = months.setdefault(p["month"], {"month": p["month"], "mtd": False, "enterprises": 0,
+                                               "prs": None, "reviewed": None, "ccr_prs": None,
+                                               "_cov": [0.0, 0.0]})
+            m["mtd"] = m["mtd"] or p["mtd"]
+            m["enterprises"] += 1
+            for k in ("prs", "reviewed", "ccr_prs"):
+                if p[k] is not None:
+                    m[k] = (m[k] or 0) + p[k]
+            if p["ccr_prs"] is not None and p["reviewed"] is not None:
+                m["_cov"][0] += p["ccr_prs"]
+                m["_cov"][1] += p["reviewed"]
+    out = []
+    for m in sorted(months.values(), key=lambda m: m["month"])[-MONTHS:]:
+        part, whole = m.pop("_cov")
+        m["coverage"] = part / whole if whole else None
+        out.append(m)
+    return out
+
+
+def ccr_summary(payloads):
+    """Latest complete month per enterprise: benchmark labels and CCR vs general median lead time, as counts."""
+    vs, lead = {}, {"faster": 0, "slower": 0, "same": 0, "compared": 0}
+    latest = []
+    for c in payloads:
+        p = next((x for x in reversed(c.get("series") or []) if not x["mtd"]), None)
+        if not p:
+            continue
+        latest.append(p["month"])
+        if p["vs_industry"]:
+            vs[p["vs_industry"]] = vs.get(p["vs_industry"], 0) + 1
+        ccr, gen = p["lead_days"]["ccr"]["p50"], p["lead_days"]["general"]["p50"]
+        if ccr is not None and gen is not None:
+            lead["compared"] += 1
+            lead["faster" if ccr < gen else "slower" if ccr > gen else "same"] += 1
+    return {"enterprises": len(latest), "latest_month": max(latest) if latest else None,
+            "vs_industry": vs, "median_lead": lead}
+
+
+def build_cca(rows20):
+    """Per billable owner (enterprise or organization): CCA adoption months and the latest EPI tiers (q20).
+
+    Monthly snapshots cover completed months. EPI and lift are percent-ranked within a peer pool and
+    observational; they are published per owner and never averaged."""
+    owners = {}
+    for r in rows20:
+        oid, otype = text(str(r.get("owner_id") or "")), text(r.get("owner_type"))
+        if not oid or not otype:
+            continue
+        key = (otype.lower(), oid)
+        flags = set()
+        series = {}
+        for p in chunk(r.get("s"), r.get("cols") or CCA_COLS):
+            month = month_of(p.get("month"))
+            if not month:
+                continue
+            if month in series:
+                flags.add("duplicate_month")
+                continue
+            if (num(p.get("dup")) or 0) > 1:
+                flags.add("duplicate_owner_rows")
+            series[month] = {"month": month,
+                             **{k: num(p.get(k)) for k in ("cca_prs", "prs", "cca_repos", "repos", "cca_days",
+                                                           "days", "share", "penetration", "frequency", "rate")},
+                             "stage": text(p.get("stage"))}
+        tiers = []
+        for t in chunk(r.get("tiers"), r.get("tier_cols") or CCA_TIER_COLS):
+            tier = text(t.get("tier"))
+            if not tier:
+                continue
+            comparison = truthy(t.get("comparison"))
+            tiers.append({
+                "tier": tier, "cca_prs": num(t.get("cca_prs")), "non_cca_prs": num(t.get("non_cca_prs")),
+                "epi": {side: {s: num(t.get(f"{side}_epi_{s}")) for s in LEAD_STATS} for side in ("cca", "non_cca")},
+                "lift": {s: num(t.get(f"lift_{s}")) if comparison else None for s in LEAD_STATS},
+                "comparison": comparison, "has_cca": truthy(t.get("has_cca")),
+                "has_non_cca": truthy(t.get("has_non_cca")),
+                "guidance": {k: text(t.get(k)) for k in ("summary", "interpretation", "action")},
+            })
+        tiers.sort(key=lambda t: (TIER_ORDER.get(t["tier"].lower(), 9), t["tier"]))
+        points = sorted(series.values(), key=lambda p: p["month"])[-MONTHS:]
+        payload = {
+            "owner_id": oid, "owner_type": otype,
+            "enterprise": "enterprise" in otype.lower(),
+            "sf_id": text(str(r.get("sf_id") or "")),
+            "status": "observed" if points or tiers else "no_rows",
+            "latest_month": points[-1]["month"] if points else None,
+            "series": points,
+            "interpretation": text(r.get("interpretation")),
+            "epi": {"month": month_of(r.get("epi_month")), "tiers": tiers} if tiers else None,
+            "flags": sorted(flags),
+        }
+        if key in owners:
+            payload = {**owners[key], "flags": sorted(set(owners[key]["flags"]) | {"duplicate_owner_rows"})}
+        owners[key] = payload
+    return sorted(owners.values(), key=lambda o: (o["sf_id"] or "", o["owner_type"], o["owner_id"]))
+
+
+def rollup_cca(owners):
+    """Monthly CCA totals across owners: PR share and repo penetration from summed counts only."""
+    months = {}
+    for o in owners:
+        for p in o["series"]:
+            m = months.setdefault(p["month"], {"month": p["month"], "owners": 0, "cca_prs": 0.0, "prs": 0.0,
+                                               "cca_repos": 0.0, "repos": 0.0, "_pr": 0, "_repo": 0})
+            m["owners"] += 1
+            if p["cca_prs"] is not None and p["prs"] is not None:
+                m["cca_prs"] += p["cca_prs"]
+                m["prs"] += p["prs"]
+                m["_pr"] += 1
+            if p["cca_repos"] is not None and p["repos"] is not None:
+                m["cca_repos"] += p["cca_repos"]
+                m["repos"] += p["repos"]
+                m["_repo"] += 1
+    out = []
+    for m in sorted(months.values(), key=lambda m: m["month"])[-MONTHS:]:
+        has_pr, has_repo = m.pop("_pr"), m.pop("_repo")
+        if not has_pr:
+            m["cca_prs"] = m["prs"] = None
+        if not has_repo:
+            m["cca_repos"] = m["repos"] = None
+        m["share"] = count_ratio(m["cca_prs"], m["prs"])
+        m["penetration"] = count_ratio(m["cca_repos"], m["repos"])
+        out.append(m)
+    return out
+
+
+def cca_summary(owners):
+    """Latest month: stage mix and, per complexity tier, how many owners show positive or negative EPI lift."""
+    latest = max((o["latest_month"] for o in owners if o["latest_month"]), default=None)
+    stages, tiers = {}, {}
+    for o in owners:
+        p = o["series"][-1] if o["series"] and o["series"][-1]["month"] == latest else None
+        if p and p["stage"]:
+            stages[p["stage"]] = stages.get(p["stage"], 0) + 1
+        for t in (o["epi"] or {}).get("tiers", []):
+            c = tiers.setdefault(t["tier"], {"tier": t["tier"], "positive": 0, "negative": 0, "flat": 0,
+                                             "no_comparison": 0})
+            lift = t["lift"]["avg"]
+            if lift is None:
+                c["no_comparison"] += 1
+            else:
+                c["positive" if lift > 0 else "negative" if lift < 0 else "flat"] += 1
+    return {"owners": sum(1 for o in owners if o["status"] == "observed"), "latest_month": latest,
+            "stages": stages,
+            "epi_tiers": sorted(tiers.values(), key=lambda t: (TIER_ORDER.get(t["tier"].lower(), 9), t["tier"]))}
+
+
+def build_cca_opportunities(rows21, accounts):
+    """Latest expansion and new-logo readiness rows (q21). Recommended actions are source guidance."""
+    if not rows21:
+        return None
+    names = {a["id"]: a["name"] for a in accounts}
+    expansion, new_logo = [], []
+    for row in rows21:
+        for item in dec(row.get("rows")) or []:
+            if not isinstance(item, dict):
+                continue
+            d = dec(item.get("d")) or {}
+            if not isinstance(d, dict):
+                continue
+            sf_id = text(str(item.get("sf_id") or ""))
+            base = {"owner_id": text(str(item.get("owner_id") or "")), "owner_type": text(item.get("owner_type")),
+                    "sf_id": sf_id, "account": names.get(sf_id), "month": month_of(item.get("month")),
+                    "score": num(d.get("score"))}
+            if item.get("kind") == "expansion":
+                band = text(d.get("band"))
+                letter = band[0].upper() if band and band[0].upper() in CCA_BANDS else None
+                expansion.append({**base, "band": band, "band_letter": letter, "stage": text(d.get("stage")),
+                                  **{k: num(d.get(k)) for k in ("share", "penetration", "frequency", "cca_repos",
+                                                                "repos", "untapped_repos", "lift",
+                                                                "cca_prs_low_medium", "speed_multiplier")},
+                                  "guidance": {k: text(d.get(k)) for k in ("lift_summary", "lead_time_summary",
+                                                                           "untapped_summary", "action")}})
+            elif item.get("kind") == "new_logo":
+                new_logo.append({**base, "repos": num(d.get("repos")), "non_cca_prs": num(d.get("non_cca_prs")),
+                                 "components": {k: num(d.get(f"{k}_score")) for k in ("pr_volume", "lead_time", "repo")},
+                                 "guidance": {k: text(d.get(k)) for k in ("lead_time_summary", "opportunity_summary",
+                                                                          "action")}})
+    order = lambda e: (-(e["score"] if e["score"] is not None else -1), e["account"] or "", e["owner_id"] or "")
+    first = rows21[0]
+    return {"expansion_month": month_of(first.get("expansion_month")),
+            "readiness_month": month_of(first.get("readiness_month")),
+            "expansion": sorted(expansion, key=order), "new_logo": sorted(new_logo, key=order)}
+
+
+def build_feature_weekly(rows22):
+    """Per Salesforce account: 13 weekly points of gross $ and AI units by Copilot feature (q22).
+
+    The query keeps every non-zero week, so a missing week within an account's row is an observed zero."""
+    out = {}
+    for r in rows22:
+        aid = r.get("id")
+        if not aid:
+            continue
+        feats = out.setdefault(aid, {})
+        for p in chunk(r.get("s"), r.get("cols") or FEATURE_COLS):
+            wk = p.get("wk")
+            if not isinstance(wk, (int, float)) or not 0 <= int(wk) < WEEKS:
+                continue
+            f = feats.setdefault(surface(p.get("integration")), {"gross": [0.0] * WEEKS, "aiu": [0.0] * WEEKS})
+            f["gross"][int(wk)] += num(p.get("gross")) or 0
+            f["aiu"][int(wk)] += num(p.get("aiu")) or 0
+    return {aid: dict(sorted(f.items(), key=lambda kv: (-sum(kv[1]["aiu"]), kv[0]))) for aid, f in out.items()}
+
+
+def build_enterprises(rows13, rows14, rows15, payloads, accounts, rows18=(), source18=None,
+                      ccr=None, cca=None):
     model_usage = build_model_usage(rows18, rows13, source18 or {})
+    cca_by_enterprise = {o["owner_id"]: o for o in (cca or []) if o["enterprise"]}
     impact, settings = payloads.get("impact", {}), payloads.get("settings", {})
     owned_by_id = {a["id"]: a for a in accounts}
     usage = {}
@@ -258,13 +562,17 @@ def build_enterprises(rows13, rows14, rows15, payloads, accounts, rows18=(), sou
         slug = r.get("slug")
         if not slug:
             continue
+        cols = r.get("cols") or "wk,gross"
+        points = chunk(r.get("s"), cols)
         usage.setdefault(slug, []).append({
             "integration": r.get("integration"), "surface": surface(r.get("integration")),
             "l7": num(r.get("l7")) or 0, "p7": num(r.get("p7")) or 0, "l28": num(r.get("l28")) or 0,
             "aiu28": num(r.get("aiu28")) or 0, "u7": r.get("u7") or 0, "up7": r.get("up7") or 0,
             "u28": r.get("u28") or 0,
             "feature_metrics_known": feature_metrics_known(r),
-            "weekly": weekly(chunk(r.get("s"), r.get("cols") or "wk,gross"), "gross"),
+            "weekly": weekly(points, "gross"),
+            # Collections before the AIU column was added carry no weekly AIU: unknown, not zero.
+            "weekly_aiu": weekly(points, "aiu") if "aiu" in cols.split(",") else None,
         })
     adoption = {r["slug"]: r for r in rows15 if r.get("slug")}
 
@@ -287,6 +595,11 @@ def build_enterprises(rows13, rows14, rows15, payloads, accounts, rows18=(), sou
         else:
             match = {**suggest_account(slug, accounts), "source": "name",
                      "unowned_sf_id": sf_id or None}
+        eid = str(row.get("enterprise_id") or "").strip()
+        ccr_row = (ccr or {}).get(eid)
+        if ccr_row and ccr_row.get("sf_ids") and sf_id and sf_id not in ccr_row["sf_ids"]:
+            ccr_row = {"status": "withheld", "enterprise_id": eid,
+                       "reason": "The CCR source links this enterprise to a different Salesforce account"}
         out.append({
             "slug": slug, "enterprise_id": row.get("enterprise_id"),
             "plan": row.get("plan") or None, "segment": row.get("segment") or None,
@@ -298,6 +611,8 @@ def build_enterprises(rows13, rows14, rows15, payloads, accounts, rows18=(), sou
             "has_impact": bool(data.get("dataAvailable")) and bool(data.get("impact")),
             "integrations": sorted(usage.get(slug, []), key=lambda r: -r["l28"]),
             "model_usage": model_usage.get(str(row.get("enterprise_id") or "")),
+            "ccr": ccr_row if ccr is not None else None,
+            "cca": cca_by_enterprise.get(eid) if cca is not None else None,
             "settings": build_settings(settings_payload) if settings_payload else None,
             "adoption": {k: extra.get(k) for k in (
                 "licensed", "ubb_users", "adoption_rate", "adoption_band", "wow_ubb_users",
@@ -338,7 +653,9 @@ def load_raw(day):
 # windows that do not move daily, so a run that skipped them reuses the last result rather than
 # publishing a model with no enterprises at all.
 ENTERPRISE_QUERIES = ("13", "14", "15", "18")
-SLOW_QUERIES = ENTERPRISE_QUERIES + ("16", "17")
+# CCR (19), CCA (20, 21) and feature AIU (22) describe completed months or 13-week windows; a run that
+# skipped them reuses the last result and reports it under stale_sources.
+SLOW_QUERIES = ENTERPRISE_QUERIES + ("16", "17", "19", "20", "21", "22")
 
 
 def carry_forward(day, raw, meta):
@@ -419,7 +736,7 @@ def build(day, raw, meta):
 
     asof = {}
     arr_dates = sorted({period(p["date"]) for r in raw.get("09", []) for p in chunk(r["s"], r["cols"])})
-    for q in ("03", "04", "06", "07", "08", "10", "12", "14", "16", "17", "18"):
+    for q in ("03", "04", "06", "07", "08", "10", "12", "14", "16", "17", "18", "20", "21", "22"):
         rows = raw.get(q) or []
         if rows and rows[0].get("asof"):
             asof[q] = rows[0]["asof"][:10]
@@ -521,11 +838,62 @@ def build(day, raw, meta):
         orphans.append({"id": aid, "name": (snap.get(aid) or {}).get("name") or aid})
 
     portfolio = build_portfolio(accounts, raw.get("10", []))
+    # Sources 19-22 are optional: absent means "not collected in this model", never zero.
+    ccr = build_ccr(raw["19"], day) if "19" in raw else None
+    cca = build_cca(raw["20"]) if "20" in raw else None
     enterprises = build_enterprises(raw.get("13", []), raw.get("14", []), raw.get("15", []),
-                                    load_enterprise_payloads(day), accounts, raw.get("18", []), meta.get("18"))
+                                    load_enterprise_payloads(day), accounts, raw.get("18", []), meta.get("18"),
+                                    ccr=ccr, cca=cca)
+    attach_copilot_impact(accounts, enterprises, ccr, cca, build_feature_weekly(raw["22"]) if "22" in raw else None)
+    if ccr is not None:
+        observed = [e["ccr"] for e in enterprises if (e.get("ccr") or {}).get("status") == "observed"]
+        portfolio["ccr"] = {"series": rollup_ccr(observed), "summary": ccr_summary(observed),
+                            "withheld": sum(1 for e in enterprises if (e.get("ccr") or {}).get("status") == "withheld")}
+        latest = portfolio["ccr"]["summary"]["latest_month"]
+        if latest:
+            asof["19"] = latest
+    if cca is not None:
+        portfolio["cca"] = {"series": rollup_cca(cca), "summary": cca_summary(cca)}
+    opportunities = build_cca_opportunities(raw["21"], accounts) if "21" in raw else None
     return {"generated_at": dt.datetime.now().isoformat(timespec="minutes"), "data_date": day, "asof": asof,
             "sources": meta, "accounts": accounts, "portfolio": portfolio, "orphans": orphans,
-            "enterprises": enterprises, "recommendations": recommendations.load(DATA, [day] + [d for d in prior_days(day) if d != day], accounts)}
+            "enterprises": enterprises, "cca_opportunities": opportunities,
+            "recommendations": recommendations.load(DATA, [day] + [d for d in prior_days(day) if d != day], accounts)}
+
+
+def attach_copilot_impact(accounts, enterprises, ccr, cca, features):
+    """Account-level CCR, CCA and AIU-by-feature. Only confirmed warehouse links contribute CCR;
+    only CCA owners carrying the account's Salesforce ID contribute CCA. None = source not collected."""
+    linked = {}
+    for e in enterprises:
+        cands = (e.get("match") or {}).get("candidates") or []
+        if (e.get("match") or {}).get("confidence") == "confirmed" and cands:
+            linked.setdefault(cands[0]["id"], []).append(e)
+    owners = {}
+    for o in cca or []:
+        if o["sf_id"]:
+            owners.setdefault(o["sf_id"], []).append(o)
+    for a in accounts:
+        a["aiu_by_feature"] = None if features is None else features.get(a["id"], {})
+        if ccr is None:
+            a["ccr"] = None
+        else:
+            ents = linked.get(a["id"], [])
+            seen = [e for e in ents if e.get("ccr")]
+            obs = [e["ccr"] for e in seen if e["ccr"].get("status") == "observed"]
+            a["ccr"] = {
+                "status": "observed" if obs else "withheld" if any(e["ccr"].get("status") == "withheld" for e in seen)
+                          else "no_rows" if ents else "no_enterprise",
+                "enterprises": [{"slug": e["slug"], "enterprise_id": e["ccr"].get("enterprise_id"),
+                                 "status": e["ccr"].get("status"), "reason": e["ccr"].get("reason")} for e in seen],
+                "series": rollup_ccr(obs),
+            }
+        if cca is None:
+            a["cca"] = None
+        else:
+            mine = owners.get(a["id"], [])
+            a["cca"] = {"status": "observed" if any(o["status"] == "observed" for o in mine) else "no_rows",
+                        "owners": mine, "series": rollup_cca(mine)}
 
 def add_forecast_whitespace(account, forecast, whitespace):
     numbers = {
@@ -711,6 +1079,17 @@ def build_portfolio(accounts, rows10):
         if isinstance(wk, (int, float)) and 0 <= wk < WEEKS:
             surf[s][int(wk)] += num(r.get("gross")) or 0
     p["surface_weekly"] = dict(sorted(surf.items(), key=lambda kv: -sum(kv[1])))
+    # AI units by surface; collections from before q10 carried AIU have no "aiu" field -> unknown.
+    if any("aiu" not in r for r in rows10):
+        p["surface_weekly_aiu"] = None
+    else:
+        surf_aiu = {}
+        for r in rows10:
+            wk = r.get("wk")
+            series = surf_aiu.setdefault(surface(r.get("integration")), [0.0] * WEEKS)
+            if isinstance(wk, (int, float)) and 0 <= wk < WEEKS:
+                series[int(wk)] += num(r.get("aiu")) or 0
+        p["surface_weekly_aiu"] = dict(sorted(surf_aiu.items(), key=lambda kv: -sum(kv[1])))
     integ = {}
     for r in rows10:
         integ.setdefault(r["integration"], [0.0] * WEEKS)
@@ -846,6 +1225,12 @@ DEFINITIONS = {
     "health_moved": "Copilot health category differs from one week earlier",
     "utilization": "28-day active users / assigned seats",
     "wow_*": "Latest 7 days minus the prior 7 days",
+    "ccr": "Copilot code review (source 19), per enterprise and month. coverage = PRs reviewed by Copilot / reviewed PRs. penetration and the adoption score are published as reported; the current month is month to date. Account and portfolio rollups recompute coverage from summed counts and never average percentiles, penetration or scores",
+    "ccr_lead_days": "Median and percentile PR lead time in days for Copilot-reviewed vs all other PRs; labels are passed through from the source and are observational, not causal",
+    "cca": "Copilot coding agent decision intelligence (source 20), per enterprise or organization owner and completed month. share = CCA PRs / PRs, penetration = CCA repos / repos, frequency = CCA active days / active days, rate = cube root of their product; stage is the source's band",
+    "cca_epi_lift": "Engineering-productivity index lift by PR complexity tier: CCA EPI / non-CCA EPI - 1, ranked within a peer pool. Observational, not causal; withheld where the owner has no non-CCA comparison",
+    "cca_opportunities": "Source guidance (source 21): expansion signal score and band (S >= 60, A >= 40, B >= 20, C >= 5, D below) for CCA owners, and new-logo readiness for owners without CCA. Not a recommendation from this dashboard",
+    "aiu_by_feature": "AI units and gross $ by Copilot feature per account and week (source 22). AI units are consumption units, not billable dollars",
 }
 
 
@@ -908,7 +1293,7 @@ def main():
 
     day, raw, meta = load_raw(args.date)
     carried = carry_forward(day, raw, meta)
-    missing = [f"{q:02d}" for q in range(1, 19) if f"{q:02d}" not in raw]
+    missing = [f"{q:02d}" for q in range(1, 23) if f"{q:02d}" not in raw]
     if "01" in missing:
         sys.exit("Query 01 (owned accounts) is required.")
     model = build(day, raw, meta)

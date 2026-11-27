@@ -12,8 +12,16 @@ Then open the **Customer Pulse** canvas. It reads `~/CustomerPulse/model.json` (
 
 ## Using it
 
-- **Tabs:** Overview, Top 50, Account 360, Consumption, Copilot, Impact, GHE, Security, Pipeline & renewals, Signals, Recommendations and Data. The existing `#/ghas` route now displays Security. `#/account360/activity/account/<id>` opens a full-page account section.
-- **Seller screens:** Top 50 has an explicit rank basis and stable tie/missing-value rules. Account 360 separates commercial, consumption, security, support and engagement evidence. New feeds are read-only and show source/collection dates, retained/stale evidence and unavailable coverage. Top 50 people counts require exact Salesforce Contact-email matches in actual conversation metadata.
+- **Navigation:** Portfolio, Products, Work queue and Data groups replace the horizontal tab strip. At narrow widths, Menu exposes the same destinations with keyboard focus trapping and Escape dismissal. Old hashes remain valid, including `#/ghas` and `#/account360/activity/account/<id>`. Account sections share the navigation rather than adding another sidebar.
+- **Overview:** GHE, Security and Copilot lead the page, with a Copilot AIU trend beside Copilot. The chart shows AI units consumed in 13 seven-day windows ending at the Copilot usage source cutoff (q07), summed only for reporting accounts in the owned book. Expand it for exact weekly readings and account coverage; missing readings are not zero. Book KPIs, product contribution, closed-month billing, renewal buckets and existing actions/signals follow. AI units are a usage quantity, not spend, invoices or ARR.
+- **Consumption and product pages:** select a product for its 13-month **metered consumption billed** trend and its customer billing mix. The trend uses consumption invoices only. Volume license billing is not in that feed, so the trend is not total product billing and should not be read against ARR. GHAS keeps Code Security, Secret Protection, Code Quality and the legacy bundle distinct, and a bundle is never allocated to its components. Counts are distinct owned accounts with positive billing-model evidence, each shown with its own as-of date:
+  - **Metered:** a positive consumption invoice for that SKU in the last closed month, whatever the billing channel (`billing_source` is a channel such as Zuora or azure, not the model). Positive `<sku>_metered_mrr` or a GHE metered/mixed contract model with metered users also count.
+  - **Volume:** positive `<sku>_license_mrr` (GHE, the GHAS bundle, Code Security, Secret Protection), the GHE volume/mixed contract model, or a GHAS `Volume` licensing model with contracted seats or ARR. MRR is dated by its own month (the collector reads the latest MRR month, usually the current month), not the last closed month. Contract and licensing models are dated by their snapshots. GHE volume rests on family-level GHE licensing that may include GHE Server, so the GHE Cloud volume count and table cell carry a visible **GHE licensing (family-level)** qualifier.
+  - **Both** counts once. Missing, zero or credit-only evidence never makes a paying customer, and there is no Unclassified bucket.
+  - Copilot, AI credits, Actions, storage, Packages, Git LFS, Codespaces and other products with no volume source show Volume and Both as **Not available**, not 0. The Copilot page separately counts accounts with **Copilot MRR but no Copilot invoice in 13 months**. These are not treated as volume. The invoice feed must have been collected (`ok` or `no_rows`); stale, partial, failed or missing invoice feeds do not qualify.
+- **Seller screens:** Top 50 separates rank membership from column sorting and keeps product detail out of ordinary rows. Optional columns expose open verified-SE counts, stack availability and product footprint. Accounts searches the entire owned book. Returning from an account restores the originating list's search, rank, sort, scroll and focus.
+- **Contacts (POCs):** every stable-ID Salesforce Contact is included, even without email or engagement. Shared email addresses do not merge contact identities. CRM activity and exact-email-matched email/Gong interaction are separate attributes. Retained contacts remain inspectable, with their source state visible. Proofs-of-concept displays and their stack fallback are removed; historical raw records are untouched.
+- **Tech stack:** only versioned SE issue/comment and Gong evidence is shown. Explicit reported use, evaluation, plans, historical use, mentions and conflicts are distinct. An exact quote is not independent verification of today's deployment. Quotes, source links/dates, retained versions and incomplete collection remain inspectable. Activity can include non-SE account-linked issues; these are not automatically counted as SE requests or treated as stack evidence.
 - **Drill down:** click an account name anywhere (a table, an action or a seat change) to open the account panel. Product cards on the Overview open their tab, and table headers sort.
 - **Seat changes:** Overview, product tabs, account panels and `get_summary` use explicit **increased by** or **decreased by** wording with from/to values. Contract changes say **seats under contract**. Saved snapshots gain this wording without a data refresh; reporting interruptions/resumptions, migrations, trends, reverted labels and reporting-gap dates retain their distinct meanings.
 - **Actions:** mark them Done or Dismiss them; Undo and Reopen bring them back. Choices are saved in `~/CustomerPulse/state/actioned.json` and never sent anywhere.
@@ -30,7 +38,28 @@ Then open the **Customer Pulse** canvas. It reads `~/CustomerPulse/model.json` (
 - **Impact:** `#/impact` embeds the same Copilot dashboard's Impact view (`copilot/?embed=1#/impact`) in its own frame, so it always opens on Impact whatever the Copilot tab last showed. It shows the enterprise Impact data in the Copilot snapshot, and says so when none was collected.
 - **Models used:** Impact overview and enterprise detail show enterprise-grain q18 model usage, including enterprises without ROI data. Latest/prior 7-day and latest 28-day gross usage value (USD before pool deduction), AI units and 28-day value shares are metered/UBB readings, not invoice totals or every interaction. Blank/unresolved models remain unattributed and are included in totals; no unique-user counts are inferred. Coverage, source cutoff and enterprise collection time distinguish missing, observed zero, carried and stale data (cutoff older than three days). Portfolio totals only combine a common cutoff. Monthly adoption model counts and account-level model data are unchanged. Model tables stack labeled values at narrow widths in both embedded and standalone views.
 - **Code review & cloud agent usage:** Impact overview and enterprise detail use the exact q14 `copilot-pr-reviews` and `copilot-developer` integrations; account detail uses q08. CLI, app and third-party agents are separate. Usage is metered UBB, not outcomes or all interactions. Enterprise user signals are peak daily model-slice counts; account signals are peak daily sums across model slices and can double-count people. Neither is a deduplicated period-unique count, and signals are not summed across entities. An enabled policy and an explicitly observed zero 28-day usage signal are required for an idle signal. Missing rows, fields or policies remain unknown. New builds retain q08/q14 metric completeness and q14's cutoff; legacy normalized zeros cannot be verified and are shown as unknown. Seven-day AI units and feature-specific PR/review outcomes are unavailable in these feeds; overall Impact throughput and ROI are not attributed to either feature.
-- **Embed failures:** if a frame gets anything other than the dashboard page (for example an older canvas server answering 404 after an update, or an unreachable server), the tab shows a short explanation with **Try again** instead of the raw error. Closing and reopening Customer Pulse, or starting a new Copilot session, starts the updated server. Unknown page navigations get a small HTML 404 page; API callers still get JSON.
+- **Code review, coding agent & AI units by feature:** These come from the warehouse tables behind the Copilot AIU, CCR and CCA reports (q19–q22). Shared rendering lives in `copilot/code-impact.mjs` and `.css`. The sections appear in:
+  - Pulse **Copilot** (`#/copilot`): book-level view;
+  - the embedded and standalone **Impact** overview and enterprise detail;
+  - Copilot account detail;
+  - **Account 360 › Products & consumption**;
+  - the account drawer, as a compact summary that links to Account 360.
+
+  They cover:
+  - **CCR:** coverage (CCR-reviewed ÷ reviewed PRs), user penetration, adoption score against the industry benchmark, and CCR vs general PR lead time.
+  - **CCA:** PR share, repo penetration, active-day frequency, adoption stage, and EPI lift by complexity.
+  - **AI units by feature:** a 13-week trend per feature.
+  - **CCA opportunities:** expansion and new-logo readiness lists.
+
+  Account sections appear for Copilot customers. They also appear for any account the data applies to: observed or withheld CCR, observed CCA, AI units by feature, or an opportunity row carrying its Salesforce ID. Opportunity rows are used only if q21 was collected or carried.
+
+  Rules for the figures:
+  - Rates are recomputed from summed counts, never averaged across owners. The current CCR month is month to date and drawn as a hollow point.
+  - Withheld, carried, missing and no-rows sources are labelled. Missing data is never shown as zero.
+  - AI units are a usage quantity, not usage value or a billable amount.
+  - Lead time and EPI are observational, not caused by Copilot.
+  - There are no Power BI deep links.
+  - Charts keep text and point sizes fixed at any width. Paired charts and tables stack in narrow cards. if a frame gets anything other than the dashboard page (for example an older canvas server answering 404 after an update, or an unreachable server), the tab shows a short explanation with **Try again** instead of the raw error. Closing and reopening Customer Pulse, or starting a new Copilot session, starts the updated server. Unknown page navigations get a small HTML 404 page; API callers still get JSON.
 - **Copilot data:** `copilot_home` in Pulse config selects its model directory (default `~/CopilotConsumptionDashboard`; the model's `copilot.model_path` is a fallback). GET `/api/copilot-licenses` returns compact Pulse-authoritative rows, totals, per-metric coverage and reconciliation flags; it joins enterprise slugs only through unique confirmed/single matches. A missing or invalid Copilot model leaves Pulse figures available with an explicit reconciliation note. Portfolio does not download the full Copilot model. `/copilot/api/model`, `/copilot/api/status` and `/copilot/events` power deep dives; `/copilot/api/refresh` shares Pulse's coordinator and write guards. `/copilot/classic` retains offline Ask and a relative Back link. Only this generated classic route allows inline scripts in its CSP.
 
 Copilot can also drive the canvas through three actions:
@@ -59,15 +88,12 @@ The server listens on `127.0.0.1` on a random port. It serves a fixed list of fi
 
 ## Develop
 
-Preview the page in a normal browser with any `CP_HOME` that holds a `model.json`, such as one built from the synthetic fixtures in `../tests/fixtures.py`:
+Use the checked-in synthetic fixture generator with an explicit new or empty
+temporary directory. Nonempty and symbolic-link destinations are refused before
+the first write; existing dashboard files are never overwritten:
 
 ```bash
-CP_HOME=/path/to/demo-home node --input-type=module -e '
-import { createRefreshCoordinator, pulsePaths, startCanvasServer } from "./customer-pulse/canvas/server.mjs";
-const paths = pulsePaths();
-const refresh = createRefreshCoordinator({ modelPath: paths.model, launch: async () => {} });
-console.log((await startCanvasServer({ paths, refresh })).url);
-'
+node customer-pulse/canvas/tests/workspace-preview.mjs /absolute/path/to/synthetic-preview
 ```
 
 Run the tests from the repository root:
@@ -77,9 +103,27 @@ node --test customer-pulse/canvas/tests/
 node --test customer-pulse/canvas/copilot/tests/
 ```
 
-Use synthetic data only. This repository is public.
+The printed localhost URL serves 64 synthetic accounts, including missing attributes,
+shared-email contacts and source-linked stack examples. Live refresh is disabled.
+Both Pulse and Copilot model roots and classic HTML are pinned beneath the explicit
+directory. Never omit the Copilot pin: otherwise the server can fall back to the real
+`~/CopilotConsumptionDashboard` even when Pulse itself is synthetic.
 
-The suites cover null-preserving totals and coverage, mismatches (including Pulse zero), unassigned/over-assigned seats, trusted slug joins, escaping, filters, routes/deep links, embed messaging/chrome, per-account adoption sums, the compact endpoint and its degradation, and additive summary compatibility. For a live-data preview, copy only both model files into temporary directories and set a temporary `CP_HOME/config.json` with `copilot_home` pointing to the temporary Copilot directory. Never point development write routes at the live homes or commit customer data or screenshots.
+Use synthetic data only. This repository is public. Do not commit generated models
+or screenshots with customer information. A live release, extension reload, source
+backfill or automation change requires a separate decision.
+
+The suites cover null-preserving totals and coverage, mismatches (including Pulse zero), unassigned/over-assigned seats, trusted slug joins, escaping, filters, routes/deep links, embed messaging/chrome, per-account adoption sums, the compact endpoint and its degradation, and additive summary compatibility. Seller regressions cover contact completeness, source-linked synthetic citations, full-book selection, ranking, renewal buckets, charts and conflicting/superseded stack evidence.
+
+### Visual system
+
+This is an operational seller workspace: host-provided light/dark tokens, system
+fonts, blue selection, restrained labeled health colors and tabular numbers. The
+196px sidebar collapses at 900px; content columns and tables also respond to their
+container width. KPI cards use a muted surface; work/evidence panels remain quiet.
+Ordinary Top 50 rows target 66px. At 1280x800, check at least six complete rows and
+no document-level horizontal scrolling. Verify 390/768/1024/1280/1440px layouts,
+keyboard account switching/return, reduced motion, light/dark and zoom reflow.
 
 # Salesforce recommendations
 

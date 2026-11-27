@@ -50,6 +50,9 @@ const state = {
     signalFilters: { priority: "all", source: "all", status: "open" },
     recommendationFilter: "open",
     sellerRank: "arr",
+    sellerOptions: {},
+    menuOpen: false,
+    listOrigin: null,
     pending: new Set(),
     dismissed: readDismissed(),
     toast: null,
@@ -157,6 +160,9 @@ function uiState() {
         signalFilters: state.signalFilters,
         recommendationFilter: state.recommendationFilter,
         sellerRank: state.sellerRank,
+        sellerOptions: state.sellerOptions,
+        menuOpen: state.menuOpen,
+        returnHash: state.listOrigin?.hash || "#/account360",
         refresh: state.refresh,
         refreshDismissed: refreshDismissed(),
         build: state.build,
@@ -171,6 +177,7 @@ function render() {
     const ui = uiState();
     setHTML(els.topbar, renderTopbar(state.model, ui));
     setHTML(els.nav, renderNav(state.model, ui));
+    els.shell.classList.toggle("menu-open", state.menuOpen);
     setHTML(els.notices, renderNotices(state.model, ui));
     if (state.model) setMainHTML(renderView(state.model, ui));
     else if (state.loadError) setHTML(els.main, renderUnavailable(state.loadError));
@@ -376,6 +383,17 @@ function setHistory(hash, mode, data = null) {
 
 function apply(next) {
     const viewChanged = next.view !== state.view;
+    const accountChanged = next.account !== state.account || next.subview !== state.subview;
+    const menuWasOpen = state.menuOpen;
+    if ((state.view === "top50" || (state.view === "account360" && !state.account)) && next.account && next.view === "account360") {
+        state.listOrigin = { view: state.view, hash: hashFor({ view: state.view, account: null, query: state.query }),
+            query: state.query, scroll: window.scrollY, focus: describe(document.activeElement) };
+    }
+    const returning = state.account && !next.account && next.view === state.listOrigin?.view;
+    if (returning) {
+        next = { ...next, query: state.listOrigin.query };
+        setHistory(state.listOrigin.hash, "replace");
+    }
     if (viewChanged) state.embedFailure = null;
     state.view = next.view;
     state.subview = next.subview || null;
@@ -383,8 +401,17 @@ function apply(next) {
     state.copilotAccount = null;
     state.account = next.account;
     state.query = next.query;
+    state.menuOpen = false;
+    setMenuInert(false);
     if (viewChanged) window.scrollTo({ top: 0, left: 0, behavior: "instant" });
     render();
+    if (returning) {
+        window.scrollTo({ top: state.listOrigin.scroll, behavior: "instant" });
+        focusFrom(state.listOrigin.focus);
+    } else if (menuWasOpen || (accountChanged && !document.activeElement?.matches("[data-account-switch]"))) {
+        els.main.focus({ preventScroll: true });
+        window.scrollTo({ top: 0, behavior: "instant" });
+    }
 }
 
 function route() {
@@ -627,10 +654,23 @@ async function changeAction(id, next, { button = null, undoable = true } = {}) {
 
 const CLICKABLE = "[data-copilot-account],[data-account],[data-close],[data-action],[data-command],[data-filter],[data-more],[data-sort],[data-undo],[data-toast-close]";
 const KINDS = ["all", "risk", "opportunity"];
-const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), summary, [tabindex]:not([tabindex="-1"])';
+const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), summary, [tabindex]:not([tabindex="-1"])';
+
+function setMenuInert(open) {
+    for (const element of [els.main, els.notices, els.shell.querySelector(".footer")]) if (element) element.inert = open;
+}
+
+function toggleMenu(open) {
+    state.menuOpen = open;
+    setMenuInert(open);
+    render();
+    (open ? els.nav.querySelector(".nav-close") : els.topbar.querySelector(".nav-toggle"))?.focus();
+}
 
 function runCommand(command) {
-    if (command === "reload") {
+    if (command === "menu" || command === "close-menu") {
+        toggleMenu(command === "menu");
+    } else if (command === "reload") {
         loadModel({ toast: "Reloaded the snapshot." });
     } else if (command === "refresh") {
         requestRefresh();
@@ -666,6 +706,11 @@ function toggleMore(button) {
 document.addEventListener("click", event => {
     const target = event.target instanceof Element ? event.target.closest(CLICKABLE) : null;
     if (!target || target.closest("[inert]")) return;
+    if (target.getAttribute("data-command") === "skip-content") {
+        event.preventDefault();
+        els.main.focus();
+        return;
+    }
     if (target.hasAttribute("data-copilot-account")) {
         event.preventDefault();
         const next = { view: "copilot", subview: "desk", account: target.getAttribute("data-copilot-account"), query: "" };
@@ -687,6 +732,9 @@ document.addEventListener("click", event => {
         if (filter === "seller-rank" && ["arr", "billed", "renewal"].includes(value)) {
             state.sellerRank = value;
             delete state.sort.top50;
+            render();
+        } else if (filter === "billing-product" && ["consumption", "ghas", "ghe", "copilot"].includes(state.view)) {
+            state.sellerOptions[`${state.view}Product`] = value;
             render();
         } else if (filter === "copilot" && ["all", "attention", "unassigned", "engaged_lt_50", "renewing_90"].includes(value)) {
             state.copilotFilter = value;
@@ -711,6 +759,26 @@ document.addEventListener("click", event => {
 
 document.addEventListener("change", event => {
     const input = event.target;
+    if (input instanceof HTMLSelectElement && input.matches("[data-account-switch]")) {
+        if (state.model?.accounts.some(a => a.id === input.value && a.in_book !== false)) {
+            const next = { view: "account360", subview: state.subview || "summary", account: input.value, query: "" };
+            setHistory(hashFor(next), "push");
+            apply(next);
+        }
+    }
+    if (input instanceof HTMLSelectElement && input.matches("[data-seller-option]")) {
+        state.sellerOptions[input.dataset.sellerOption] = input.value;
+        render();
+    }
+    if (input instanceof HTMLInputElement && input.matches("[data-seller-column]")) {
+        state.sellerOptions[input.dataset.sellerColumn] = input.checked;
+        render();
+        const picker = els.main.querySelector(".column-picker");
+        if (picker) {
+            picker.open = true;
+            picker.querySelector(`[data-seller-column="${CSS.escape(input.dataset.sellerColumn)}"]`)?.focus();
+        }
+    }
     if (input instanceof HTMLSelectElement && input.matches("[data-signal-filter]")) {
         const key = input.getAttribute("data-signal-filter");
         const options = { priority: ["all", ...SIGNAL_PRIORITIES], source: ["all", ...Object.keys(SIGNAL_SOURCES)], status: ["open", "done", "dismissed", "all"] };
@@ -727,6 +795,10 @@ document.addEventListener("change", event => {
 
 document.addEventListener("input", event => {
     if (event.target instanceof HTMLInputElement && event.target.matches("[data-search]")) onSearch(event.target);
+    if (event.target instanceof HTMLInputElement && event.target.matches("[data-seller-search]")) {
+        state.sellerOptions[event.target.dataset.sellerSearch] = clipQuery(event.target.value);
+        render();
+    }
 });
 
 const isTyping = target => target instanceof HTMLElement
@@ -758,12 +830,20 @@ document.addEventListener("keydown", event => {
         return;
     }
     if (event.key === "Escape") {
-        if (state.account) {
+        if (state.menuOpen) {
+            event.preventDefault();
+            toggleMenu(false);
+        } else if (drawerOpen) {
             event.preventDefault();
             closeDrawer();
         } else if (state.toast && els.toast.contains(event.target)) {
             hideToast();
         }
+    } else if (event.key === "Tab" && state.menuOpen) {
+        const elements = [...els.nav.querySelectorAll(FOCUSABLE)].filter(e => e.getClientRects().length);
+        const first = elements[0], last = elements.at(-1);
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+        if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
     } else if (event.key === "Tab" && drawerOpen) {
         trapTab(event);
     } else if (event.key === "/" && plain && !isTyping(event.target) && !state.account) {
@@ -806,6 +886,9 @@ const updateEmbedThemes = () => document.querySelectorAll("iframe[data-embed]").
 new MutationObserver(updateEmbedThemes).observe(document.documentElement, { attributes: true, attributeFilter: ["style", "class", "data-color-mode"] });
 new MutationObserver(updateEmbedThemes).observe(document.body, { attributes: true, attributeFilter: ["style", "class", "data-color-mode"] });
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", updateEmbedThemes);
+matchMedia("(min-width: 901px)").addEventListener("change", event => {
+    if (event.matches && state.menuOpen) toggleMenu(false);
+});
 window.addEventListener("message", event => {
     const frame = document.querySelector("iframe[data-embed]");
     if (event.origin !== location.origin || !frame || event.source !== frame.contentWindow || !event.data) return;

@@ -28,7 +28,9 @@ Config, data and output live in `~/CopilotConsumptionDashboard/`, outside the re
    ```bash
    python3 refresh.py render
    ```
-   This prints one block per file in `queries/` (18 today), like `=== 07 · query_kusto · database=rev_source ===`, followed by the query text. If it reports missing config, stop and tell the user to create `~/CopilotConsumptionDashboard/config.json` from `config.example.json`.
+   This prints one block per file in `queries/` (22 today), like `=== 07 · query_kusto · database=rev_source ===`, followed by the query text. If it reports missing config, stop and tell the user to create `~/CopilotConsumptionDashboard/config.json` from `config.example.json`.
+
+   Queries 19–21 read `rev_source_dependencies` (19) and `service_sales_analytics` (20, 21). Their columns were taken from the upstream table definitions, not from `getschema`. Before the first collection, run `<table> | getschema` once for each table named in their header comments. If a column is missing or renamed, report the query as blocked and repair it in code. Don't edit the printed text during a refresh.
 
 2. **Run every query verbatim**
    - `query_salesforce` blocks → `revenue-mcp-server-query_salesforce` with the SOQL exactly as printed.
@@ -77,6 +79,14 @@ Config, data and output live in `~/CopilotConsumptionDashboard/`, outside the re
    the model list to make a build succeed. Blank model names remain unattributed allocation.
    Missing q18 stays unknown; carried q18 retains its original collection time and source cutoff.
    The panels label source cutoffs older than three days as stale, independently of build time.
+
+   Queries **19–22** feed the code review, coding agent and AI-units-by-feature panels (the warehouse tables behind the Copilot AIU, CCR and CCA reports):
+   - **q19** gives monthly CCR coverage, penetration and lead time per owned enterprise. The current month is month to date.
+   - **q20** gives monthly CCA adoption and the latest EPI by complexity per enterprise or organization owner.
+   - **q21** gives the latest CCA expansion opportunity and new-logo readiness.
+   - **q22** gives weekly AI units and gross usage value by feature per account.
+
+   Rates are recomputed from summed counts, never averaged across owners. CCR rows that can't be reconciled to one enterprise are withheld and counted. Each source keeps its own collection state (collected, no rows, carried with its original date, or missing), and a missing source is unknown, not zero. The panels don't link to Power BI and don't claim the outcomes are caused by Copilot.
 
 6. **Refresh the chat skill** (keeps the `copilot-dashboard-ask` skill in sync with this code)
    ```bash

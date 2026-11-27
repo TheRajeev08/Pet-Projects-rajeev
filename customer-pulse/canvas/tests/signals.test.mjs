@@ -289,7 +289,7 @@ function browserHarness(fetch) {
     const listeners = {};
     class Select {
         constructor(key, value) { this.key = key; this.value = value; }
-        matches() { return true; }
+        matches(selector) { return selector === "[data-signal-filter]"; }
         getAttribute() { return this.key; }
     }
     const source = fs.readFileSync(path.join(CANVAS, "app.js"), "utf8").replace(/^import .*;\n/gm, "").split("// Boot ")[0];

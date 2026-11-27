@@ -17,7 +17,14 @@ export const SOURCE_NAMES = Object.freeze({
     "16": "UBB forecast and pool status",
     "17": "Copilot whitespace model",
     "18": "Enterprise model usage",
+    "19": "Code review monthly (CCR)",
+    "20": "Coding agent adoption & EPI (CCA)",
+    "21": "Coding agent opportunity scores",
+    "22": "AI units by feature, weekly",
 });
+
+/** Sources added after the original 18; an older model that predates them lists them in neither sources nor missing_sources. */
+export const OUTCOME_SOURCES = Object.freeze(["19", "20", "21", "22"]);
 
 /** Queue lanes. Rank orders the lanes; within a lane, sorting is explicit and never score-based. */
 export const LANES = Object.freeze([

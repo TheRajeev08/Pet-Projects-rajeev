@@ -18,7 +18,7 @@ from .util import atomic_write_json, decode_dynamic, iso_now, num, read_json
 STATES = {"ok", "no_rows", "not_connected", "not_authorized", "failed", "partial", "stale"}
 TOOLS = {
     "github_accounts": "get_salesforce_account",
-    "issues": "get_salesforce_account_issues", "pocs": "get_proofs_of_concept",
+    "issues": "get_salesforce_account_issues",
     "gong": "get_account_gong_calls", "notes": "get_account_notes",
     "partners": "get_account_partners", "hierarchy": "get_account_hierarchy",
 }
@@ -61,18 +61,19 @@ def coverage(feed, entry, today):
     collected = entry.get("collected_at", "")[:10] or None
     # Monthly facts legitimately describe a closed month. Collection freshness is separate.
     limit = 45 if feed in ("invoices", "model_cost", "selfserve", "mrr") else 7
-    reference = collected if feed in ("invoices", "model_cost") else observed or collected
+    reference = collected if feed in ("invoices", "model_cost", "tech_stack") else observed or collected
     if state in ("ok", "no_rows") and reference and (dt.date.fromisoformat(today) - dt.date.fromisoformat(reference)).days > limit:
         state = "stale"
     reason = entry.get("reason")
     if not entry:
-        reason = "ZoomInfo is not connected; no verified internal technographics collected." if feed == "tech_stack" else "Internal feed has not been collected."
+        reason = "No verified SE issue or Gong stack evidence collected." if feed == "tech_stack" else "Internal feed has not been collected."
     if state == "no_rows":
-        reason = "No rows for this account in the selected scope; this does not prove zero."
+        reason = "No contacts returned." if feed == "contacts" else "No rows for this account in the selected scope; this does not prove zero."
         if FEEDS.get(feed, (None,))[0] == "gainsight":
             reason += " Activity may be recorded on another CO-covered hierarchy account."
     return {"source": source_name(feed), "state": state, "as_of": observed, "collected_at": collected,
-            "reason": reason, "rows": len(entry.get("rows") or []), "readiness": "New internal feed"}
+            "reason": reason, "rows": len(entry.get("rows") or []), "readiness": "Internal feed",
+            **({"coverage": entry["coverage"]} if "coverage" in entry else {})}
 
 
 def load():
@@ -235,18 +236,21 @@ def _record(row, feed):
         "id": ("id", "Id", "salesforce_id", "gsid", "call_id"), "title": ("title", "Name", "name", "subject", "Subject", "partner_name"),
         "date": ("date", "CreatedDate", "created_date", "created_at", "call_start", "start_time", "ActivityDate"),
         "updated": ("updated_at", "LastModifiedDate"),
-        "status": ("status", "Status", "github_state", "ghas_poc_status", "Status__c", "Stage__c"),
+        "status": ("status", "Status", "github_state", "GitHub_State__c", "ghas_poc_status", "Status__c", "Stage__c"),
         "url": ("url", "github_issue_url", "github_issue_link", "opportunity_url", "URL__c", "GitHub_Issue_URL__c", "recording_url", "webLink"),
         "description": ("description", "Description", "Description__c", "text", "content", "call_brief", "reason_opp_is_ready", "partner_value_added"),
         "email": ("email", "Email"), "role": ("role", "Title"),
         "parent_id": ("ParentId", "parent_id"), "name": ("name", "Name"),
     }
     out = {key: _plain(_pick(row, *aliases)) for key, aliases in fields.items()}
+    if feed == "issues":
+        out["se_issue"] = bool(re.fullmatch(r"https://github\.com/github/solutions-engineering/issues/[1-9][0-9]*", str(out.get("url") or ""), re.I))
     if out["id"] is None:
         raise ValueError("Internal record lacks a stable ID; adapter needs verification")
     out["id"] = str(out["id"])
     out["date"] = sources.iso(out["date"])
     out["updated"] = sources.iso(out["updated"])
+    out["account_id"] = sources.sfid18(_pick(row, "account_id", "primary_account_id", "AccountId"))
     if feed == "contacts":
         out["last_activity"] = sources.iso(row.get("LastActivityDate"))
     if feed == "gong":
@@ -438,7 +442,8 @@ def collect_plan(cfg, group, session, statuses=None, results=None, use_sf=True):
             rows = list({r["id"]: r for r in rows}.values())
         dates = [found[key][aid]["as_of"] for key in keys if found[key][aid]["as_of"]]
         doc["accounts"][aid][feed] = {"rows": rows, "state": "ok" if rows else "no_rows",
-                                    "as_of": max(dates) if dates else None, "collected_at": iso_now(), "run_id": planned["run_id"]}
+                                    "as_of": max(dates) if dates else None, "collected_at": iso_now(), "run_id": planned["run_id"],
+                                    "provenance": {"account_id": aid, "tasks": keys, "group": group}}
     for skipped in planned.get("skipped", []):
         feeds = doc["accounts"].setdefault(skipped["account_id"], {})
         feeds[skipped["feed"]] = {**feeds.get(skipped["feed"], {}), "state": "partial", "reason": skipped["reason"]}
@@ -484,14 +489,6 @@ def enrich(accounts, cfg, today, dashboard=None, store=None):
             "feeds": {feed: {"records": saved.get(feed, {}).get("rows") or [], **coverage(feed, saved.get(feed), today)}
                       for feed in LABELS},
         }
-        pocs = account["seller"]["feeds"]["pocs"]
-        stack = [{**item, "date": poc.get("date"), "poc_id": poc["id"]} for poc in pocs["records"] for item in poc.get("stack", [])]
-        if stack:
-            account["seller"]["feeds"]["tech_stack"] = {
-                **pocs, "source": "Salesforce Proof_of_Concept existing-tool fields",
-                "records": stack, "rows": len(stack),
-                "reason": "Recorded existing tools, not tools merely evaluated. Date is PoC end date, not a current detection. ZoomInfo is not connected.",
-            }
     return accounts
 
 

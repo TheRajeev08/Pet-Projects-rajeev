@@ -1,4 +1,4 @@
-// qid:14 db:rev_source — per GitHub enterprise x integration: 7d/prior 7d/28d gross, AI units, users + 13-week gross series
+// qid:14 db:rev_source — per GitHub enterprise x integration: 7d/prior 7d/28d gross, AI units, users + 13-week gross and AI unit series
 let asof = toscalar(enterprise_account_daily_ubb_revenue_fact | where measurement_date > ago(21d) | summarize max(measurement_date));
 let owned = materialize(
     database("c360").entity_all
@@ -21,12 +21,12 @@ let totals = daily
         by slug, integration;
 let series = daily
     | where wk < 13
-    | summarize wg = round(sum(g), 2) by slug, integration, wk
+    | summarize wg = round(sum(g), 2), wa = round(sum(a), 1) by slug, integration, wk
     | order by slug asc, integration asc, wk asc
-    | summarize s = make_list(pack_array(wk, wg)) by slug, integration;
+    | summarize s = make_list(pack_array(wk, wg, wa)) by slug, integration;
 totals
 | join kind=leftouter series on slug, integration
-| where l28 > 0 or u28 > 0 or isnotempty(s)
+| where l28 > 0 or aiu28 > 0 or u28 > 0 or isnotempty(s)
 | project slug, integration, l7, p7, l28, aiu28, u7, up7, u28, s
-| extend asof = asof, cols = "wk,gross"
+| extend asof = asof, cols = "wk,gross,aiu"
 | order by slug asc, l28 desc

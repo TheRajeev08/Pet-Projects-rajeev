@@ -259,9 +259,10 @@ describe("canvas server", () => {
         assert.notEqual(other.token, token);
     });
 
-    test("serves the four client assets byte for byte with script and style types", async () => {
+    test("serves the client assets byte for byte with script and style types", async () => {
         const assets = { "/app.js": "text/javascript", "/model.mjs": "text/javascript", "/views.mjs": "text/javascript", "/style.css": "text/css",
-            "/seller-data.mjs": "text/javascript", "/seller-views.mjs": "text/javascript" };
+            "/seller-data.mjs": "text/javascript", "/seller-views.mjs": "text/javascript",
+            "/copilot/code-impact.mjs": "text/javascript", "/copilot/code-impact.css": "text/css" };
         for (const [route, type] of Object.entries(assets)) {
             const res = await request(ctx.server, "GET", route);
             assert.equal(res.status, 200, route);

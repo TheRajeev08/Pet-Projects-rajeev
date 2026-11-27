@@ -37,7 +37,10 @@ export function buildPulseHome(home) {
 /** A temp home holding the synthetic model and a clean build status. */
 export function syntheticHome() {
     const home = tempDir();
-    writeJson(path.join(home, "model.json"), syntheticModel());
+    const copilot = path.join(home, "synthetic-copilot");
+    fs.mkdirSync(copilot);
+    writeJson(path.join(home, "config.json"), { copilot_home: copilot });
+    writeJson(path.join(home, "model.json"), { ...syntheticModel(), copilot: { model_path: path.join(copilot, "model.json") } });
     writeJson(path.join(home, "status.json"), { overall: "ok", date: "2026-10-27", generated_at: "2026-10-27T06:00:00+00:00", build_error: null });
     return home;
 }
