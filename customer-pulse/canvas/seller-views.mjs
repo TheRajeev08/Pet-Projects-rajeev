@@ -3,6 +3,8 @@ import {
     feedOf, GHAS_BILLING_PRODUCTS, invoiceProduct, knownSum, labelOf, latestRows, moneyTypes, monthlyChange, observedCount, openRows, productRows,
     portfolioSeries, rankAccounts, renewalBuckets, renewalRisk, rowsOf, stackGroups, STACK_STATUS, usageTrend, openSeCount,
 } from "./seller-data.mjs";
+import { codeImpactAccountHtml, impactApplies } from "./copilot/code-impact.mjs";
+import { hasProduct } from "./model.mjs";
 
 export function createSellerViews({ esc, fmtInt, fmtMoney, fmtPct, fmtDay, sparkline, table, actionsFor, renderRecommendations,
     actionsPanel, changesPanel, productCard, newSignalsPanel }) {
@@ -327,11 +329,18 @@ export function createSellerViews({ esc, fmtInt, fmtMoney, fmtPct, fmtDay, spark
                 .map(s => [link(s.url, s.title), text(s.source), date(s.date)])), `<p class="seller-source">Evidence-backed signals · ${date(model.date)}</p>`)
             ;
     }
+    function codeImpact(a, ui) {
+        if (ui.copilotLicensesLoading) return panel("Copilot code review, coding agent & AI units", '<p class="seller-source" role="status">Loading Copilot outcome metrics…</p>');
+        const impact = ui.copilotLicenses?.impact;
+        if (!impact || !(hasProduct(a, "ghcp") || impactApplies(impact, a.id))) return "";
+        return `<section class="panel seller-panel copilot-impact"><div class="panel-head"><h2>Copilot code review, coding agent &amp; AI units</h2></div>`
+            + codeImpactAccountHtml(impact, a.id, { level: 3, title: false }) + "</section>";
+    }
     function account360(model, ui) {
         const a = model.accounts.find(a => a.id === ui.account);
         if (!a) return top50(model, ui, true);
         const tab = ACCOUNT_TABS.includes(ui.subview) ? ui.subview : "summary";
-        const content = tab === "commercial" ? commercial(a, model) : tab === "products" ? accountTrend(a, model, ui) + productTable(a, model) + disclosure("Invoice quantities, runners & model costs", consumptionDetails(a, model))
+        const content = tab === "commercial" ? commercial(a, model) : tab === "products" ? accountTrend(a, model, ui) + productTable(a, model) + codeImpact(a, ui) + disclosure("Invoice quantities, runners & model costs", consumptionDetails(a, model))
             : tab === "security" ? security(a) : tab === "success" ? success(a) : tab === "activity" ? activity(a, model, ui)
                 : tab === "contacts" ? contacts(a, ui) : tab === "stack" ? stack(a)
                     : `<div class="workspace-columns">${accountTrend(a, model, ui)}${whyNow(a, model)}</div>`

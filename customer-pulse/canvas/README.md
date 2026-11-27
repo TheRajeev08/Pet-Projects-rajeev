@@ -38,7 +38,28 @@ Then open the **Customer Pulse** canvas. It reads `~/CustomerPulse/model.json` (
 - **Impact:** `#/impact` embeds the same Copilot dashboard's Impact view (`copilot/?embed=1#/impact`) in its own frame, so it always opens on Impact whatever the Copilot tab last showed. It shows the enterprise Impact data in the Copilot snapshot, and says so when none was collected.
 - **Models used:** Impact overview and enterprise detail show enterprise-grain q18 model usage, including enterprises without ROI data. Latest/prior 7-day and latest 28-day gross usage value (USD before pool deduction), AI units and 28-day value shares are metered/UBB readings, not invoice totals or every interaction. Blank/unresolved models remain unattributed and are included in totals; no unique-user counts are inferred. Coverage, source cutoff and enterprise collection time distinguish missing, observed zero, carried and stale data (cutoff older than three days). Portfolio totals only combine a common cutoff. Monthly adoption model counts and account-level model data are unchanged. Model tables stack labeled values at narrow widths in both embedded and standalone views.
 - **Code review & cloud agent usage:** Impact overview and enterprise detail use the exact q14 `copilot-pr-reviews` and `copilot-developer` integrations; account detail uses q08. CLI, app and third-party agents are separate. Usage is metered UBB, not outcomes or all interactions. Enterprise user signals are peak daily model-slice counts; account signals are peak daily sums across model slices and can double-count people. Neither is a deduplicated period-unique count, and signals are not summed across entities. An enabled policy and an explicitly observed zero 28-day usage signal are required for an idle signal. Missing rows, fields or policies remain unknown. New builds retain q08/q14 metric completeness and q14's cutoff; legacy normalized zeros cannot be verified and are shown as unknown. Seven-day AI units and feature-specific PR/review outcomes are unavailable in these feeds; overall Impact throughput and ROI are not attributed to either feature.
-- **Embed failures:** if a frame gets anything other than the dashboard page (for example an older canvas server answering 404 after an update, or an unreachable server), the tab shows a short explanation with **Try again** instead of the raw error. Closing and reopening Customer Pulse, or starting a new Copilot session, starts the updated server. Unknown page navigations get a small HTML 404 page; API callers still get JSON.
+- **Code review, coding agent & AI units by feature:** These come from the warehouse tables behind the Copilot AIU, CCR and CCA reports (q19–q22). Shared rendering lives in `copilot/code-impact.mjs` and `.css`. The sections appear in:
+  - Pulse **Copilot** (`#/copilot`): book-level view;
+  - the embedded and standalone **Impact** overview and enterprise detail;
+  - Copilot account detail;
+  - **Account 360 › Products & consumption**;
+  - the account drawer, as a compact summary that links to Account 360.
+
+  They cover:
+  - **CCR:** coverage (CCR-reviewed ÷ reviewed PRs), user penetration, adoption score against the industry benchmark, and CCR vs general PR lead time.
+  - **CCA:** PR share, repo penetration, active-day frequency, adoption stage, and EPI lift by complexity.
+  - **AI units by feature:** a 13-week trend per feature.
+  - **CCA opportunities:** expansion and new-logo readiness lists.
+
+  Account sections appear for Copilot customers. They also appear for any account the data applies to: observed or withheld CCR, observed CCA, AI units by feature, or an opportunity row carrying its Salesforce ID. Opportunity rows are used only if q21 was collected or carried.
+
+  Rules for the figures:
+  - Rates are recomputed from summed counts, never averaged across owners. The current CCR month is month to date and drawn as a hollow point.
+  - Withheld, carried, missing and no-rows sources are labelled. Missing data is never shown as zero.
+  - AI units are a usage quantity, not usage value or a billable amount.
+  - Lead time and EPI are observational, not caused by Copilot.
+  - There are no Power BI deep links.
+  - Charts keep text and point sizes fixed at any width. Paired charts and tables stack in narrow cards. if a frame gets anything other than the dashboard page (for example an older canvas server answering 404 after an update, or an unreachable server), the tab shows a short explanation with **Try again** instead of the raw error. Closing and reopening Customer Pulse, or starting a new Copilot session, starts the updated server. Unknown page navigations get a small HTML 404 page; API callers still get JSON.
 - **Copilot data:** `copilot_home` in Pulse config selects its model directory (default `~/CopilotConsumptionDashboard`; the model's `copilot.model_path` is a fallback). GET `/api/copilot-licenses` returns compact Pulse-authoritative rows, totals, per-metric coverage and reconciliation flags; it joins enterprise slugs only through unique confirmed/single matches. A missing or invalid Copilot model leaves Pulse figures available with an explicit reconciliation note. Portfolio does not download the full Copilot model. `/copilot/api/model`, `/copilot/api/status` and `/copilot/events` power deep dives; `/copilot/api/refresh` shares Pulse's coordinator and write guards. `/copilot/classic` retains offline Ask and a relative Back link. Only this generated classic route allows inline scripts in its CSP.
 
 Copilot can also drive the canvas through three actions:

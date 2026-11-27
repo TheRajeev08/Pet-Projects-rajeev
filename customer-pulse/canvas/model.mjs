@@ -1,5 +1,7 @@
 // Pure data helpers shared by the canvas server, the extension and the browser. No DOM or Node APIs.
 
+import { impactPayload } from "./copilot/code-impact.mjs";
+
 export const SCHEMA = 1;
 export const PRIORITIES = ["High", "Medium", "Notify", "Info"];
 const RANK = Object.fromEntries(PRIORITIES.map((priority, index) => [priority, index]));
@@ -395,6 +397,7 @@ export function copilotLicenses(pulseModel, copilotModel = null) {
             ? weeklyAiUnits(pulseModel.accounts.filter(a => a.in_book !== false), dashboard, cutoff) : null,
         flags: Object.fromEntries(["unassigned", "over_assigned", "engaged_lt_50", "renewing_90", "source_mismatch"]
             .map(flag => [flag, rows.filter(row => row.flags[flag]).length])),
+        impact: copilotModel ? impactPayload(copilotModel) : null,
         reconciliation: copilotModel ? "available" : "unavailable",
         note: copilotModel ? null : "Copilot dashboard reconciliation unavailable. Showing Pulse figures only." };
 }

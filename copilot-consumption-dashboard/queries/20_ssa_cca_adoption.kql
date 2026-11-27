@@ -1,0 +1,58 @@
+// qid:20 db:service_sales_analytics — per owned billable owner (enterprise or organization) with Copilot coding agent (CCA) PRs: 13 completed months of CCA adoption plus the latest month's engineering productivity index (EPI) by complexity tier, CCA vs non-CCA
+// Columns come from github/airflow fill SQL (cca_adoption_rate_monthly_snapshot, billable_owner_epi_cca_vs_non_cca_monthly_sfdc), not getschema; run `| getschema` on both before the first collection.
+// Scope is exact owned Salesforce account ids, or exact owned enterprise ids for enterprise-type owners. Names, owner/segment/territory, pitches and CSM notes are not selected.
+let sf = database("c360").entity_salesforce_account
+    | where sales_owner == "{{OWNER_NAME}}" and measurement_date > ago(14d)
+    | summarize by sf = tostring(entity_id);
+let ent = database("c360").entity_all
+    | where entity_type == "Enterprise Account" and measurement_date > ago(14d) and sales_owner == "{{OWNER_NAME}}"
+    | summarize by eid = tostring(tolong(entity_id));
+let since = startofmonth(now(), -13);
+let adoptionRaw = materialize(
+    cca_adoption_rate_monthly_snapshot
+    | where month_end_date >= since
+    | extend oid = tostring(billable_owner_id), otype = tostring(billable_owner_type), sfid = tostring(salesforce_account_id)
+    | where sfid in (sf) or (tolower(otype) has "enterprise" and oid in (ent)));
+let adoption = adoptionRaw
+    | summarize cca_prs = max(cca_pr_count), prs = max(total_pr_count), cca_repos = max(cca_repo_count), repos = max(total_active_repo_count),
+        cca_days = max(cca_active_days), days = max(total_active_days), share = max(pr_share), pen = max(repo_penetration),
+        freq = max(frequency), rate = max(cca_adoption_rate), stage = take_anyif(cca_adoption_stage, isnotempty(cca_adoption_stage)),
+        dup = count() by oid, otype, m = format_datetime(month_end_date, "yyyy-MM-dd")
+    | order by oid asc, m asc
+    | summarize s = make_list(pack_array(m, cca_prs, prs, cca_repos, repos, cca_days, days, share, pen, freq, rate, stage, dup)) by oid, otype;
+let latest = adoptionRaw
+    | summarize arg_max(month_end_date, sfid, cca_adoption_interpretation) by oid, otype
+    | project oid, otype, sf_id = sfid, interpretation = cca_adoption_interpretation;
+let epiRaw = materialize(
+    billable_owner_epi_cca_vs_non_cca_monthly_sfdc
+    | where month_end_date >= since
+    | extend oid = tostring(billable_owner_id), otype = tostring(billable_owner_type), sfid = tostring(salesforce_account_id)
+    | where sfid in (sf) or (tolower(otype) has "enterprise" and oid in (ent)));
+let epiMonth = epiRaw | summarize em = max(month_end_date) by oid, otype;
+let epi = epiRaw
+    | join kind=inner epiMonth on oid, otype
+    | where month_end_date == em
+    | order by oid asc, complexity_tier asc
+    | summarize epi_month = format_datetime(max(em), "yyyy-MM-dd"), epi_sf_id = take_anyif(sfid, isnotempty(sfid)),
+        tiers = make_list(pack_array(complexity_tier, cca_pr_count, non_cca_pr_count,
+            cca_engineering_productivity_index_avg_repo_calibrated, non_cca_engineering_productivity_index_avg_repo_calibrated,
+            cca_engineering_productivity_index_p50_repo_calibrated, non_cca_engineering_productivity_index_p50_repo_calibrated,
+            cca_engineering_productivity_index_p90_repo_calibrated, non_cca_engineering_productivity_index_p90_repo_calibrated,
+            lift_ratio_cca_vs_non_cca_engineering_productivity_index_avg_repo_calibrated,
+            lift_ratio_cca_vs_non_cca_engineering_productivity_index_p50_repo_calibrated,
+            lift_ratio_cca_vs_non_cca_engineering_productivity_index_p90_repo_calibrated,
+            has_engineering_productivity_index_comparison, has_cca_data, has_non_cca_data,
+            engineering_productivity_index_summary, engineering_productivity_index_interpretation,
+            engineering_productivity_index_action_summary))
+        by oid, otype;
+adoption
+| join kind=fullouter latest on oid, otype
+| extend oid = coalesce(oid, oid1), otype = coalesce(otype, otype1)
+| project-away oid1, otype1
+| join kind=fullouter epi on oid, otype
+| extend oid = coalesce(oid, oid1), otype = coalesce(otype, otype1), sf_id = coalesce(sf_id, epi_sf_id)
+| project owner_id = oid, owner_type = otype, sf_id, interpretation, s, epi_month, tiers
+| extend asof = toscalar(adoptionRaw | summarize format_datetime(max(month_end_date), "yyyy-MM-dd")),
+    cols = "month,cca_prs,prs,cca_repos,repos,cca_days,days,share,penetration,frequency,rate,stage,dup",
+    tier_cols = "tier,cca_prs,non_cca_prs,cca_epi_avg,non_cca_epi_avg,cca_epi_p50,non_cca_epi_p50,cca_epi_p90,non_cca_epi_p90,lift_avg,lift_p50,lift_p90,comparison,has_cca,has_non_cca,summary,interpretation,action"
+| order by sf_id asc, owner_type asc, owner_id asc

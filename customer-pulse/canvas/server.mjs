@@ -21,6 +21,8 @@ const STATIC = {
     "/copilot/insights.mjs": "text/javascript; charset=utf-8",
     "/copilot/impact.mjs": "text/javascript; charset=utf-8",
     "/copilot/feature-usage.mjs": "text/javascript; charset=utf-8",
+    "/copilot/code-impact.mjs": "text/javascript; charset=utf-8",
+    "/copilot/code-impact.css": "text/css; charset=utf-8",
     "/copilot/style.css": "text/css; charset=utf-8",
 };
 const WORKFLOW_ID = /^[0-9a-f][0-9a-f-]{7,63}$/i;

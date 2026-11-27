@@ -6,6 +6,7 @@ import {
     copilotLicenses, copilotRowTotals, copilotRowsFor, copilotFilterCounts,
 } from "./model.mjs";
 import { renderRecommendations } from "./recommendations.mjs";
+import { codeImpactPortfolioHtml, codeImpactSummaryHtml, impactApplies } from "./copilot/code-impact.mjs";
 import { createSellerViews } from "./seller-views.mjs";
 import { ACCOUNT_LABELS, bookFeedCoverage } from "./seller-data.mjs";
 
@@ -731,7 +732,16 @@ function renderCopilotPortfolio(model, ui, history) {
             `<button type="button" class="button tiny${filter === key ? " selected" : ""}" data-filter="copilot" data-value="${key}" aria-pressed="${filter === key}">${label} <span class="count">${counts[key]}</span></button>`).join("")}</div>`
         + copilotTable(model, ui, rows, model.changes_window_days || 7) + "</div></section>"
         + `<div class="columns"><div class="col-main">${actionsPanel(model, ui, { family: "ghcp", key: "copilot", title: "Actions" })}</div><div class="col-side">${changesPanel(model, ui, { family: "ghcp", key: "copilot" })}</div></div>`
-        + copilotMix(model) + whitespacePanel(model, ui, "ghcp") + "</div>";
+        + copilotImpactSection(model, ui) + copilotMix(model) + whitespacePanel(model, ui, "ghcp") + "</div>";
+}
+
+function copilotImpactSection(model, ui) {
+    const head = '<div class="panel-head"><h2 id="h-code-impact">Code review &amp; coding agent impact</h2></div>';
+    if (ui.copilotLicensesLoading) return `<section class="panel copilot-impact" aria-labelledby="h-code-impact">${head}<div class="copilot-loading" role="status"><span class="loading-bar" aria-hidden="true"></span>Loading Copilot outcome metrics…</div></section>`;
+    const impact = ui.copilotLicenses?.impact;
+    if (!impact) return ui.copilotLicenses ? `<section class="panel copilot-impact" aria-labelledby="h-code-impact">${head}<p class="note">Copilot dashboard snapshot unavailable, so code review, coding agent and feature-level AI units are not shown.</p></section>` : "";
+    return '<section class="panel copilot-impact">'
+        + codeImpactPortfolioHtml(impact, { level: 2, id: "copilot-code-impact", accountLink: (id, name) => accountLink(model, id, name) }) + "</section>";
 }
 
 function signalRow(model, signal, { showAccount = true } = {}) {
@@ -1049,7 +1059,9 @@ export function renderDrawer(model, ui = {}) {
     const support = isObject(account.support) ? [isNumber(account.support.tickets_28d) ? `${fmtInt(account.support.tickets_28d)} tickets in 28 days` : null,
         isNumber(account.support.csat_ltm) ? `CSAT ${account.support.csat_ltm <= 1 ? fmtPct(account.support.csat_ltm) : esc(account.support.csat_ltm)} (12 months)` : null].filter(Boolean).join(" · ") : "";
     const cpPanel = copilotPanel(account, windowDays,
-        (ui.copilotLicenses || copilotLicenses(model)).rows.find(row => row.account_id === account.id));
+        (ui.copilotLicenses || copilotLicenses(model)).rows.find(row => row.account_id === account.id))
+        + (ui.copilotLicenses?.impact && (hasProduct(account, "ghcp") || impactApplies(ui.copilotLicenses.impact, account.id))
+            ? codeImpactSummaryHtml(ui.copilotLicenses.impact, account.id, { level: 3, href: `#/account360/products/account/${encodeURIComponent(account.id)}` }) : "");
     return `<div class="backdrop" data-close></div><aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title">`
         + `<header class="drawer-head"><div><h2 id="drawer-title">${esc(account.name || account.id)}</h2>${sub ? `<p class="sub">${sub}</p>` : ""}</div>`
         + `<div class="drawer-tools">${sfdc ? `<a class="button subtle tiny" href="${esc(sfdc)}" target="_blank" rel="noopener noreferrer">Open in Salesforce</a>` : ""}${close}</div></header>`

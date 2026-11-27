@@ -1,0 +1,69 @@
+// qid:19 db:rev_source_dependencies — per owned GitHub enterprise: 13 monthly points (the current month is month to date) of Copilot code review (CCR) adoption plus CCR vs general PR lead time in days
+// Columns come from the github/airflow rev_source_dependencies config (copilot_prs_with_ccr_monthly_metrics, copilot_pr_ccr_lead_time_monthly), not getschema; run `| getschema` on both before the first collection.
+// The *_by_billable_owner values repeat on every organization row, so they are deduplicated per enterprise-month with max() and never summed.
+// Series arrays are flattened by make_list, so lead_labels is joined with "|" to keep a fixed column count.
+// "variants" counts distinct enterprise-level count tuples per month and "lead_conflict" flags disagreeing lead-time rows; the builder flags either.
+let owned = materialize(
+    database("c360").entity_all
+    | where entity_type == "Enterprise Account" and measurement_date > ago(14d) and sales_owner == "{{OWNER_NAME}}"
+    | summarize arg_max(measurement_date, entity_name) by entity_id
+    | project eid = tolong(entity_id), slug = entity_name);
+let since = startofmonth(now(), -12);
+let adoptionRaw = materialize(
+    copilot_prs_with_ccr_monthly_metrics
+    | where column_ifexists("snapshot_key", "latest") == "latest" and month_end_date >= since
+    | extend eid = tolong(enterprise_account_id), m = format_datetime(month_end_date, "yyyy-MM-dd")
+    | where eid in ((owned | project eid)));
+let leadRaw = materialize(
+    copilot_pr_ccr_lead_time_monthly
+    | where column_ifexists("snapshot_key", "latest") == "latest" and month_end_date >= since
+    | extend eid = tolong(enterprise_account_id), m = format_datetime(month_end_date, "yyyy-MM-dd")
+    | where eid in ((owned | project eid)));
+let keys = union
+        (adoptionRaw | project eid, sf = tostring(salesforce_account_id), okey = tostring(custom_key_billable_owner_id_type), ind = tostring(industry)),
+        (leadRaw | project eid, sf = tostring(salesforce_account_id), okey = tostring(custom_key_billable_owner_id_type), ind = "")
+    | summarize sf_ids = make_set_if(sf, isnotempty(sf), 8), owner_keys = make_set_if(okey, isnotempty(okey), 8),
+        industry = take_anyif(ind, isnotempty(ind)) by eid;
+let adoption = adoptionRaw
+    | summarize prs = max(nbr_of_pr_by_billable_owner), reviewed = max(nbr_of_pr_reviewed_by_billable_owner),
+        ccr_prs = max(nbr_of_ccr_reviewed_pr_by_billable_owner), ccr_users = max(nbr_of_ccr_engaged_user_by_billable_owner),
+        coverage = max(ccr_workflow_coverage_by_billable_owner), penetration = max(ccr_user_penetration_rate_by_billable_owner),
+        rate = max(single_ccr_adoption_rate_by_billable_owner), bench = max(ccr_adoption_rate_industry_benchmark),
+        vs = take_anyif(ccr_adoption_vs_industry, isnotempty(ccr_adoption_vs_industry)),
+        variants = count_distinct(strcat(nbr_of_pr_by_billable_owner, "|", nbr_of_pr_reviewed_by_billable_owner, "|",
+            nbr_of_ccr_reviewed_pr_by_billable_owner, "|", nbr_of_ccr_engaged_user_by_billable_owner)),
+        orgs = count_distinct(organization_id)
+        by eid, m;
+let lead = leadRaw
+    | summarize ccr_avg = max(billable_owner_level_avg_ccr_pr_lead_time_days), ccr_p50 = max(billable_owner_level_p50_ccr_pr_lead_time_days),
+        ccr_p90 = max(billable_owner_level_p90_ccr_pr_lead_time_days), gen_avg = max(billable_owner_level_avg_general_pr_lead_time_days),
+        gen_p50 = max(billable_owner_level_p50_general_pr_lead_time_days), gen_p90 = max(billable_owner_level_p90_general_pr_lead_time_days),
+        n1 = count_distinctif(billable_owner_level_avg_ccr_pr_lead_time_days, isnotnull(billable_owner_level_avg_ccr_pr_lead_time_days)),
+        n2 = count_distinctif(billable_owner_level_p50_ccr_pr_lead_time_days, isnotnull(billable_owner_level_p50_ccr_pr_lead_time_days)),
+        n3 = count_distinctif(billable_owner_level_p90_ccr_pr_lead_time_days, isnotnull(billable_owner_level_p90_ccr_pr_lead_time_days)),
+        n4 = count_distinctif(billable_owner_level_avg_general_pr_lead_time_days, isnotnull(billable_owner_level_avg_general_pr_lead_time_days)),
+        n5 = count_distinctif(billable_owner_level_p50_general_pr_lead_time_days, isnotnull(billable_owner_level_p50_general_pr_lead_time_days)),
+        n6 = count_distinctif(billable_owner_level_p90_general_pr_lead_time_days, isnotnull(billable_owner_level_p90_general_pr_lead_time_days)),
+        ccr_avg_label = take_anyif(avg_ccr_pr_lead_time_label, isnotempty(avg_ccr_pr_lead_time_label)),
+        ccr_p50_label = take_anyif(p50_ccr_pr_lead_time_label, isnotempty(p50_ccr_pr_lead_time_label)),
+        ccr_p90_label = take_anyif(p90_ccr_pr_lead_time_label, isnotempty(p90_ccr_pr_lead_time_label)),
+        gen_avg_label = take_anyif(avg_general_pr_lead_time_label, isnotempty(avg_general_pr_lead_time_label)),
+        gen_p50_label = take_anyif(p50_general_pr_lead_time_label, isnotempty(p50_general_pr_lead_time_label)),
+        gen_p90_label = take_anyif(p90_general_pr_lead_time_label, isnotempty(p90_general_pr_lead_time_label)),
+        lead_labels = make_set_if(use_to_assign_label_final, isnotempty(use_to_assign_label_final), 4)
+        by eid, m
+    | extend lead_conflict = max_of(n1, n2, n3, n4, n5, n6) > 1
+    | project-away n1, n2, n3, n4, n5, n6;
+adoption
+| join kind=fullouter lead on eid, m
+| extend eid = coalesce(eid, eid1), m = coalesce(m, m1)
+| order by eid asc, m asc
+| summarize s = make_list(pack_array(m, prs, reviewed, ccr_prs, ccr_users, coverage, penetration, rate, bench, vs, variants, orgs,
+        ccr_avg, ccr_p50, ccr_p90, gen_avg, gen_p50, gen_p90, ccr_avg_label, ccr_p50_label, ccr_p90_label,
+        gen_avg_label, gen_p50_label, gen_p90_label, strcat_array(lead_labels, "|"), lead_conflict)) by eid
+| join kind=inner owned on eid
+| join kind=leftouter keys on eid
+| project slug, enterprise_id = eid, sf_ids, owner_keys, industry, s
+| extend asof = format_datetime(now(), "yyyy-MM-dd"),
+    cols = "month,prs,reviewed,ccr_prs,ccr_users,coverage,penetration,rate,benchmark,vs_industry,variants,orgs,ccr_avg,ccr_p50,ccr_p90,gen_avg,gen_p50,gen_p90,ccr_avg_label,ccr_p50_label,ccr_p90_label,gen_avg_label,gen_p50_label,gen_p90_label,lead_labels,lead_conflict"
+| order by slug asc

@@ -3,6 +3,12 @@ import fs from "node:fs";
 import path from "node:path";
 import { syntheticAccount, syntheticAction, syntheticModel } from "./helpers.mjs";
 
+// CCR/CCA/AIU-by-feature subset produced by the real builder from synthetic rows
+// (copilot-consumption-dashboard/tests/synthetic_impact_fixture.py).
+export function syntheticImpact() {
+    return JSON.parse(fs.readFileSync(new URL("./fixtures/copilot-impact.json", import.meta.url), "utf8"));
+}
+
 export function workspaceModel() {
     const model = syntheticModel();
     model.date = "2026-11-27";
@@ -88,6 +94,22 @@ export function workspaceModel() {
     return model;
 }
 
+/** The synthetic Copilot dashboard model the preview serves, with the builder-generated impact subset merged in. */
+export function workspaceCopilotModel(model = workspaceModel()) {
+    const impact = syntheticImpact();
+    return {
+        data_date: model.date, generated_at: model.generated_at, missing_sources: [], sources: impact.sources,
+        stale_sources: impact.stale_sources, definitions: impact.definitions,
+        asof: { "07": model.date, ...impact.asof }, changes: [], accounts: model.accounts.map((a, i) => ({ id: a.id, name: a.name, consuming: true,
+            aiu: [868, 820, 850, 760, 732, 780, 695, 642, 665, 590, 562, 585, 510].map((units, week) =>
+                (i + week) % 11 === 0 ? null : units + i * 8),
+            assigned: 182, active_28d: 160, engaged_1d28: 132, arr: a.arr, integrations: [], factors: [], health: "Green",
+            ...impact.accounts[a.id] })),
+        portfolio: { owned: 64, consuming: 64, a7: [110, 120], gross: [200, 210], at_risk: [2, 1], ...impact.portfolio },
+        enterprises: impact.enterprises, cca_opportunities: impact.cca_opportunities,
+    };
+}
+
 export function createWorkspaceHome(home) {
     if (!path.isAbsolute(home)) throw new Error("Provide an absolute synthetic preview directory.");
     if (fs.existsSync(home)) {
@@ -105,14 +127,7 @@ export function createWorkspaceHome(home) {
     writeNewJson(path.join(home, "config.json"), { copilot_home: copilot, owner_name: model.owner });
     writeNewJson(path.join(home, "model.json"), model);
     writeNewJson(path.join(home, "status.json"), { overall: "ok", date: model.date, generated_at: model.generated_at });
-    writeNewJson(path.join(copilot, "model.json"), {
-        data_date: model.date, generated_at: model.generated_at, missing_sources: [], sources: {}, definitions: {},
-        asof: { "07": model.date }, changes: [], accounts: model.accounts.map((a, i) => ({ id: a.id, name: a.name, consuming: true,
-            aiu: [868, 820, 850, 760, 732, 780, 695, 642, 665, 590, 562, 585, 510].map((units, week) =>
-                (i + week) % 11 === 0 ? null : units + i * 8),
-            assigned: 182, active_28d: 160, engaged_1d28: 132, arr: a.arr, integrations: [], factors: [], health: "Green" })),
-        portfolio: { owned: 64, consuming: 64, a7: [110, 120], gross: [200, 210], at_risk: [2, 1] }, enterprises: [],
-    });
+    writeNewJson(path.join(copilot, "model.json"), workspaceCopilotModel(model));
     fs.writeFileSync(path.join(copilot, "dashboard.html"), "<!doctype html><title>Synthetic classic preview</title><h1>Synthetic classic preview</h1><p>No customer data.</p>", { flag: "wx" });
     return model;
 }
