@@ -139,6 +139,17 @@ describe("server.mjs helpers", () => {
         assert.deepEqual(fs.readdirSync(path.dirname(paths.actioned)), ["actioned.json"]);
     });
 
+    test("internal source signals cannot mutate local state", async t => {
+        const home = syntheticHome();
+        t.after(() => removeDir(home));
+        const paths = pulsePaths(home);
+        const model = readJson(paths.model);
+        model.signals = [{ id: "internal", read_only: true }];
+        writeJson(paths.model, model);
+        await assert.rejects(setActionState({ paths, id: "internal", state: "done" }), { code: "action_read_only", status: 403 });
+        assert.equal(fs.existsSync(paths.actioned), false);
+    });
+
     test("setActionState needs a snapshot", async t => {
         const home = tempDir();
         t.after(() => removeDir(home));
@@ -249,7 +260,8 @@ describe("canvas server", () => {
     });
 
     test("serves the four client assets byte for byte with script and style types", async () => {
-        const assets = { "/app.js": "text/javascript", "/model.mjs": "text/javascript", "/views.mjs": "text/javascript", "/style.css": "text/css" };
+        const assets = { "/app.js": "text/javascript", "/model.mjs": "text/javascript", "/views.mjs": "text/javascript", "/style.css": "text/css",
+            "/seller-data.mjs": "text/javascript", "/seller-views.mjs": "text/javascript" };
         for (const [route, type] of Object.entries(assets)) {
             const res = await request(ctx.server, "GET", route);
             assert.equal(res.status, 200, route);

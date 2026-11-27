@@ -48,7 +48,7 @@ const fmt = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 const usd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 const isNumber = value => typeof value === "number" && Number.isFinite(value);
 const number = value => isNumber(value) ? fmt.format(value) : "unknown";
-const money = value => isNumber(value) ? usd.format(value) : "unknown";
+const money = (value, type = "Usage est.") => isNumber(value) ? `${usd.format(value)} [${type}]` : "No data";
 const percent = value => isNumber(value) ? `${Math.round(Math.abs(value) * 100)}%` : "unknown";
 const object = value => value !== null && typeof value === "object" && !Array.isArray(value);
 const users = count => `${number(count)} ${count === 1 ? "user" : "users"}`;
@@ -319,7 +319,7 @@ export function accountPlays(model, account) {
             evidence: linked.length
                 ? [`${money(account.linked_gross_28d)} of 28-day UBB sits on ${linked.length} unowned look-alike account${linked.length === 1 ? "" : "s"} and is excluded from this account's totals.`,
                     "No usage telemetry is attributed to this Salesforce account, so adoption cannot be assessed yet."]
-                : [`Copilot was billed ${money(account.copilot_billed_lcm)} last month, but no usage telemetry is attributed to this Salesforce account.`,
+                : [`Copilot was billed ${money(account.copilot_billed_lcm, "Billed")} last month, but no usage telemetry is attributed to this Salesforce account.`,
                     "Adoption, health and renewal conclusions are unreliable until the mapping is fixed."],
             nextStep: "Ask Sales Ops to correct the enterprise-to-account mapping before assessing adoption.",
             sources: linked.length ? ["02", "12"] : ["02", "03", "07"], affected: null, change: null,
@@ -575,7 +575,7 @@ export function accountPlays(model, account) {
                 dated(model, `${money(account.gross_28d)} of 28-day Copilot UBB with no contracted, Business or Enterprise seats recorded.`, "07"),
                 "The seat and health model covers seat-based deployments only, so this account reports no active users or health rating. That is expected for usage-based consumption, not a data fault.",
                 ...(isNumber(account.ghe_seats) && account.ghe_seats > 0
-                    ? [`${number(account.ghe_seats)} GitHub Enterprise seats${isNumber(account.total_arr) && account.total_arr > 0 ? ` and ${money(account.total_arr)} total GitHub ARR` : ""} indicate the size of the developer base, not a predicted purchase.`]
+                    ? [`${number(account.ghe_seats)} GitHub Enterprise seats${isNumber(account.total_arr) && account.total_arr > 0 ? ` and ${money(account.total_arr, "ARR")} total GitHub ARR` : ""} indicate the size of the developer base, not a predicted purchase.`]
                     : []),
             ],
             nextStep: "Confirm this is deliberate usage-based consumption, then size a licensed plan against the developer base.",
@@ -589,7 +589,7 @@ export function accountPlays(model, account) {
             type: "whitespace", lane: "grow", shortLabel: "no Copilot signal",
             title: "Copilot whitespace",
             evidence: [`No Copilot active users, assigned seats or UBB spend in the 90-day window.`,
-                `${number(account.ghe_seats)} GitHub Enterprise seats${isNumber(account.total_arr) ? ` and ${money(account.total_arr)} total GitHub ARR` : ""} indicate the size of the developer base, not a predicted purchase.`],
+                `${number(account.ghe_seats)} GitHub Enterprise seats${isNumber(account.total_arr) ? ` and ${money(account.total_arr, "ARR")} total GitHub ARR` : ""} indicate the size of the developer base, not a predicted purchase.`],
             nextStep: "Validate developer needs and find a sponsor for a small, measurable pilot.",
             sources: ["02", "03", "06", "07", "12"],
             affected: isNumber(account.ghe_seats) ? account.ghe_seats : null, change: null,

@@ -370,7 +370,7 @@ test("stopped evidence uses whichever prior signal exists, never an invented use
         a7: [null, null, null, null], gross: [0, 25, 25, 25],
     });
     const play = accountPlays(fixture([spendOnly]), spendOnly).find(item => item.type === "stopped");
-    assert.match(play.evidence.join(" "), /\$25 of UBB gross was recorded in the prior seven days/);
+    assert.match(play.evidence.join(" "), /\$25 \[Usage est\.\] of UBB gross was recorded in the prior seven days/);
     assert.doesNotMatch(play.evidence.join(" "), /unknown/);
 
     const dormant = account("Dormant Example", {

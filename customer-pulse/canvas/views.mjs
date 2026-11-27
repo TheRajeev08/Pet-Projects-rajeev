@@ -6,16 +6,20 @@ import {
     copilotLicenses, copilotRowTotals, copilotRowsFor, copilotFilterCounts,
 } from "./model.mjs";
 import { renderRecommendations } from "./recommendations.mjs";
+import { createSellerViews } from "./seller-views.mjs";
+import { bookFeedCoverage } from "./seller-data.mjs";
 
 export const ROW_LIMIT = 50;
-export const VIEW_LABELS = { overview: "Overview", copilot: "Copilot", impact: "Impact", ghe: "GHE", ghas: "GHAS", signals: "Signals", recommendations: "Recommendations", data: "Data" };
+export const VIEW_LABELS = { overview: "Overview", top50: "Top 50", account360: "Account 360", consumption: "Consumption",
+    copilot: "Copilot", impact: "Impact", ghe: "GHE", ghas: "Security", pipeline: "Pipeline & renewals",
+    signals: "Signals", recommendations: "Recommendations", data: "Data" };
 export const VIEW_FAMILY = { copilot: "ghcp", ghe: "ghe", ghas: "ghas" };
 const FAMILY_VIEW = { ghcp: "copilot", ghe: "ghe", ghas: "ghas" };
 const PRODUCT_TITLES = { ghe: "GitHub Enterprise", ghas: "GitHub Advanced Security", ghcp: "GitHub Copilot" };
 const FEED_FAMILIES = { contracts: ["ghe", "ghas", "ghcp"], metered: ["ghe"], volume: ["ghe"], copilot: ["ghcp"], copilot_seats: ["ghcp"], ghas: ["ghas"] };
 const ESC = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
 const MINUS = "\u2212";
-const DASH = "\u2013";
+const DASH = "No data";
 
 export const esc = value => String(value ?? "").replace(/[&<>"']/g, character => ESC[character]);
 const plural = (count, word, many = `${word}s`) => `${count === 1 ? word : many}`;
@@ -35,7 +39,7 @@ export function fmtMoney(value) {
 }
 
 const exactMoney = value => `${value < 0 ? MINUS : ""}$${Math.round(Math.abs(value)).toLocaleString("en-US")}`;
-const money = value => isNumber(value) ? `<span class="num" title="${esc(exactMoney(value))}">${esc(fmtMoney(value))}</span>` : DASH;
+const money = (value, type = "ARR") => isNumber(value) ? `<span class="num" title="${esc(exactMoney(value))} [${esc(type)}]">${esc(fmtMoney(value))} [${esc(type)}]</span>` : DASH;
 
 export function fmtPct(value, digits = 0) {
     return isNumber(value) ? `${(value * 100).toFixed(digits)}%` : DASH;
@@ -214,6 +218,7 @@ function segmentControl(name, value, options, label) {
 }
 
 function actionControls(action) {
+    if (action.read_only) return '<span class="state">Read-only source record</span>';
     if (typeof action.id !== "string" || !action.id) return "";
     const closed = isClosed(action);
     const id = esc(action.id);
@@ -753,10 +758,12 @@ function newSignalsPanel(model, ui) {
 
 function signalSources(model) {
     return `<section class="panel signal-sources" aria-label="Signal sources">${Object.entries(SIGNAL_SOURCES).map(([feed, label]) => {
-        const source = model.sources.find(item => item.feed === `signals_${feed}` || item.feed === feed);
-        const state = source?.state || "not_connected";
-        return `<div><strong>${label}</strong> <span class="state-chip ${esc(state)}">${esc(SOURCE_STATES[state] || state)}</span>`
-            + `${source?.as_of ? `<span class="sub">As of ${esc(fmtDay(source.as_of))}</span>` : ""}`
+        const source = ["gainsight", "support"].includes(feed) ? bookFeedCoverage(model, feed === "gainsight" ? "risks" : "support")
+            : model.sources.find(item => item.feed === `signals_${feed}` || item.feed === feed);
+        const state = source?.state || (["gainsight", "support"].includes(feed) ? "missing" : "not_connected");
+        return `<div><strong>${label}</strong> <span class="state-chip ${esc(state)}">${esc(state === "no_rows" ? "No rows (not zero)" : SOURCE_STATES[state] || state)}</span>`
+            + `<span class="sub">As of ${source?.as_of ? esc(fmtDay(source.as_of)) : "No data"}</span>`
+            + (source?.total != null ? `<span class="sub">${source.reporting}/${source.total} accounts with current data</span>` : "")
             + (source?.messages || []).map(message => `<p class="note">${esc(message)}</p>`).join("") + "</div>";
     }).join("")}</section>`;
 }
@@ -856,8 +863,13 @@ function embedFrame(ui, { name, title, src }) {
 }
 
 export function renderView(model, ui = {}) {
+    const seller = createSellerViews({ esc, fmtInt, fmtMoney, fmtPct, fmtDay, sparkline, table, actionsFor, renderRecommendations });
+    if (ui.view === "top50") return seller.top50(model, ui);
+    if (ui.view === "account360") return seller.account360(model, ui);
+    if (ui.view === "consumption") return seller.consumption(model, ui);
+    if (ui.view === "pipeline") return seller.pipeline(model, ui);
     if (ui.view === "copilot") {
-        if (!ui.subview || ui.subview === "seats") return renderCopilotPortfolio(model, ui);
+        if (!ui.subview || ui.subview === "seats") return renderCopilotPortfolio(model, ui) + seller.copilotExtras(model);
         return copilotHead(model, ui) + embedFrame(ui, { name: "copilot-dashboard", title: "Copilot adoption dashboard",
             src: ui.embedSrc || `copilot/?embed=1${ui.account || ui.copilotAccount ? `&view=${ui.subview}` : ""}#/${ui.account || ui.copilotAccount ? `account/${encodeURIComponent(ui.account || ui.copilotAccount)}` : ui.subview}` });
     }
@@ -865,11 +877,11 @@ export function renderView(model, ui = {}) {
         return '<nav class="copilot-subnav" aria-label="Impact views"><a href="copilot/#/impact" target="_blank" rel="noopener noreferrer">Open Copilot Impact in its own tab</a></nav>'
             + embedFrame(ui, { name: "copilot-impact", title: "Copilot Impact dashboard", src: "copilot/?embed=1#/impact" });
     }
-    if (VIEW_FAMILY[ui.view]) return renderProduct(model, ui, VIEW_FAMILY[ui.view]);
+    if (VIEW_FAMILY[ui.view]) return renderProduct(model, ui, VIEW_FAMILY[ui.view]) + seller.productExtras(model, VIEW_FAMILY[ui.view]);
     if (ui.view === "signals") return renderSignals(model, ui);
     if (ui.view === "recommendations") return renderRecommendations(model.recommendations, { filter: ui.recommendationFilter, query: ui.query, now: ui.now });
-    if (ui.view === "data") return renderData(model);
-    return renderOverview(model, ui);
+    if (ui.view === "data") return renderData(model) + seller.coverage(model);
+    return seller.overview(model) + renderOverview(model, ui);
 }
 
 export function renderUnavailable(error) {
@@ -989,7 +1001,7 @@ function copilotPanel(account, windowDays, row) {
         ["Health", healthInfo.category ? `${health(healthInfo.category)}${scores ? ` <span class="sub">${esc(scores)}</span>` : ""}` : null],
         ["GRR, 30 days", isNumber(healthInfo.grr_30d) ? fmtPct(frac(healthInfo.grr_30d)) : null],
         ["Retention vs 180-day peak", isNumber(healthInfo.retention_180d_hwm) ? `${fmtPct(frac(healthInfo.retention_180d_hwm))}${isNumber(healthInfo.hwm_assigned_180d) ? ` <span class="sub">peak ${fmtInt(healthInfo.hwm_assigned_180d)} assigned</span>` : ""}` : null],
-        ["Billed, last 12 months", isNumber(cp.billed_ltm) ? money(cp.billed_ltm) : null],
+        ["Billed, last 12 months", isNumber(cp.billed_ltm) ? money(cp.billed_ltm, "Billed") : null],
     ]) + (funnelHtml ? `<h4>Usage, 28 days</h4>${funnelHtml}` : "")
         + sparks([["Assigned seats", cp.series?.assigned], ["Users at risk", cp.series?.at_risk], ["Contracted seats", cp.series?.contracted]]);
     return productPanel("GitHub Copilot", hasProduct(account, "ghcp") || row?.flags.source_mismatch, body, "No Copilot on record.");
@@ -1024,7 +1036,7 @@ export function renderDrawer(model, ui = {}) {
     const other = byType(account.products.other?.by_type);
     const flags = Object.entries(FLAG_LABELS).filter(([key]) => account.flags?.[key]).map(([, label]) => `<span class="chip">${esc(label)}</span>`).join("");
     const billing = isObject(account.billing_ltm) ? [["GHEC", account.billing_ltm.ghec], ["GHAS", account.billing_ltm.ghas], ["Copilot", account.billing_ltm.copilot], ["Actions", account.billing_ltm.actions]]
-        .filter(([, value]) => isNumber(value) && value).map(([label, value]) => `${label} ${money(value)}`).join(" · ") : "";
+        .filter(([, value]) => isNumber(value)).map(([label, value]) => `${label} ${money(value, "Billed")}`).join(" · ") : "";
     const support = isObject(account.support) ? [isNumber(account.support.tickets_28d) ? `${fmtInt(account.support.tickets_28d)} tickets in 28 days` : null,
         isNumber(account.support.csat_ltm) ? `CSAT ${account.support.csat_ltm <= 1 ? fmtPct(account.support.csat_ltm) : esc(account.support.csat_ltm)} (12 months)` : null].filter(Boolean).join(" · ") : "";
     const cpPanel = copilotPanel(account, windowDays,
@@ -1032,7 +1044,7 @@ export function renderDrawer(model, ui = {}) {
     return `<div class="backdrop" data-close></div><aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title">`
         + `<header class="drawer-head"><div><h2 id="drawer-title">${esc(account.name || account.id)}</h2>${sub ? `<p class="sub">${sub}</p>` : ""}</div>`
         + `<div class="drawer-tools">${sfdc ? `<a class="button subtle tiny" href="${esc(sfdc)}" target="_blank" rel="noopener noreferrer">Open in Salesforce</a>` : ""}${close}</div></header>`
-        + `<div class="drawer-body"><p><a href="#/copilot/desk/account/${encodeURIComponent(account.id)}" data-copilot-account="${esc(account.id)}">Open in Adoption desk</a></p><dl class="fact-strip">${strip.map(([term, value]) => `<div><dt>${esc(term)}</dt><dd>${value}</dd></div>`).join("")}</dl>`
+        + `<div class="drawer-body"><p><a class="button primary" href="#/account360/summary/account/${encodeURIComponent(account.id)}">Open Account 360</a> <a href="#/copilot/desk/account/${encodeURIComponent(account.id)}" data-copilot-account="${esc(account.id)}">Open in Adoption desk</a></p><dl class="fact-strip">${strip.map(([term, value]) => `<div><dt>${esc(term)}</dt><dd>${value}</dd></div>`).join("")}</dl>`
         + (ui.view === "copilot" ? cpPanel : "")
         + `<section class="drawer-section"><h3>Actions <span class="count-text">${actions.filter(action => !isClosed(action)).length}</span></h3>`
         + `${actions.length ? `<ol class="action-list">${actions.map(action => actionRow(model, action, { showAccount: false, showReasons: true })).join("")}</ol>` : '<p class="empty">No actions for this account.</p>'}</section>`

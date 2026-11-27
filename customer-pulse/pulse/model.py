@@ -4,7 +4,7 @@ import glob
 import os
 import shutil
 
-from . import paths, rules, seats, sources, status
+from . import paths, rules, seats, seller, sources, status
 from .util import atomic_write_json, date_range, iso_now, read_json
 
 SCHEMA = 1
@@ -100,9 +100,9 @@ def _by_type_at(runs, day, fam):
             continue
         for s, e, seats_, arr, skus in lst:
             if s <= day <= e:
-                cur = out.setdefault(pt, {"seats": 0.0, "arr": 0.0, "skus": []})
+                cur = out.setdefault(pt, {"seats": 0.0, "arr": None, "skus": []})
                 cur["seats"] += seats_ or 0.0
-                cur["arr"] += arr or 0.0
+                cur["arr"] = seller.known_sum([cur["arr"], arr])
                 cur["skus"] = sorted(set(cur["skus"]) | set(skus))
                 cur["since"] = s
     return out
@@ -164,8 +164,8 @@ def summarize_account(acct, src, cfg, today, hd):
         billing = "metered"
     adoption = (ubu / ghe_c) if ghe_c and ubu is not None else _frac(a.get("latest_license_adoption_pct"))
     ghe = {
-        "contracted": ghe_c if "p02" in have else None, "as_of": last_c,
-        "arr": sum(v["arr"] for v in by_type.values()) if by_type else None,
+        "contracted": ghe_c if "p02" in have and by_type else None, "as_of": last_c,
+        "arr": seller.known_sum(v["arr"] for v in by_type.values()),
         "by_type": by_type, "billing": billing,
         "metered": metered, "metered_as_of": mdays[-1] if mdays else None,
         "metered_last": _last_reported(src["metered"].get(acct)),
@@ -186,7 +186,7 @@ def summarize_account(acct, src, cfg, today, hd):
     daily[("ghas", "committers")] = gmap
     glast = {r[0]: r for r in grows or []}.get(gdays[-1]) if gdays else None
     ghas = {
-        "contracted": ghas_c if "p02" in have else None, "as_of": last_c,
+        "contracted": ghas_c if "p02" in have and _by_type_at(runs, last_c, "ghas") else None, "as_of": last_c,
         "by_type": _by_type_at(runs, last_c, "ghas"),
         "committers": gmap.get(gdays[-1]) if gdays else None, "committers_as_of": gdays[-1] if gdays else None,
         "code_scanning": glast[2] if glast else None, "secret_scanning": glast[3] if glast else None,
@@ -196,7 +196,7 @@ def summarize_account(acct, src, cfg, today, hd):
         "series": {"contracted": _daily_series(cdays, ghas_tot) if ghas_c or any(ghas_tot.values()) else None,
                    "committers": _daily_series(gdays, gmap) if gmap else None},
     }
-    ghas["arr"] = sum(v["arr"] for v in ghas["by_type"].values()) if ghas["by_type"] else None
+    ghas["arr"] = seller.known_sum(v["arr"] for v in ghas["by_type"].values())
 
     # Copilot
     sdays, hdays = hd["seats"], hd["health"]
@@ -211,7 +211,7 @@ def summarize_account(acct, src, cfg, today, hd):
     daily[("ghcp", "assigned")] = amap
     cp_contracted = (ctot.get(sdays[-1], 0.0) if ctot else 0.0) if sdays and "p04" in have else None
     ghcp = {
-        "contracted": cp_contracted, "contracted_as_of": sdays[-1] if sdays else None,
+        "contracted": cp_contracted if srow else None, "contracted_as_of": sdays[-1] if sdays else None,
         "business": srow[1] if srow else None, "enterprise": srow[2] if srow else None, "standalone": srow[3] if srow else None,
         "assigned": amap.get(hdays[-1]) if hdays else None, "at_risk": rmap.get(hdays[-1]) if hdays else None,
         "as_of": hdays[-1] if hdays else None, "assigned_last": _last_reported(hrows),
@@ -232,7 +232,7 @@ def summarize_account(acct, src, cfg, today, hd):
         "segment": a.get("sales_segment") or a.get("business_segment"),
         "industry": u.get("industry") or a.get("industry"), "country": u.get("country") or a.get("billing_country"),
         "type": u.get("type") or a.get("account_type"),
-        "arr": a.get("latest_total_arr"), "renewal": renewal, "renewing_in_days": renew_days,
+        "arr": a.get("latest_total_arr"), "as_of": a.get("measurement_date"), "renewal": renewal, "renewing_in_days": renew_days,
         "open_renewal_arr": a.get("latest_open_renewal_total_expected_license_arr"),
         "open_pipeline_net_arr": a.get("latest_open_pipeline_license_net_change_in_arr"),
         "in_book": (acct in src["universe"]) if src["universe"] is not None else None,
@@ -243,6 +243,8 @@ def summarize_account(acct, src, cfg, today, hd):
                                          "has_server_orgs", "ghas_enabled")},
         "billing_ltm": {"actions": a.get("latest_actions_billed_dollars_ltm"), "ghas": a.get("latest_ghas_billed_dollars_ltm"),
                         "ghec": a.get("latest_ghec_billed_dollars_ltm"), "copilot": a.get("latest_copilot_billed_dollars_ltm")},
+        "billing_lcm": {"ghsp": a.get("ghsp_billed_dollars_latest_complete_month"),
+                        "ghcs": a.get("ghcs_billed_dollars_latest_complete_month")},
         "support": {"tickets_28d": a.get("created_tickets_past28days"), "csat_ltm": a.get("latest_rounded_avg_support_experience_csat_ltm")},
         "products": {"ghe": ghe, "ghas": ghas, "ghcp": ghcp, "other": {"by_type": other}},
     }
@@ -297,7 +299,7 @@ def build_kpis(accs, dailies, hd, events, actions):
     return {
         "overall": {
             "accounts": len(accs), "with_products": sum(1 for a in accs if a["has_products"]),
-            "arr": sum(a["arr"] or 0 for a in accs),
+            "arr": seller.known_sum(a["arr"] for a in accs),
             "renewing_120": sum(1 for a in accs if a["renewing_in_days"] is not None and 0 <= a["renewing_in_days"] <= 120),
             "actions": {k: sum(1 for x in actions if x["priority"] == k) for k in ("High", "Medium", "Notify")},
             "changes": {k: sum(1 for e in recent if e["priority"] == k) for k in ("High", "Medium", "Notify", "Info")},
@@ -431,6 +433,8 @@ def build(cfg, today=None, run=None):
         signal_feeds = [{"feed": "signals_store", "label": "Signals store", "state": "failed",
                          "as_of": None, "messages": [f"{type(exc).__name__}: {exc}"],
                          "qid": None, "raw_date": None, "via": "local", "held": [], "rows": 0}]
+    seller.enrich(accs, cfg, today)
+    signal_items += seller.internal_signals(accs)
     feeds = status.feed_status(src, today, th) + signal_feeds
     model = {
         "schema": SCHEMA, "generated_at": iso_now(), "date": today, "run": run,

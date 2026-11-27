@@ -214,9 +214,9 @@ class BuildTest(fx.HomeCase):
         self.assertTrue(all(e["text"] for e in self.m["events"]))
 
     def test_actions(self):
-        self.assertEqual(sorted(self.rules("acc1")), ["code_quality_usage", "copilot_penetration", "ghas_low_usage", "ghe_overage"])
-        self.assertEqual(sorted(self.rules("acc2")), ["copilot_penetration", "ghas_whitespace", "renewal_risk"])
-        self.assertEqual(sorted(self.rules("acc4")), ["copilot_at_risk", "copilot_penetration", "ghas_whitespace"])
+        self.assertEqual(sorted(self.rules("acc1")), ["code_quality_usage", "ghas_low_usage", "ghe_overage"])
+        self.assertEqual(sorted(self.rules("acc2")), ["renewal_risk"])
+        self.assertEqual(sorted(self.rules("acc4")), ["copilot_at_risk", "copilot_penetration"])
         self.assertEqual(self.rules("acc3"), {})
         self.assertEqual(self.m["actions"][0]["priority"], "High")
         self.assertTrue(all(a["new"] for a in self.m["actions"]))

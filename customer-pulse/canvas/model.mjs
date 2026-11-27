@@ -4,10 +4,10 @@ export const SCHEMA = 1;
 export const PRIORITIES = ["High", "Medium", "Notify", "Info"];
 const RANK = Object.fromEntries(PRIORITIES.map((priority, index) => [priority, index]));
 export const PRODUCTS = ["ghe", "ghas", "ghcp"];
-export const FAMILY_LABELS = { ghe: "GHE", ghas: "GHAS", ghcp: "Copilot", book: "Book", all: "All products" };
+export const FAMILY_LABELS = { ghe: "GHE", ghas: "Security", ghcp: "Copilot", book: "Book", all: "All products" };
 export const ACTION_STATES = ["done", "dismissed"];
 export const SIGNAL_PRIORITIES = ["High", "Notify", "Info"];
-export const SIGNAL_SOURCES = { gong: "Gong", web: "Web", zoominfo: "ZoomInfo" };
+export const SIGNAL_SOURCES = { gong: "Gong", web: "Web", zoominfo: "ZoomInfo", gainsight: "Gainsight", support: "Support" };
 export const SOURCE_STATES = {
     ok: "Current",
     stale: "Stale",
@@ -15,9 +15,13 @@ export const SOURCE_STATES = {
     failed: "Not refreshed today",
     missing: "No data",
     not_connected: "Not connected",
+    no_rows: "No rows (not zero)",
+    not_authorized: "Not authorized",
+    partial: "Partial",
 };
-export const VIEWS = ["overview", "copilot", "impact", "ghe", "ghas", "signals", "recommendations", "data"];
+export const VIEWS = ["overview", "top50", "account360", "consumption", "copilot", "impact", "ghe", "ghas", "pipeline", "signals", "recommendations", "data"];
 export const COPILOT_VIEWS = ["desk", "accounts", "trends", "changes", "notes"];
+export const ACCOUNT_VIEWS = ["summary", "commercial", "products", "security", "success", "activity"];
 export const TYPE_LABELS = { GHSP: "Secret Protection", GHCS: "Code Security", "Visual Studio": "Visual Studio bundle" };
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -238,9 +242,10 @@ export function seriesChange(series, days) {
     return base ? { delta: lastValue - base[1], since: base[0], value: lastValue, as_of: lastDay } : null;
 }
 
-/** Accounts that could adopt a product: GHE customers without it (or, for GHE, book accounts without GHE). */
+/** Explicitly observed zero contracted seats, not accounts missing a product row. */
 export function whitespace(model, family) {
     return model.accounts.filter(account => account.in_book !== false && !hasProduct(account, family)
+        && account.products?.[family]?.contracted === 0
         && (family === "ghe" || hasProduct(account, "ghe")))
         .sort((a, b) => (b.arr || 0) - (a.arr || 0) || String(a.name).localeCompare(String(b.name)));
 }
@@ -285,7 +290,8 @@ export function clipQuery(text) {
 export function hashFor({ view = "overview", subview = null, account = null, query = "" } = {}) {
     const tab = VIEWS.includes(view) ? view : "overview";
     const search = clipQuery(query);
-    return `#/${tab}${tab === "copilot" && COPILOT_VIEWS.includes(subview) ? `/${subview}` : ""}${account ? `/account/${encodeURIComponent(account)}` : ""}${search ? `?q=${encodeURIComponent(search)}` : ""}`;
+    const sections = tab === "copilot" ? COPILOT_VIEWS : tab === "account360" ? ACCOUNT_VIEWS : [];
+    return `#/${tab}${sections.includes(subview) ? `/${subview}` : ""}${account ? `/account/${encodeURIComponent(account)}` : ""}${search ? `?q=${encodeURIComponent(search)}` : ""}`;
 }
 
 /** Inverse of hashFor. Unknown views fall back to the overview, and malformed parts are dropped. */
@@ -294,7 +300,8 @@ export function parseHash(hash) {
     const mark = raw.indexOf("?");
     const parts = (mark < 0 ? raw : raw.slice(0, mark)).split("/");
     const view = VIEWS.includes(parts[0]) ? parts[0] : "overview";
-    const subview = view === "copilot" && COPILOT_VIEWS.includes(parts[1]) ? parts[1] : null;
+    const sections = view === "copilot" ? COPILOT_VIEWS : view === "account360" ? ACCOUNT_VIEWS : [];
+    const subview = sections.includes(parts[1]) ? parts[1] : null;
     if (subview || (view === "copilot" && parts[1] === "seats")) parts.splice(1, 1);
     let account = null;
     if (parts[1] === "account" && parts.length > 2) {
@@ -406,7 +413,7 @@ export function withActionStates(model, items) {
             return { ...action, state, state_at: state ? entry.at ?? null : null, new: state ? false : action.new };
         }),
         ...(model.signals ? { signals: model.signals.map(signal => {
-            if (!isObject(signal)) return signal;
+            if (!isObject(signal) || signal.read_only) return signal;
             const entry = items[signal.id];
             const status = isObject(entry) && ACTION_STATES.includes(entry.state) ? entry.state : "open";
             return { ...signal, status, state_at: status === "open" ? null : entry.at ?? null,

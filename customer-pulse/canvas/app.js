@@ -49,6 +49,7 @@ const state = {
     showClosed: false,
     signalFilters: { priority: "all", source: "all", status: "open" },
     recommendationFilter: "open",
+    sellerRank: "arr",
     pending: new Set(),
     dismissed: readDismissed(),
     toast: null,
@@ -155,6 +156,7 @@ function uiState() {
         showClosed: state.showClosed,
         signalFilters: state.signalFilters,
         recommendationFilter: state.recommendationFilter,
+        sellerRank: state.sellerRank,
         refresh: state.refresh,
         refreshDismissed: refreshDismissed(),
         build: state.build,
@@ -277,7 +279,7 @@ let opener = null;
 let openingTimer = null;
 
 function renderDrawerHost(ui) {
-    if (!state.model || !state.account || (state.view === "copilot" && state.subview)) {
+    if (!state.model || !state.account || state.view === "account360" || (state.view === "copilot" && state.subview)) {
         if (!drawerOpen) return;
         drawerOpen = false;
         drawerAccount = null;
@@ -682,7 +684,11 @@ document.addEventListener("click", event => {
     } else if (target.hasAttribute("data-filter")) {
         const filter = target.getAttribute("data-filter");
         const value = target.getAttribute("data-value");
-        if (filter === "copilot" && ["all", "attention", "unassigned", "engaged_lt_50", "renewing_90"].includes(value)) {
+        if (filter === "seller-rank" && ["arr", "billed", "renewal"].includes(value)) {
+            state.sellerRank = value;
+            delete state.sort.top50;
+            render();
+        } else if (filter === "copilot" && ["all", "attention", "unassigned", "engaged_lt_50", "renewing_90"].includes(value)) {
             state.copilotFilter = value;
             render();
         } else if (filter === "recommendations" && ["open", "stale", "all"].includes(value)) {

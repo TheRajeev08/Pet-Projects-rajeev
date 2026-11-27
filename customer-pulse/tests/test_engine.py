@@ -279,11 +279,14 @@ class RulesTest(unittest.TestCase):
         self.assertNotIn("renewal_risk", self.rules(account(renewing_in_days=90, ghe={"contracted": 150}), [reverted]))
 
     def test_whitespace_and_penetration(self):
-        got = self.rules(account(ghe={"contracted": 400}, ghcp={"contracted": 50, "assigned": 40}))
+        got = self.rules(account(ghe={"contracted": 400}, ghas={"contracted": 0, "committers": 0}, ghcp={"contracted": 50, "assigned": 40}))
         self.assertEqual(got["ghas_whitespace"]["priority"], "Medium")
         self.assertEqual(got["copilot_penetration"]["title"], "Copilot expansion")
-        got = self.rules(account(ghe={"contracted": 400}))
+        got = self.rules(account(ghe={"contracted": 400}, ghcp={"contracted": 0, "assigned": 0}))
         self.assertEqual(got["copilot_penetration"]["title"], "Copilot whitespace")
+        missing = self.rules(account(ghe={"contracted": 400}, ghas={"contracted": None}, ghcp={"contracted": None}))
+        self.assertNotIn("ghas_whitespace", missing)
+        self.assertNotIn("copilot_penetration", missing)
 
     def test_copilot_risk_and_ghas_usage(self):
         got = self.rules(account(ghcp={"assigned": 50, "at_risk": 20, "health": {"category": "Green"}},

@@ -8,7 +8,7 @@ const escape = value => String(value ?? "").replace(/[&<>"']/g, char =>
 const number = value => numeric(value) ? new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 }).format(value) : "&mdash;";
 const money = value => numeric(value) ? new Intl.NumberFormat("en-US", {
     style: "currency", currency: "USD", maximumFractionDigits: 2,
-}).format(value) : "&mdash;";
+}).format(value) + " [Usage est.]" : "No data";
 const METRICS = ["l7", "p7", "l28", "aiu28", "u7", "up7", "u28"];
 function usable(row) {
     if (!row) return null;

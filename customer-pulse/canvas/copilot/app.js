@@ -24,7 +24,7 @@ const isNumber = value => typeof value === "number" && Number.isFinite(value);
 const H = value => String(value ?? "").replace(/[&<>"']/g, char =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
 const num = value => isNumber(value) ? numberFormat.format(value) : "&mdash;";
-const money = value => isNumber(value) ? moneyFormat.format(value) : "&mdash;";
+const money = (value, type = "Usage est.") => isNumber(value) ? `${moneyFormat.format(value)} [${type}]` : "No data";
 const pct = (value, decimals = 0) => isNumber(value) ? `${(value * 100).toFixed(decimals)}%` : "&mdash;";
 const label = value => value === null || value === undefined || value === "" ? "&mdash;" : H(value);
 const short = value => !isNumber(value) ? "&mdash;" : Math.abs(value) >= 1e6
@@ -151,7 +151,7 @@ function forecastWhitespace(account) {
     const facts17 = [
         ["ws_potential_seats", "Potential seats", num(wsValue("ws_potential_seats"))],
         ["ws_whitespace_seats", "Whitespace seats", num(wsValue("ws_whitespace_seats"))],
-        ["ws_som_annual", "Annual SOM", money(wsValue("ws_som_annual"))],
+        ["ws_som_annual", "Annual SOM", money(wsValue("ws_som_annual"), "Model est.")],
         ["ws_play", "Recommended play", label(value("ws_play", "17"))],
     ];
     const rows = entries => `<dl class="facts">${entries.map(([key, text, rendered]) =>
@@ -756,7 +756,7 @@ function renderImpact() {
         `<div class="inline-note"><strong>Measured per GitHub enterprise, not per Salesforce account.</strong> ` +
         `Impact is reported against an enterprise slug. Where the warehouse supplies a Salesforce mapping it is used and marked ` +
         `confirmed; otherwise the row falls back to a name-derived suggestion you should verify. ROI figures are modelled on an ` +
-        `assumed salary of ${money(p.salary)} and are estimates, not realised savings.</div>` +
+        `assumed salary of ${money(p.salary, "Assumption")} and are estimates, not realised savings.</div>` +
         `<div class="metric-strip">` +
         [["Enterprises reporting", `${num(p.reporting)} of ${num(p.total)}`, "Copilot Impact enabled"],
             ["Engaged developers", num(p.engagedUsers), "Across reporting enterprises"],
@@ -978,7 +978,7 @@ function renderEnterprise() {
             : empty("No cohort mix", "This enterprise reports no monthly cohort breakdown.")) +
         `</div></div></section>` +
         (roiSection ? `<section class="detail-section" id="enterprise-roi"><h2>Cost and ROI</h2>` +
-            `<p class="meta">Modelled on an assumed salary of ${money(roiSection.salary)}. These are the dashboard's estimates, ` +
+            `<p class="meta">Modelled on an assumed salary of ${money(roiSection.salary, "Assumption")}. These are the dashboard's estimates, ` +
             `not realised savings or invoiced amounts.</p>` +
             `<div class="detail-table"><table><thead><tr><th>Group</th><th class="num">AI credits / month</th>` +
             `<th class="num">Cost / dev month</th><th class="num">Share of payroll</th><th class="num">PRs / month</th>` +
@@ -1059,7 +1059,7 @@ function renderAccount() {
     ]);
     const modelRows = (a.models || []).map(row => [H(row.model), money(row.l7), money(row.p7), money(row.l28)]);
     const series = (a.arr_series || []).map(row =>
-        [label(row.date), num(row.seats), num(row.cb), num(row.ce), money(row.total_arr)]);
+        [label(row.date), num(row.seats), num(row.cb), num(row.ce), money(row.total_arr, "ARR")]);
     const editors = hasSources(m, "04") ? Object.entries(a.editors || {})
         .map(([editor, value]) => ({ editor, accepted: value?.accepted ?? null, shown: value?.shown ?? null }))
         .filter(row => isNumber(row.accepted) || isNumber(row.shown))
@@ -1159,10 +1159,10 @@ function renderAccount() {
             ["Contracted Copilot seats", num(dataValue(a, "contracted_seats", "09"))],
             ["Business / Enterprise", `${num(dataValue(a, "cb_seats", "09"))} / ${num(dataValue(a, "ce_seats", "09"))}`],
             ["GHE seats", num(dataValue(a, "ghe_seats", "02"))],
-            ["Total GitHub ARR", money(dataValue(a, "total_arr", "02"))],
+            ["Total GitHub ARR", money(dataValue(a, "total_arr", "02"), "ARR")],
             ["Renewal", dates(dataValue(a, "renewal", "02"))],
-            ["Open pipeline, net", money(dataValue(a, "open_pipeline_net", "02"))],
-            ["Copilot billed last month / last 12m", `${money(dataValue(a, "copilot_billed_lcm", "02"))} / ${money(dataValue(a, "copilot_billed_ltm", "02"))}`],
+            ["Open pipeline, net", money(dataValue(a, "open_pipeline_net", "02"), "ARR")],
+            ["Copilot billed last month / last 12m", `${money(dataValue(a, "copilot_billed_lcm", "02"), "Billed")} / ${money(dataValue(a, "copilot_billed_ltm", "02"), "Billed")}`],
             ["UBB gross MTD / billable MTD", `${money(dataValue(a, "mtd_gross", "07"))} / ${money(dataValue(a, "mtd_billable", "07"))}`],
             ["Projected month-end UBB", money(dataValue(a, "projected_month_spend", "07"))],
             ["Promo / standard pool utilization", `${pct(dataValue(a, "promo_util", "07"))} / ${pct(dataValue(a, "standard_util", "07"))}`],

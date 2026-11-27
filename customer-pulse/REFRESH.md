@@ -78,6 +78,79 @@ it does not feed Pulse signals, actions, digest state, or email.
    - Exit code 1 means the build failed. The previous dashboard is kept and the failure goes into the email, so continue to step 6.
    - Exit code 3 means another run holds the lock. Wait two minutes and retry once.
 
+   **Optional internal seller enrichment, only after rollout approval:** the
+   ordinary refresh above remains valid without this stage. Do not silently
+   enable it in an existing automation. For a private verification, use a private
+   `CP_HOME` and a config whose `copilot_home` also points to a private copy.
+   Never run the email steps as part of an enrichment-only run.
+
+   ```bash
+   CP_HOME=/approved/private/pulse-home python3 customer-pulse/pulse.py seller-plan --group analytics
+   ```
+
+   Run each returned read-only task with its exact tool name/arguments (discover
+   deferred tools first), then:
+
+   ```bash
+   CP_HOME=/approved/private/pulse-home python3 customer-pulse/pulse.py seller-collect --group analytics
+   CP_HOME=/approved/private/pulse-home python3 customer-pulse/pulse.py seller-plan --group activity
+   ```
+
+   Run the returned Revenue tasks. Contact SOQL uses the existing Salesforce CLI
+   login during collection; use the exact planned Revenue SOQL only if CLI is
+   unavailable. Collect activity, including the authoritative enterprise namespace
+   mapping, then plan budgets:
+
+   ```bash
+   CP_HOME=/approved/private/pulse-home python3 customer-pulse/pulse.py seller-collect --group activity
+   CP_HOME=/approved/private/pulse-home python3 customer-pulse/pulse.py seller-plan --group budgets
+   ```
+
+   Run the returned read-only `get_budgets` calls, then:
+
+   ```bash
+   CP_HOME=/approved/private/pulse-home python3 customer-pulse/pulse.py seller-collect --group budgets
+   CP_HOME=/approved/private/pulse-home python3 customer-pulse/pulse.py seller-plan --group mail
+   ```
+
+   Run the planned WorkIQ `fetch` reads, never `do_action` or a write tool, then:
+
+   ```bash
+   CP_HOME=/approved/private/pulse-home python3 customer-pulse/pulse.py seller-collect --group mail
+   CP_HOME=/approved/private/pulse-home python3 customer-pulse/pulse.py build --no-prune
+   ```
+
+   Analytics cover all owned accounts in batches of 20. Activity refreshes ten owned
+   accounts a day, least-recently attempted first: eight slots for the ARR-ranked top
+   fifty (ties by name then ID; missing ARR ranks last) and two for the rest of the book
+   (ordered by Salesforce ID, so ARR changes cannot starve them). With stable
+   membership, the first pass covers the top fifty within 7 days and the remaining N
+   accounts within ceil(N/2) days; the plan's `rotation` block reports both cycles and
+   how many accounts were never attempted. If the book has 50 or fewer accounts, all
+   ten slots go to it. Budgets and mail reuse the same day's activity cohort, so plan
+   activity first. Each account/source shows its own collection date in Account 360 and
+   on the Data tab; older evidence turns Stale rather than looking current. `--account <owned
+   Salesforce ID>` targets one account explicitly.
+   Use the same current session for planning, executing and collecting. Plans
+   expire after 24 hours. Query edits, response caps, unrecognized shapes and
+   out-of-scope rows are rejected; never edit a plan to bless an earlier result.
+   Source dates remain distinct from collection dates.
+
+   For unavailable or unauthorized tasks, pass
+   `--source-status <task-id>=not_connected` or `=not_authorized` to the relevant
+   `seller-collect`. Other supported failure states are `failed`, `partial`,
+   and `stale`. Report returned missing/error counts; do not hide them by
+   fabricating empty successes. Previous rows are retained and visibly excluded
+   from current totals. Page/row caps require a narrower approved collection
+   scope, not an assertion of full coverage. No known contact emails means no
+   Outlook search; the planner never substitutes a broad company-name search.
+   Mail uses only contacts from a fresh successful Contact read. Outlook calendar
+   is not read; meeting recency comes from account-scoped Gong calls.
+
+   Keep source results private. Report only generic readiness/counts when handing
+   off code changes. These steps do not authorize a live extension reload,
+   publication, schedule modification, CRM update or digest send.
+
 6. **Write the email**
    ```bash
    python3 customer-pulse/pulse.py digest

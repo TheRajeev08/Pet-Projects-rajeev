@@ -84,7 +84,7 @@ test("Portfolio and drawer escape data, preserve nulls, show source disagreement
     assert.doesNotMatch(html, /Example <A>/);
     assert.match(html, /Pulse 0 \/ dashboard 5/);
     assert.match(html, /2 of 3 reporting/);
-    assert.match(html, /<td class="num col-active28"[^>]*><span title="[^"]*">–/);
+    assert.match(html, /<td class="num col-active28"[^>]*><span title="[^"]*">No data/);
     assert.match(html, /aria-sort="ascending"/);
     assert.equal((html.match(/<tr tabindex="0"/g) || []).length, 3);
     assert.ok(html.indexOf("Customers") < html.indexOf('id="h-actions-copilot"'));
