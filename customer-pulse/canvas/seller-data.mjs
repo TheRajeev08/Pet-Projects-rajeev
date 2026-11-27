@@ -267,8 +267,9 @@ function customerBillingEvidence(account, product, month) {
     return mode && { mode, evidence: [...metered, ...volume] };
 }
 // Recurring Copilot revenue without a Copilot seat invoice in the 13-month window. This is not a volume proxy.
+// A no_rows invoice feed is a successful collection with zero invoices; stale, partial, failed or missing feeds are not.
 function copilotMrrWithoutInvoice(account, today) {
-    if (feedOf(account, "invoices").state !== "ok") return null;
+    if (!["ok", "no_rows"].includes(feedOf(account, "invoices").state)) return null;
     const mrr = latestMrr(account);
     if (!mrr || !COPILOT_MRR.some(key => positive(mrr.value(key)))) return null;
     const window = new Set(Array.from({ length: 13 }, (_, i) => monthOffset(today, i - 13)));

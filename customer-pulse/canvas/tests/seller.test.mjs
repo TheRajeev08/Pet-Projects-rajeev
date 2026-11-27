@@ -101,10 +101,18 @@ function liveBillingModel() {
         account("not-current", [row("ghcs", 30, "Zuora", "2026-10-01"), row("ghcs", 4, "Zuora", "2026-08-01")]),
         account("code-quality", [row("GitHub Code Quality", 7, "Zuora")]),
         account("outside", [row("ghcs", 900, "azure")], { ghe_license_mrr: 900, copilot_business_mrr: 900 }, { in_book: false }),
+        account("copilot-mrr-no-rows", [], { copilot_business_mrr: 50 }),
+        account("copilot-mrr-invoices-stale", [], { copilot_business_mrr: 60 }),
+        account("copilot-mrr-invoices-partial", [], { copilot_enterprise_mrr: 70 }),
         account("stale", [row("ghcs", 700, "Zuora")], { ghcs_license_mrr: 500, copilot_business_mrr: 9 }),
     ] };
-    model.accounts.at(-1).seller.feeds.invoices.state = "partial";
-    model.accounts.at(-1).seller.feeds.mrr.state = "stale";
+    const byId = id => model.accounts.find(a => a.id === id).seller.feeds;
+    // Live: accounts with Copilot MRR and no invoices have a successful collection with zero invoice rows.
+    Object.assign(byId("copilot-mrr-no-rows").invoices, { state: "no_rows", records: [] });
+    byId("copilot-mrr-invoices-stale").invoices.state = "stale";
+    byId("copilot-mrr-invoices-partial").invoices.state = "partial";
+    byId("stale").invoices.state = "partial";
+    byId("stale").mrr.state = "stale";
     return model;
 }
 
@@ -120,7 +128,7 @@ test("billing channels count as metered and volume comes only from license MRR o
     assert.deepEqual(ids("code_quality"), { metered: ["code-quality"], volume: null, both: null });
     assert.deepEqual(ids("copilot"), { metered: ["metered-channels"], volume: null, both: null });
     assert.equal(sku("copilot").volumeAvailable, false);
-    assert.deepEqual(sku("copilot").mrrOnly.map(a => a.id), ["copilot-mrr-only"]);
+    assert.deepEqual(sku("copilot").mrrOnly.map(a => a.id), ["copilot-mrr-only", "copilot-mrr-no-rows"]);
     assert.equal(sku("ghec").mrrOnly, null);
     assert.deepEqual(sku("ghec").details.find(d => d.account.id === "ghe-mixed").evidence.map(e => [e.label, e.date]),
         [["Consumption invoice", "2026-09"], ["License MRR", "2026-10"]]);
@@ -144,7 +152,8 @@ test("preview fixture uses live billing vocabulary and still reports GHE volume"
     assert.ok(byProduct.ghec.modes.both.some(a => a.id === "synthetic-2"));
     assert.ok(byProduct.ghas.modes.volume.length > 0);
     assert.equal(byProduct.copilot.modes.volume, null);
-    assert.ok(byProduct.copilot.mrrOnly.length > 0);
+    assert.ok(byProduct.copilot.mrrOnly.some(a => a.id === "synthetic-58" && a.seller.feeds.invoices.state === "no_rows"));
+    assert.ok(!byProduct.copilot.mrrOnly.some(a => a.id === "synthetic-49"));
     assert.deepEqual(byProduct.ghcs.modes.volume, []);
 });
 
@@ -152,17 +161,22 @@ test("product pages render evidence dates, Not available volume and the Copilot 
     const model = liveBillingModel();
     const page = (view, key) => renderView(model, { view, sellerOptions: { [`${view}Product`]: key } });
     const ghe = page("ghe", "ghec");
-    assert.match(ghe, /<dt>Volume<\/dt><dd>2<\/dd>/);
+    assert.match(ghe, /<dt>Volume · GHE licensing \(family-level\)<\/dt><dd>2<\/dd>/);
+    assert.match(ghe, /Volume rests on family-level GHE licensing \(license MRR or contract model\), which may include GHE Server/);
+    assert.match(ghe, /<th scope="row">Volume · GHE licensing \(family-level\)<\/th>/);
     assert.match(ghe, /<dt>Both<\/dt><dd>1<\/dd>/);
     assert.match(ghe, /Recurring revenue <strong>2026-10<\/strong> <span class="sub">current month<\/span>/);
     assert.match(ghe, /Consumption invoices <strong>2026-09<\/strong> <span class="sub">last closed month<\/span>/);
     assert.doesNotMatch(ghe, /Recurring revenue <strong>[^<]*<\/strong> <span class="sub">last closed month/);
     const copilot = page("copilot", "copilot");
     assert.match(copilot, /<dt>Volume<\/dt><dd><span class="none"[^>]*>Not available<\/span><\/dd>/);
-    assert.match(copilot, /<dt>Copilot MRR, no Copilot invoice in 13 months<\/dt><dd>1<\/dd>/);
+    assert.match(copilot, /<dt>Copilot MRR, no Copilot invoice in 13 months<\/dt><dd>2<\/dd>/);
+    assert.match(copilot, /<dt>Volume<\/dt>/);
+    assert.doesNotMatch(copilot, /GHE licensing \(family-level\)|Volume rests on/);
     assert.match(copilot, /<h3>Copilot metered consumption billed<\/h3>/);
     const all = renderView(model, { view: "consumption" });
-    assert.match(all, /Copilot: 1 accounts have Copilot MRR but no Copilot invoice in 13 months. Not counted as volume./);
+    assert.match(all, /Copilot: 2 accounts have Copilot MRR but no Copilot invoice in 13 months. Not counted as volume./);
+    assert.match(all, /<td data-label="Volume">2 <span class="qualifier">GHE licensing \(family-level\)<\/span><\/td>/);
     assert.doesNotMatch(all, /Unclassified/);
 });
 

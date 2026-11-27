@@ -67,7 +67,8 @@ export function workspaceModel() {
                     emails: feed([{ id: `email-${i}`, date: "2026-11-24", title: "Synthetic enablement follow-up",
                         people: [{ email: people[0].email }], thread: `thread-${i}` }]),
                     gong: feed([call]),
-                    issues: feed([issue]), invoices: feed(invoices), mrr: feed(mrr, mrr.length ? "ok" : "no_rows"), tech_stack: feed([claim, { ...claim, technology: "CircleCI",
+                    // Live: an MRR-only account's invoice collection succeeds with zero rows (no_rows); a stale feed never counts.
+                    issues: feed([issue]), invoices: i === 58 ? feed([], "no_rows") : feed(invoices, i === 49 ? "stale" : "ok"), mrr: feed(mrr, mrr.length ? "ok" : "no_rows"), tech_stack: feed([claim, { ...claim, technology: "CircleCI",
                         usage_status: "evaluating", source_type: "gong", source_id: call.id, source_url: call.url,
                         observed_at: call.date, evidence_quote: call.description }], "partial"),
                     support: feed([], "no_rows"), risks: feed([], "no_rows"),
