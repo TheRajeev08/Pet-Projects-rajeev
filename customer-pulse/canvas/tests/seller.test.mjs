@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ACCOUNT_VIEWS, hashFor, parseHash, withActionStates } from "../model.mjs";
+import { ACCOUNT_VIEWS, copilotLicenses, hashFor, parseHash, withActionStates } from "../model.mjs";
 import { renderView, renderNav } from "../views.mjs";
 import { activitySummary, billedLtm, billedSeries, bookConsumption, currentRows, dedupeSignals, knownSum,
     bookFeedCoverage, monthlyChange, observedCount, openRows, productRows, rankAccounts,
     allAccounts, contactDirectory, contactCount, portfolioSeries, renewalBuckets, stackGroups, openSeCount } from "../seller-data.mjs";
 import { syntheticAccount, syntheticModel } from "./helpers.mjs";
-import { workspaceModel } from "./workspace-fixture.mjs";
+import { workspaceCopilotModel, workspaceModel } from "./workspace-fixture.mjs";
 
 const feed = records => ({ state: "ok", as_of: "2026-10-27", collected_at: "2026-10-27", records });
 test("preview evidence quotes, dates and links refer to the matching synthetic source", () => {
@@ -223,7 +223,58 @@ test("SE counts do not classify every account-linked record as engineering evide
     assert.equal(openSeCount(a), null);
 });
 
-test("all six Account 360 routes round-trip and render without changing the model", () => {
+test("Account 360 Summary and Copilot show dated readings and outcomes for the selected ID only", () => {
+    const model = workspaceModel(), dashboard = workspaceCopilotModel(model);
+    const [a, b] = model.accounts;
+    b.name = a.name;
+    const e = dashboard.enterprises[0];
+    dashboard.enterprises.push({ ...e, enterprise_id: "unconfirmed-enterprise", slug: "name-match-only",
+        match: { confidence: "single", source: "name", candidates: [{ id: a.id }] } });
+    dashboard.stale_sources["08"] = "2026-11-21";
+    dashboard.accounts[0].integrations.push({ surface: "IDE chat", aiu28: 0, l28: 2 }); // legacy normalized zero, unknown
+    const ui = { view: "account360", account: a.id, copilotLicenses: copilotLicenses(model, dashboard) };
+    const summary = renderView(model, ui);
+    assert.match(summary, /Copilot adoption[\s\S]*Assigned seats<\/dt><dd>182[\s\S]*Active users · 28 days<\/dt><dd>160[\s\S]*Engaged users · 28 days<\/dt><dd>132/);
+    assert.match(summary, /120<\/dd>.*\+11 users WoW · q03 · Through Nov 26, 2026/);
+    assert.match(summary, /href="#\/account360\/copilot\/account\/synthetic-0"/);
+    assert.match(summary, /href="#\/copilot\/desk\/account\/synthetic-0"/);
+    const detail = renderView(model, { ...ui, subview: "copilot" });
+    assert.match(detail, /Synthetic model A<\/th><td[^>]*>351<\/td><td[^>]*>75\.0%/);
+    assert.match(detail, /IDE chat<\/th><td[^>]*><span class="none">Not available<\/span><\/td><td[^>]*>288/);
+    assert.match(detail, /Carried from Nov 21, 2026/);
+    assert.match(detail, /PRs merged: 274 · 28-day cohort/);
+    assert.match(detail, /Coding agent: Disabled by policy/);
+    assert.match(detail, /Coding agent opportunities/);
+    assert.doesNotMatch(detail, /name-match-only/);
+    const switched = renderView(model, { ...ui, account: b.id, subview: "copilot" });
+    assert.match(switched, /Active users · 7 days<\/dt><dd>0<\/dd>.*WoW not available/);
+    assert.match(switched, /Not available: no reported model rows/);
+    assert.doesNotMatch(switched, /Synthetic model A|PRs merged: 274|name-match-only/);
+});
+
+test("missing dashboard, unmatched IDs, and unavailable sources never turn into usage or a broken drill-down", () => {
+    const model = syntheticModel(), a = model.accounts[0];
+    const ui = { view: "account360", subview: "copilot", account: a.id };
+    const offline = renderView(model, { ...ui, copilotLicenses: copilotLicenses(model) });
+    assert.match(offline, /Showing Pulse figures only/);
+    assert.match(offline, /Active users · 28 days<\/dt><dd>4/);
+    assert.doesNotMatch(offline, /Open in Adoption desk/);
+    const dashboard = { sources: { "03": {}, "07": {}, "11": {}, "02": {} }, asof: { "02": "2026-10-20" },
+        missing_sources: ["03", "11"], accounts: [{ id: a.id, a7: [2, 1], gross: [52], models: [{ model: "unavailable-model", l28: 50 }],
+            c360_assigned: 0, c360_active_1d28: 38, engaged_1d28: 27 }] };
+    a.products.ghcp = {};
+    const snap = { ...ui, copilotLicenses: copilotLicenses(model, dashboard) };
+    const detail = renderView(model, snap);
+    assert.match(detail, /Assigned seats<\/dt><dd>0<\/dd>.*q02 · Through Oct 20, 2026/);
+    assert.match(detail, /Active users · 28 days<\/dt><dd>38/);
+    assert.match(detail, /Gross usage value: not available for a dated window/);
+    assert.doesNotMatch(detail, /unavailable-model|\+1 users WoW/);
+    const unmatched = renderView(model, { ...snap, account: model.accounts[1].id });
+    assert.match(unmatched, /No matching Salesforce ID/);
+    assert.doesNotMatch(unmatched, /Open in Adoption desk|Active users · 28 days<\/dt><dd>38/);
+});
+
+test("all Account 360 routes round-trip and render without changing the model", () => {
     const model = fixture(), before = structuredClone(model);
     for (const subview of ACCOUNT_VIEWS) {
         const route = { view: "account360", subview, account: model.accounts[0].id, query: "Synthetic" };

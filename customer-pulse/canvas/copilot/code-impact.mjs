@@ -433,13 +433,14 @@ function aiuCard(impact, features, { level, id, scope, asofId, source, emptyText
 }
 
 // ---------------------------------------------------------------- opportunities
-function opportunitiesCard(impact, { level, accountId = null, accountLink, limit = 10 }) {
+function opportunitiesCard(impact, { level, accountId = null, accountLink, limit = 10, showCoverage = false }) {
     const g = gate(impact, "21", "Coding agent opportunity scores");
-    if (g.blocked) return accountId ? "" : card(level, "Coding agent opportunities", g.blocked, { wide: true });
+    if (g.blocked) return accountId && !showCoverage ? "" : card(level, "Coding agent opportunities", g.blocked, { wide: true });
     const o = impact.opportunities;
     const expansion = (o?.expansion || []).filter(e => !accountId || e.sf_id === accountId);
     const newLogo = (o?.new_logo || []).filter(e => !accountId || e.sf_id === accountId);
-    if (accountId && !expansion.length && !newLogo.length) return "";
+    if (accountId && !expansion.length && !newLogo.length) return showCoverage
+        ? card(level, "Coding agent opportunities", g.stale + note("No opportunity row for this account."), { wide: true, source: sourceLine(impact, "21") }) : "";
     const link = e => accountLink(e.sf_id, e.account || e.sf_id || "Unlinked owner");
     const bandCounts = Object.keys(BANDS).map(letter => [letter, expansion.filter(e => e.band_letter === letter).length]);
     const top = rows => rows.slice(0, accountId ? rows.length : limit);
@@ -518,7 +519,7 @@ export function codeImpactEnterpriseHtml(impact, enterprise, { level = 2 } = {})
         + "</div>";
 }
 
-export function codeImpactAccountHtml(impact, accountId, { level = 2, accountLink = plainLink, title = true } = {}) {
+export function codeImpactAccountHtml(impact, accountId, { level = 2, accountLink = plainLink, title = true, showCoverage = false } = {}) {
     if (!impact) return "";
     const account = impact.accounts?.[accountId] ?? null;
     const aiu = account ? account.aiu_by_feature : impact.sources?.["22"]?.state === "collected" ? {} : null;
@@ -526,7 +527,7 @@ export function codeImpactAccountHtml(impact, accountId, { level = 2, accountLin
         + `<div class="ci-grid">${ccrAccountCard(impact, account, level + 1)}${ccaAccountCard(impact, account, level + 1)}</div>`
         + aiuCard(impact, aiu, { level: level + 1, id: "22", asofId: "22", scope: "This Salesforce account",
             emptyText: "No feature usage reported in the 13-week window." })
-        + opportunitiesCard(impact, { level: level + 1, accountId, accountLink }) + "</div>";
+        + opportunitiesCard(impact, { level: level + 1, accountId, accountLink, showCoverage }) + "</div>";
 }
 
 /** A compact strip for drawers: the latest headline per source, with the reason when it is not reported. */

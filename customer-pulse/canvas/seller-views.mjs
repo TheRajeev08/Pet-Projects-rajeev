@@ -4,7 +4,8 @@ import {
     portfolioSeries, rankAccounts, renewalBuckets, renewalRisk, rowsOf, stackGroups, STACK_STATUS, usageTrend, openSeCount,
 } from "./seller-data.mjs";
 import { codeImpactAccountHtml, impactApplies } from "./copilot/code-impact.mjs";
-import { hasProduct, seriesPoints } from "./model.mjs";
+import { ENABLEMENT_LABELS } from "./copilot/impact.mjs";
+import { SOURCE_STATES, addDays, hasProduct, isDay, isNumber, seriesPoints } from "./model.mjs";
 import { chartPaths } from "./chart-paths.mjs";
 
 export function createSellerViews({ esc, fmtInt, fmtMoney, fmtPct, fmtDay, sparkline, table, actionsFor, renderRecommendations,
@@ -64,7 +65,8 @@ export function createSellerViews({ esc, fmtInt, fmtMoney, fmtPct, fmtDay, spark
     const exact = value => value == null ? noData : esc(value.toLocaleString("en-US", { maximumFractionDigits: 6 }));
     const compactMoney = (value, kind = "ARR") => value == null ? noData
         : `<span class="num" aria-label="${esc(value.toLocaleString("en-US"))} USD ${esc(kind)}">${esc(fmtMoney(value))}</span>`;
-    const health = a => `<span class="health ${["Red", "Yellow", "Green"].includes(a.products?.ghcp?.health?.category) ? a.products.ghcp.health.category : ""}">${text(a.products?.ghcp?.health?.category)}</span>`;
+    const healthBadge = category => `<span class="health ${["Red", "Yellow", "Green"].includes(category) ? category : ""}">${text(category)}</span>`;
+    const health = a => healthBadge(a.products?.ghcp?.health?.category);
     const disclosure = (label, body, meta = "") => `<details class="panel"><summary>${esc(label)}</summary>${meta}${body}</details>`;
     function select(ui, key, label, options, fallback = options[0]?.[0]) {
         const value = options.some(([k]) => k === ui.sellerOptions?.[key]) ? ui.sellerOptions[key] : fallback;
@@ -327,21 +329,85 @@ export function createSellerViews({ esc, fmtInt, fmtMoney, fmtPct, fmtDay, spark
                 .map(s => [link(s.url, s.title), text(s.source), date(s.date)])), `<p class="seller-source">Evidence-backed signals · ${date(model.date)}</p>`)
             ;
     }
-    function codeImpact(a, ui) {
+    function codeImpact(a, ui, showCoverage = false) {
         if (ui.copilotLicensesLoading) return panel("Copilot code review, coding agent & AI units", '<p class="seller-source" role="status">Loading Copilot outcome metrics…</p>');
         const impact = ui.copilotLicenses?.impact;
-        if (!impact || !(hasProduct(a, "ghcp") || impactApplies(impact, a.id))) return "";
+        if (!impact || !(showCoverage || hasProduct(a, "ghcp") || impactApplies(impact, a.id))) return "";
         return `<section class="panel seller-panel copilot-impact"><div class="panel-head"><h2>Copilot code review, coding agent &amp; AI units</h2></div>`
-            + codeImpactAccountHtml(impact, a.id, { level: 3, title: false }) + "</section>";
+            + codeImpactAccountHtml(impact, a.id, { level: 3, title: false, showCoverage }) + "</section>";
+    }
+    function copilotSource(sources, id) {
+        const s = sources?.[id];
+        if (!s || ["missing", "absent"].includes(s.state)) return `q${id} · Not available`;
+        return `q${id} · ${s.cutoff ? `Through ${date(s.cutoff)}` : `Cutoff not reported${s.collected ? ` · Collected ${date(s.collected)}` : ""}`}`
+            + (s.state === "stale" ? ` · Carried from ${date(s.from)}` : "");
+    }
+    function accountCopilot(a, model, ui, detail = false) {
+        const cp = a.products.ghcp, metricsData = ui.copilotLicenses?.accountMetrics;
+        const reading = metricsData && Object.hasOwn(metricsData.readings, a.id) ? metricsData.readings[a.id] : null;
+        const sources = metricsData?.sources;
+        const unavailable = '<span class="none">Not available</span>';
+        const asOf = day => dayOf(day) ? date(day) : "Date not reported";
+        const pulse = (feed, day) => {
+            const state = model.sources.find(s => s.feed === feed)?.state;
+            return `Pulse · ${asOf(day)}${state && state !== "ok" ? ` · ${esc(SOURCE_STATES[state] || state)}` : ""}`;
+        };
+        const origin = q => copilotSource(sources, q);
+        const pick = (label, ...choices) => {
+            const [value, source] = choices.find(([n]) => isNumber(n)) || [null, choices[0][1]];
+            return [label, value === null ? unavailable : integer(value), source];
+        };
+        const [week, prior] = reading?.weekly || [];
+        const change = isNumber(week) && isNumber(prior) ? week - prior : null;
+        const encoded = encodeURIComponent(a.id);
+        const status = ui.copilotLicensesLoading ? "Loading Copilot dashboard metrics…"
+            : ui.copilotLicensesError || (!metricsData ? ui.copilotLicenses?.note || "Copilot dashboard not available. Showing Pulse readings only."
+                : !reading ? "No matching Salesforce ID in the Copilot dashboard. Showing Pulse readings only." : null);
+        const healthValue = cp.health?.category ?? reading?.health;
+        const summary = panel("Copilot adoption", metrics([
+            pick("Assigned seats", [cp.assigned, pulse("copilot", cp.as_of)], [reading?.assigned, origin("06")], [reading?.snapshotAssigned, origin("02")]),
+            pick("Active users · 28 days", [cp.funnel?.active_1d28, pulse("attributes", a.as_of)], [reading?.active28, origin("03")], [reading?.snapshotActive, origin("02")]),
+            pick("Engaged users · 28 days", [cp.funnel?.engaged_1d28, pulse("attributes", a.as_of)], [reading?.engaged28, origin("02")]),
+            ["Active users · 7 days", isNumber(week) ? integer(week) : unavailable,
+                `${change === null ? "WoW not available" : `${change > 0 ? "+" : ""}${integer(change)} ${Math.abs(change) === 1 ? "user" : "users"} WoW`} · ${origin("03")}`],
+        ]) + `<p class="seller-source">Seats under contract: <strong>${isNumber(cp.contracted) ? integer(cp.contracted) : unavailable}</strong> · ${pulse("copilot_seats", cp.contracted_as_of)}`
+            + ` &nbsp; | &nbsp; Copilot health: ${healthValue ? healthBadge(healthValue) : unavailable} · ${cp.health?.category ? pulse("copilot", cp.health.date) : origin("06")}</p>`
+            + (status ? `<p class="seller-source" role="status">${esc(status)}</p>` : "")
+            + `<div class="workspace-toolbar">${detail ? "" : `<a class="button" href="#/account360/copilot/account/${encoded}">View Copilot metrics</a>`}`
+            + (reading ? `<a href="#/copilot/desk/account/${encoded}">Open in Adoption desk</a>` : "") + "</div>");
+        if (!detail || !reading) return summary;
+        const cutoff = sources["07"].cutoff;
+        const trend = (key, title, units) => isDay(cutoff) && reading[key].some(isNumber)
+            ? lineChart({ points: Array.from({ length: 13 }, (_, i) => [addDays(cutoff, -7 * (12 - i)), reading[key][12 - i] ?? null]) },
+                title, units, "Week ending") : `<p class="empty">${esc(title)}: not available for a dated window.</p>`;
+        const value = n => isNumber(n) ? exact(n) : unavailable;
+        const usage = panel("Weekly Copilot consumption", `<div class="workspace-columns"><div>${trend("aiu", "AI units consumed", "AI units")}</div>`
+            + `<div>${trend("gross", "Gross usage value", "Usage est. USD")}</div></div>`,
+        `<p class="seller-source">13 seven-day windows · ${origin("07")}. Gross usage value is before credits, not an invoice.</p>`);
+        const total = reading.models.every(r => isNumber(r.gross)) ? knownSum(reading.models.map(r => r.gross)) : null;
+        const mix = `<div class="workspace-columns">${panel("Surface usage · 28 days", simpleTable(["Metered surface", "AI units", "Gross USD"],
+            reading.surfaces.map(r => [text(r.name), value(r.aiu), value(r.gross)]), "Not available: no reported surface rows."),
+        `<p class="seller-source">${origin("08")}. Metered activity only; an unlisted surface is unknown.</p>`)}`
+            + panel("Model mix · 28 days", simpleTable(["Model", "Gross USD", "Share of value"],
+                reading.models.map(r => [text(r.name), value(r.gross), total > 0 ? percent(r.gross / total) : unavailable]), "Not available: no reported model rows."),
+            `<p class="seller-source">${origin("11")}. Share of reported positive usage value, not requests.</p>`) + "</div>";
+        const enterprise = panel("Enterprise impact & settings", simpleTable(["Confirmed enterprise", "Impact", "Feature settings"], reading.enterprises.map(e => {
+            const policies = Object.entries(e.policies || {});
+            return [text(e.slug), `${text(e.state)} · ${asOf(e.impactDate)}<br>PRs merged: ${value(e.merged)}`
+                + (isNumber(e.cohortDays) ? ` · ${integer(e.cohortDays)}-day cohort` : ""),
+            policies.length ? `${policies.map(([name, policy]) => `${esc(name)}: ${esc(ENABLEMENT_LABELS[policy] || "Unknown")}`).join("<br>")}<br>Collected ${asOf(e.settingsDate)}` : unavailable];
+        }), "Not available: no confirmed warehouse-linked enterprise with mapping coverage."),
+        `<p class="seller-source">Shown per enterprise, never added across slugs. Mapping: ${origin("13")} / ${origin("15")}.</p>`);
+        return summary + usage + mix + enterprise + codeImpact(a, ui, true);
     }
     function account360(model, ui) {
         const a = model.accounts.find(a => a.id === ui.account);
         if (!a) return top50(model, ui, true);
         const tab = ACCOUNT_TABS.includes(ui.subview) ? ui.subview : "summary";
         const content = tab === "commercial" ? commercial(a, model) : tab === "products" ? accountTrend(a, model, ui) + productTable(a, model) + codeImpact(a, ui) + disclosure("Invoice quantities, runners & model costs", consumptionDetails(a, model))
-            : tab === "security" ? security(a) : tab === "success" ? success(a) : tab === "activity" ? activity(a, model, ui)
+            : tab === "copilot" ? accountCopilot(a, model, ui, true) : tab === "security" ? security(a) : tab === "success" ? success(a) : tab === "activity" ? activity(a, model, ui)
                 : tab === "contacts" ? contacts(a, ui) : tab === "stack" ? stack(a)
-                    : `<div class="workspace-columns">${accountTrend(a, model, ui)}${whyNow(a, model)}</div>`
+                    : accountCopilot(a, model, ui) + `<div class="workspace-columns">${accountTrend(a, model, ui)}${whyNow(a, model)}</div>`
                         + `<div class="workspace-columns">${contacts(a, ui, true)}${stack(a, true)}</div>`
                         + panel("Recent engagement", simpleTable(["Source", "Last observed", "Open SE issues"],
                             [["Email", date(activitySummary(a).lastEmail), integer(openSeCount(a))],
@@ -352,7 +418,8 @@ export function createSellerViews({ esc, fmtInt, fmtMoney, fmtPct, fmtDay, spark
             + `<label class="workspace-select">Switch account<select data-account-switch data-focus-key="account-switch">${allAccounts(model).map(r =>
                 `<option value="${esc(r.id)}"${r.id === a.id ? " selected" : ""}>${esc(r.name || r.id)}</option>`).join("")}</select></label></div>`
             + header(a.name || a.id, `Account 360 / ${ACCOUNT_LABELS[tab]}`)
-            + `<div class="account-identity">${link(a.sfdc_url, "Salesforce account")}${a.parent ? ` · ${esc(a.parent)}` : ""} · Copilot health ${health(a)} · Snapshot ${date(a.as_of)}</div>`
+            + `<div class="account-identity">${link(a.sfdc_url, "Salesforce account")}${a.parent ? ` · ${esc(a.parent)}` : ""}`
+            + `${["summary", "copilot"].includes(tab) ? "" : ` · Copilot health ${health(a)}`} · Snapshot ${date(a.as_of)}</div>`
             + metrics([["Account ARR · USD", compactMoney(a.arr), "Recurring revenue"],
                 ["Observed billed LTM · USD", compactMoney(billing.value, "Billed"), billing.months == null ? "Collected LTM aggregate" : `${billing.months}/12 months reporting`],
                 ["Renewal", date(a.renewal), `${integer(a.renewing_in_days)} days`],

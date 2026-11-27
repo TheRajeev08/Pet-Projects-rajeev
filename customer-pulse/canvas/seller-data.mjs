@@ -2,7 +2,7 @@
 import { ACCOUNT_VIEWS, isNumber, isDay, seriesChange } from "./model.mjs";
 
 export const ACCOUNT_TABS = ACCOUNT_VIEWS;
-export const ACCOUNT_LABELS = { summary: "Summary", products: "Products & consumption", commercial: "Commercial",
+export const ACCOUNT_LABELS = { summary: "Summary", copilot: "Copilot", products: "Products & consumption", commercial: "Commercial",
     security: "Security", contacts: "Contacts (POCs)", activity: "Engagement", stack: "Tech stack", success: "Success & support" };
 export const FEED_LABELS = {
     invoices: "Consumption invoices", actions: "Actions usage", protection: "Repository protection", model_cost: "Copilot model cost",

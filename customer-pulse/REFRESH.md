@@ -8,6 +8,9 @@ For a full workspace refresh, **run `copilot-consumption-dashboard/REFRESH.md` f
 Build its model in the private directory selected by Pulse's `copilot_home`.
 Overview uses q07 for its 13-week AI-units trend; Copilot and Impact use q13–22,
 the per-enterprise Impact and feature-settings calls, and the built Copilot model.
+Account 360's Copilot section uses q02/03/06 for adoption, q07/08/11 for weekly
+consumption, surface and model usage, and q13/15 for confirmed enterprise links.
+These are part of the same refresh, not additional per-account reads.
 Recommendations uses its own read-only feed, separate from signals, actions and email.
 Report missing or carried sources; a new Pulse build alone cannot refresh these views.
 Set `CP_HOME` explicitly to the **same approved private Pulse home** from step 1
