@@ -7,3 +7,5 @@ import "./signals.test.mjs";
 import "./seat-wording.test.mjs";
 import "./recommendations.test.mjs";
 import "./seller.test.mjs";
+import "./code-impact.test.mjs";
+import "./workspace-preview.test.mjs";

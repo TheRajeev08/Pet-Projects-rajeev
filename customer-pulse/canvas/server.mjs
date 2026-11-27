@@ -10,6 +10,7 @@ import { dedupeSignals } from "./seller-data.mjs";
 
 const assets = dirname(fileURLToPath(import.meta.url));
 const STATIC = {
+    "/chart-paths.mjs": "text/javascript; charset=utf-8",
     "/app.js": "text/javascript; charset=utf-8",
     "/model.mjs": "text/javascript; charset=utf-8",
     "/views.mjs": "text/javascript; charset=utf-8",

@@ -13,7 +13,7 @@ let expansion = cca_expansion_opportunity_monthly_snapshot
     | where month_end_date == expansionMonth
     | extend oid = tostring(billable_owner_id), otype = tostring(billable_owner_type), sfid = tostring(salesforce_account_id)
     | where sfid in (sf) or (tolower(otype) has "enterprise" and oid in (ent))
-    | project kind = "expansion", owner_id = oid, owner_type = otype, sf_id = sfid, month = format_datetime(month_end_date, "yyyy-MM-dd"),
+    | project ['kind'] = "expansion", owner_id = oid, owner_type = otype, sf_id = sfid, month = format_datetime(month_end_date, "yyyy-MM-dd"),
         d = pack("stage", cca_adoption_stage, "share", pr_share, "penetration", repo_penetration, "frequency", frequency,
             "cca_repos", cca_repo_count, "repos", total_active_repo_count, "untapped_repos", untapped_repos,
             "score", expansion_opportunity_score, "band", expansion_score_band, "lift", weighted_avg_lift,
@@ -24,11 +24,11 @@ let readiness = cca_new_logo_readiness_monthly_snapshot
     | where month_end_date == readinessMonth
     | extend oid = tostring(billable_owner_id), otype = tostring(billable_owner_type), sfid = tostring(salesforce_account_id)
     | where sfid in (sf) or (tolower(otype) has "enterprise" and oid in (ent))
-    | project kind = "new_logo", owner_id = oid, owner_type = otype, sf_id = sfid, month = format_datetime(month_end_date, "yyyy-MM-dd"),
+    | project ['kind'] = "new_logo", owner_id = oid, owner_type = otype, sf_id = sfid, month = format_datetime(month_end_date, "yyyy-MM-dd"),
         d = pack("repos", total_active_repo_count, "non_cca_prs", non_cca_pr_count, "score", readiness_score,
             "pr_volume_score", pr_volume_score, "lead_time_score", lead_time_score, "repo_score", repo_score,
             "lead_time_summary", lead_time_summary, "opportunity_summary", opportunity_summary, "action", recommended_action);
 union expansion, readiness
-| summarize rows = make_list(pack("kind", kind, "owner_id", owner_id, "owner_type", owner_type, "sf_id", sf_id, "month", month, "d", d))
+| summarize rows = make_list(pack("kind", ['kind'], "owner_id", owner_id, "owner_type", owner_type, "sf_id", sf_id, "month", month, "d", d))
 | extend asof = format_datetime(coalesce(expansionMonth, readinessMonth), "yyyy-MM-dd"),
     expansion_month = format_datetime(expansionMonth, "yyyy-MM-dd"), readiness_month = format_datetime(readinessMonth, "yyyy-MM-dd")

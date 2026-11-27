@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { codeImpactAccountHtml, codeImpactEnterpriseHtml, codeImpactPortfolioHtml, codeImpactSummaryHtml,
-    impactApplies, impactPayload, impactSourceState } from "../copilot/code-impact.mjs";
+    impactApplies, impactPayload, impactSourceState, lineChart } from "../copilot/code-impact.mjs";
 import { featureUsagePanel } from "../copilot/feature-usage.mjs";
 import { copilotLicenses } from "../model.mjs";
 import { renderDrawer, renderView } from "../views.mjs";
@@ -16,6 +16,15 @@ const setup = () => {
 };
 const kpiValue = (html, label) => html.match(new RegExp(`${label}</span><strong class="ci-kpi-value">(.*?)</strong>`))?.[1];
 const enterprise = (copilot, slug) => copilot.enterprises.find(e => e.slug === slug);
+
+test("code-impact gap bridges stay distinct from month-to-date segments and leave missing values unmarked", () => {
+    const html = lineChart({ title: "Synthetic series", labels: ["Jan", "Feb", "Mar", "Apr"], mtd: 3,
+        series: [{ name: "Observed", cls: "ci-s1", values: [1, null, 2, 0] }] });
+    assert.match(html, /stroke-dasharray="1 4" d="M0.00,50.00L66.67,0.00"/);
+    assert.match(html, /class="ci-dash" d="M66.67,0.00L100.00,100.00"/);
+    assert.equal((html.match(/class="ci-dot /g) || []).length, 3);
+    assert.doesNotMatch(html, /title="Observed, Feb/);
+});
 
 test("source states keep absent, missing and carried-forward distinct from collected", () => {
     const { copilot } = setup();

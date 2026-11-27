@@ -375,7 +375,7 @@ describe("views.mjs", () => {
         assert.equal(fmtSigned(null), "");
     });
 
-    test("sparkline draws known points, breaks at gaps and needs two points", () => {
+    test("sparkline draws known points, bridges reporting gaps and needs two points", () => {
         for (const series of [null, { start: "2026-10-01", values: [] }, { start: "2026-10-01", values: [5] }, { start: "2026-10-01", values: [5, null] }]) {
             assert.equal(sparkline(series), "");
         }
@@ -384,7 +384,8 @@ describe("views.mjs", () => {
         assert.ok(svg.includes('<path d="M0.0 29.0L60.0 3.0L120.0 16.0"/>'));
         assert.ok(svg.includes('aria-label="Seats &lt;GHE&gt;: 1 to 2 between Oct 1 and Oct 3"'));
         assert.ok(svg.includes("<title>Seats &lt;GHE&gt;: 1 to 2 between Oct 1 and Oct 3</title>"));
-        assert.ok(sparkline({ start: "2026-10-01", values: [1, null, 3, 2] }).includes('d="M0.0 29.0M80.0 3.0L120.0 16.0"'));
+        const gap = sparkline({ start: "2026-10-01", values: [1, null, 3, 2] });
+        assert.match(gap, /<path d="M80.0 3.0L120.0 16.0"\/><path stroke-dasharray="3 2" d="M0.0 29.0L80.0 3.0"/);
         assert.ok(sparkline({ start: "2026-10-01", values: [4, 4] }).includes('d="M0.0 16.0L120.0 16.0"'));
     });
 

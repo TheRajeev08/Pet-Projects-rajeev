@@ -83,6 +83,15 @@ class SellerTests(fx.HomeCase):
         self.assertTrue(all(len(t["account_ids"]) <= 20 for t in analytic["tasks"]))
         self.assertFalse(os.path.exists(os.path.join(self.home, "state", "actioned.json")))
 
+    def test_resume_preserves_analytics_nonce_and_rejects_changed_scope_or_session(self):
+        model = {"accounts": [{"id": A, "arr": None}]}
+        planned = seller.plan(model, {}, TODAY, session="synthetic")
+        self.assertEqual(seller.plan(model, {}, TODAY, resume=True, session="synthetic"), planned)
+        for book, session in [(model, "other"), ({"accounts": []}, "synthetic")]:
+            with self.assertRaisesRegex(ValueError, "Cannot resume"):
+                seller.plan(book, {}, TODAY, resume=True, session=session)
+        self.assertEqual(seller.plan(model, {}, TODAY, resume=True, session="synthetic"), planned)
+
     def test_queries_reject_injected_identity_and_preserve_source_grains(self):
         with self.assertRaises(ValueError):
             render("invoices", ["'); take 1"], TODAY, "synthetic")

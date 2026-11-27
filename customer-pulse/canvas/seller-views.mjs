@@ -4,7 +4,8 @@ import {
     portfolioSeries, rankAccounts, renewalBuckets, renewalRisk, rowsOf, stackGroups, STACK_STATUS, usageTrend, openSeCount,
 } from "./seller-data.mjs";
 import { codeImpactAccountHtml, impactApplies } from "./copilot/code-impact.mjs";
-import { hasProduct } from "./model.mjs";
+import { hasProduct, seriesPoints } from "./model.mjs";
+import { chartPaths } from "./chart-paths.mjs";
 
 export function createSellerViews({ esc, fmtInt, fmtMoney, fmtPct, fmtDay, sparkline, table, actionsFor, renderRecommendations,
     actionsPanel, changesPanel, productCard, newSignalsPanel }) {
@@ -75,25 +76,22 @@ export function createSellerViews({ esc, fmtInt, fmtMoney, fmtPct, fmtDay, spark
             `<div><dt>${esc(label)}</dt><dd>${value}</dd><dd class="metric-note">${detail || ""}</dd></div>`).join("")}</dl>`;
     }
     function lineChart(series, label, unit = "Billed USD", dateLabel = "Date") {
-        const points = (series?.points || []).filter(([day]) => dayOf(day));
+        const points = (series?.points ?? seriesPoints(series)).filter(([day]) => dayOf(day));
         const known = points.filter(([, value]) => typeof value === "number" && Number.isFinite(value));
         if (!known.length) return `<p class="empty">No reported ${esc(unit)} in this window.</p>`;
         const min = Math.min(0, ...known.map(p => p[1])), max = Math.max(0, ...known.map(p => p[1]));
         const low = Date.parse(points[0][0]), span = Date.parse(points.at(-1)[0]) - low || 1;
         const y = value => 165 - (value - min) / (max - min || 1) * 142;
-        let path = "", drawing = false;
-        const dots = points.map(([day, value]) => {
-            if (typeof value !== "number" || !Number.isFinite(value)) { drawing = false; return ""; }
-            const x = 72 + (Date.parse(day) - low) / span * 580;
-            path += `${drawing ? "L" : "M"}${x.toFixed(1)} ${y(value).toFixed(1)} `;
-            drawing = true;
-            return `<circle cx="${x}" cy="${y(value)}" r="3"><title>${esc(day)}: ${esc(value)} ${esc(unit)}</title></circle>`;
-        }).join("");
+        const x = day => 72 + (Date.parse(day) - low) / span * 580;
+        const paths = chartPaths(points.map(p => p[1]), (value, i) => `${x(points[i][0]).toFixed(1)} ${y(value).toFixed(1)}`);
+        const dots = known.map(([day, value]) => `<circle cx="${x(day)}" cy="${y(value)}" r="3"><title>${esc(day)}: ${esc(value)} ${esc(unit)}</title></circle>`).join("");
         const axis = [...new Set([max, (max + min) / 2, min])].map(value => `<line class="grid-line" x1="72" x2="652" y1="${y(value)}" y2="${y(value)}"/><text x="64" y="${y(value) + 4}" text-anchor="end">${esc(unit.includes("USD") ? fmtMoney(value) : fmtInt(value))}</text>`).join("");
         const indices = [...new Set([0, Math.floor(points.length / 2), points.length - 1])];
-        return `<figure class="history-chart"><figcaption>${esc(label)} <span>${esc(unit)} · ${esc(points[0][0])} to ${esc(points.at(-1)[0])}</span></figcaption>`
-            + `<svg viewBox="0 0 680 205" role="img" aria-label="${esc(label)}. ${esc(unit)}. Missing points break the line; exact values follow.">${axis}<path class="history-line" d="${path}"/>${dots}`
-            + indices.map(i => `<text x="${72 + (Date.parse(points[i][0]) - low) / span * 580}" y="192" text-anchor="${i === 0 ? "start" : i === points.length - 1 ? "end" : "middle"}">${esc(dateLabel === "Week ending" ? fmtDay(points[i][0]) : points[i][0].slice(0, 7))}</text>`).join("") + "</svg></figure>"
+        const gapNote = paths.gap ? " · Dashed lines span unreported periods." : "";
+        return `<figure class="history-chart"><figcaption>${esc(label)} <span>${esc(unit)} · ${esc(points[0][0])} to ${esc(points.at(-1)[0])}${gapNote}</span></figcaption>`
+            + `<svg viewBox="0 0 680 205" role="img" aria-label="${esc(label)}. ${esc(unit)}. Exact values follow.">${axis}<path class="history-line" d="${paths.solid}"/>`
+            + (paths.gap ? `<path class="history-line" stroke-dasharray="5 4" d="${paths.gap}"/>` : "") + dots
+            + indices.map(i => `<text x="${x(points[i][0])}" y="192" text-anchor="${i === 0 ? "start" : i === points.length - 1 ? "end" : "middle"}">${esc(dateLabel === "Week ending" ? fmtDay(points[i][0]) : points[i][0].slice(0, 7))}</text>`).join("") + "</svg></figure>"
             + `<details><summary>Exact values & reporting coverage</summary>${simpleTable([dateLabel, unit, ...(series.coverage ? ["Reporting accounts"] : [])],
                 points.map(([day, value], i) => [date(day), exact(value), ...(series.coverage ? [`${series.coverage[i]}/${series.total}`] : [])]))}</details>`;
     }
@@ -118,7 +116,7 @@ export function createSellerViews({ esc, fmtInt, fmtMoney, fmtPct, fmtDay, spark
         return panel("Product consumption", `<div class="workspace-toolbar">${select(ui, "measure", "Measure", [["billed", "Invoice billing"], ["ghe", "GHE metered users"], ["copilot", "Copilot assigned seats"], ["security", "Security committers"]])}`
             + (measure === "billed" ? select(ui, "product", "Product", [["all", "All products"], ...products.map(p => [p.key, p.name])])
                 + select(ui, "period", "Closed months", [["13", "13 months"], ["6", "6 months"]]) : "") + "</div>"
-            + lineChart({ ...data, points: measure === "billed" ? (data?.points || []).slice(-count) : data?.points || [] }, label, unit),
+            + lineChart(measure === "billed" ? { ...data, points: data.points.slice(-count) } : data, label, unit),
         measure === "billed" ? source(a, "invoices") : `<p class="seller-source">Daily observations in the stored telemetry window; not added across dates. Account source date ${date(a.as_of)}.</p>`);
     }
     function change(value) {

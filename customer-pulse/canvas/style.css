@@ -662,6 +662,7 @@ h1 { letter-spacing: -.035em; font-size: 30px; }
 .product-picker .segment-control { max-width: 100%; flex-wrap: wrap; }
 .product-billing .workspace-columns { margin-block: 20px; }
 .product-billing h3 { margin: 0 0 8px; }
+.product-billing thead th { overflow-wrap: normal; }
 .billing-counts { display: grid; grid-template-columns: repeat(auto-fit, minmax(84px, 1fr)); gap: 12px; margin: 12px 0; }
 .billing-counts > div { display: flex; flex-direction: column; justify-content: space-between; gap: 2px; }
 .billing-counts dt { color: var(--muted); font-size: 12px; }

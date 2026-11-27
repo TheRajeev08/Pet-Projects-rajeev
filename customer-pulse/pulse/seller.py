@@ -127,7 +127,7 @@ def _activity_cohort(ranked, today):
     return [a for a in ranked if a["id"] in ids]
 
 
-def plan(model, cfg, today, group="analytics", account_id=None):
+def plan(model, cfg, today, group="analytics", account_id=None, *, resume=False, session=None):
     """Analytics cover the book. Activity refreshes ten owned accounts a day: least-recently
     attempted first, eight slots for the ARR-ranked top fifty and two for the rest of the book.
     Budgets and mail reuse the same day's activity cohort."""
@@ -144,6 +144,13 @@ def plan(model, cfg, today, group="analytics", account_id=None):
         accounts = [a for a in accounts if a["id"] == account_id]
         if not accounts:
             raise ValueError("Requested account is outside the owned book")
+    if resume:
+        planned = _active_plan(group)
+        if (planned["date"] != today or planned.get("account") != account_id
+                or planned.get("session") != session
+                or not set(planned["accounts"]) <= {a["id"] for a in accounts}):
+            raise ValueError("Cannot resume a plan from another date, session or account scope")
+        return planned
     doc = load()
     rotation = None
     if not account_id and group == "activity":
@@ -198,6 +205,7 @@ def plan(model, cfg, today, group="analytics", account_id=None):
         # Outlook calendar reads cannot be scoped to attendees at source, so meetings come only
         # from account-scoped Gong calls collected in the activity group.
     result = {"schema": 1, "group": group, "date": today, "started_at": iso_now(), "run_id": nonce,
+              "account": account_id, "session": session,
               "accounts": ids, "tasks": tasks, "skipped": skipped, "rotation": rotation,
               "note": "Read-only. Prefer Salesforce CLI for contacts. Run exact arguments, then seller-collect. No email bodies. No customer-admin reports."}
     atomic_write_json(plan_path(group), result, indent=2)
@@ -389,12 +397,19 @@ def decode(task, result):
     return {aid: {"rows": [_record(r, feed) for r in records], "as_of": None}}
 
 
-def collect_plan(cfg, group, session, statuses=None, results=None, use_sf=True):
+def _active_plan(group):
     planned = read_json(plan_path(group))
     if not planned or planned.get("group") != group:
         raise ValueError("Run seller-plan first")
     if (dt.datetime.now(dt.timezone.utc) - collect._parse_ts(planned["started_at"])).total_seconds() > 86400:
         raise ValueError("Seller plan expired; start a fresh plan")
+    return planned
+
+
+def collect_plan(cfg, group, session, statuses=None, results=None, use_sf=True):
+    planned = _active_plan(group)
+    if planned.get("session") and planned["session"] != session:
+        raise ValueError("Collect the seller plan in the session that planned the reads")
     tasks = {t["id"]: t for t in planned["tasks"]}
     statuses = statuses or {}
     if any(key not in tasks or val not in STATES - {"ok", "no_rows"} for key, val in statuses.items()):
