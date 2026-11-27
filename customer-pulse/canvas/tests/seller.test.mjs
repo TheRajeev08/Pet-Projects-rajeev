@@ -357,6 +357,18 @@ test("chart data uses typed amounts and shows coverage, gaps and single observat
     assert.match(one, /-3\.25/);
 });
 
+test("Account 360 draws only observed daily readings and bridges interior gaps", () => {
+    const model = fixture(), account = model.accounts[0];
+    account.products.ghe.series = { metered: { start: "2026-10-01", values: [null, 8, null, null, 0, 5, null] } };
+    const html = renderView(model, { view: "account360", account: account.id, subview: "products", sellerOptions: { measure: "ghe" } });
+    const figure = html.match(/<figure class="history-chart"><figcaption>GHE account-wide metered users[\s\S]*?<\/details>/)[0];
+    assert.match(figure, /stroke-dasharray="5 4" d="M168.7 23.0L458.7 165.0"/);
+    assert.match(figure, /d="M458.7 165.0L555.3 76.3"/);
+    assert.equal((figure.match(/<circle /g) || []).length, 3);
+    assert.equal((figure.match(/data-label="Users"><span class="none">No data/g) || []).length, 4);
+    assert.match(figure, /2026-10-05: 0 Users/);
+});
+
 test("conflicting, ambiguous and superseded stack evidence never becomes current adoption", () => {
     const a = fixture().accounts[0];
     const row = { schema: 1, technology: "Jenkins", category: "CI/CD", usage_status: "reported_in_use",

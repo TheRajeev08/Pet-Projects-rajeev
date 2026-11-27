@@ -4,9 +4,17 @@ Follow these steps in order. The session needs the **revenue-mcp-server** and **
 
 Config, data and output live in `~/CustomerPulse/`, outside the repo. **Never copy them into the repo or commit them.** They contain customer data and the repo is public. Don't modify repository files during a refresh.
 
-The separate Salesforce recommendations view reads the Copilot dashboard model. Its
-read-only collection is documented in `copilot-consumption-dashboard/REFRESH.md`;
-it does not feed Pulse signals, actions, digest state, or email.
+For a full workspace refresh, **run `copilot-consumption-dashboard/REFRESH.md` first**.
+Build its model in the private directory selected by Pulse's `copilot_home`.
+Overview uses q07 for its 13-week AI-units trend; Copilot and Impact use q13–22,
+the per-enterprise Impact and feature-settings calls, and the built Copilot model.
+Account 360's Copilot section uses q02/03/06 for adoption, q07/08/11 for weekly
+consumption, surface and model usage, and q13/15 for confirmed enterprise links.
+These are part of the same refresh, not additional per-account reads.
+Recommendations uses its own read-only feed, separate from signals, actions and email.
+Report missing or carried sources; a new Pulse build alone cannot refresh these views.
+Set `CP_HOME` explicitly to the **same approved private Pulse home** from step 1
+through the final build. If commands run in separate shells, set it in each shell.
 
 ## Extraction failures and data-only repairs
 
@@ -78,41 +86,64 @@ it does not feed Pulse signals, actions, digest state, or email.
    - Exit code 1 means the build failed. The previous dashboard is kept and the failure goes into the email, so continue to step 6.
    - Exit code 3 means another run holds the lock. Wait two minutes and retry once.
 
-   **Optional internal seller enrichment, only after rollout approval:** the
-   ordinary refresh above remains valid without this stage. Do not silently
-   enable it in an existing automation. For a private verification, use a private
-   `CP_HOME` and a config whose `copilot_home` also points to a private copy.
+   **Full workspace enrichment (requires rollout approval).** The first build
+   supplies the canonical owned book for Overview, Top 50 and the all-book
+   Accounts directory. If it failed or the current owned book could not be
+   verified, do not plan reads against an old book. Report incomplete coverage.
+   A base-only build does not refresh seller views. Use the same explicitly set
+   `CP_HOME` for every command below (the approved private Pulse home); for a
+   private verification, pin `copilot_home` to a private copy as well.
    Never run the email steps as part of an enrichment-only run.
 
    ```bash
-   CP_HOME=/approved/private/pulse-home python3 customer-pulse/pulse.py seller-plan --group analytics
+   python3 customer-pulse/pulse.py seller-plan --group analytics
    ```
 
-   Run each returned read-only task with its exact tool name/arguments (discover
-   deferred tools first), then:
+   **Completion rule for every group:** track the plan's task IDs. Execute every
+   planned read with its exact tool and arguments before `seller-collect` (except
+   Contact SOQL, executed by the collector itself). Use bounded batches; do not
+   sample a large group, skip its tail, or mark unexecuted tasks failed to save
+   time. Retry a failed read once. Only record a failure status for an actual
+   failed read after that retry; report unavailable capabilities and planner
+   `skipped` reasons separately. Never invent an empty result.
+
+   If interrupted, use `seller-plan --group <group> --resume` in the same session
+   and private home. It reprints the original IDs, cohort, exact arguments and
+   start time, not just the unfinished tasks. Reconcile IDs against actual calls
+   and continue the remaining reads **before collecting**. If the plan expired
+   or the session changed, start a fresh plan and execute it in full; never mix
+   results across plans. If stopping mid-group, report it as unfinished rather
+   than running the collector over unattempted tasks.
+
+   Analytics covers every owned account. Consumption and the product pages need
+   the 13 closed months of consumption invoices **and** latest SKU-level MRR,
+   plus the dated GHE/GHAS licensing snapshots from steps 1–3, for the billing
+   mix. Invoiced consumption is not total billing; missing volume evidence is
+   not zero. Discover deferred tools first, execute the full plan, then:
 
    ```bash
-   CP_HOME=/approved/private/pulse-home python3 customer-pulse/pulse.py seller-collect --group analytics
-   CP_HOME=/approved/private/pulse-home python3 customer-pulse/pulse.py seller-plan --group activity
+   python3 customer-pulse/pulse.py seller-collect --group analytics
+   python3 customer-pulse/pulse.py seller-plan --group activity
    ```
 
-   Run the returned Revenue tasks. Contact SOQL uses the existing Salesforce CLI
-   login during collection; use the exact planned Revenue SOQL only if CLI is
-   unavailable. Collect activity, including the authoritative enterprise namespace
-   mapping, then plan budgets:
+   Execute every planned Revenue read for the rotating cohort. Account 360 POCs
+   are **Salesforce Contacts**, keyed by Contact ID, including contacts without
+   email or engagement; do not fetch proofs of concept. Contact SOQL uses the
+   existing Salesforce CLI during collection. If it fails, execute the exact
+   planned SOQL through Revenue and collect the same plan again. Activity also
+   supplies the authoritative enterprise namespace mapping for budgets.
 
    ```bash
-   CP_HOME=/approved/private/pulse-home python3 customer-pulse/pulse.py seller-collect --group activity
-   CP_HOME=/approved/private/pulse-home python3 customer-pulse/pulse.py seller-plan --group budgets
+   python3 customer-pulse/pulse.py seller-collect --group activity
    ```
 
-   **Optional stack evidence stage, separately approved for live collection:**
-   after collecting activity, reuse that exact cohort. This is not enabled by
-   installing the redesigned canvas, visiting an account, or the ordinary refresh.
+   **Account 360 tech stack:** where live stack collection has separate approval,
+   reuse that exact activity cohort. Without approval, report the stack feed as
+   not refreshed; do not substitute another source. Installation is not approval.
 
    ```bash
-   CP_HOME=/approved/private/pulse-home python3 customer-pulse/pulse.py stack-plan
-   CP_HOME=/approved/private/pulse-home python3 customer-pulse/pulse.py stack-hydrate
+   python3 customer-pulse/pulse.py stack-plan
+   python3 customer-pulse/pulse.py stack-hydrate
    ```
 
    `stack-hydrate` performs at most 40 collector-owned reads per invocation:
@@ -120,7 +151,8 @@ it does not feed Pulse signals, actions, digest state, or email.
    for validated SE issue bodies and comment pages (100 comments). Repeat only
    to resume reported cursors/pages; exit 2 means incomplete/failed coverage,
    not successful emptiness. Plans expire after 24 hours or an activity-run change.
-   There is no date cutoff or open-only filter. Default SE scope is
+   Include **open and closed** linked SE issues, their bodies/comments, and
+   account-scoped nonprivate Gong evidence. There is no date cutoff. Default SE scope is
    `github/solutions-engineering`; configure `stack_evidence.se_repositories`
    only from authoritative repository/account-link metadata, never fuzzy names.
    Other linked records (account plans, meeting notes, etc.) are not SE evidence.
@@ -145,7 +177,7 @@ it does not feed Pulse signals, actions, digest state, or email.
    Ingest those claims on stdin:
 
    ```bash
-   CP_HOME=/approved/private/pulse-home python3 customer-pulse/pulse.py stack-ingest < /approved/private/claims.json
+   python3 customer-pulse/pulse.py stack-ingest < /approved/private/claims.json
    ```
 
    Categories: SCM, CI/CD, Security, Languages/frameworks, Cloud/runtime,
@@ -157,20 +189,24 @@ it does not feed Pulse signals, actions, digest state, or email.
    advances collection dates. Successful deletion/replacement retires current
    claims; failed/partial reads retain prior evidence with original dates.
    No signal/digest state is written and no proof-of-concept reads are added.
-   A later approved `build --no-prune` includes this feed in the model.
+   Ingest `[]` if there are no supported claims; report partial source coverage
+   separately. The final build below includes this feed.
 
-   Run the returned read-only `get_budgets` calls, then:
+   Run `python3 customer-pulse/pulse.py seller-plan --group budgets`. Execute
+   every returned read-only `get_budgets` task, then:
 
    ```bash
-   CP_HOME=/approved/private/pulse-home python3 customer-pulse/pulse.py seller-collect --group budgets
-   CP_HOME=/approved/private/pulse-home python3 customer-pulse/pulse.py seller-plan --group mail
+   python3 customer-pulse/pulse.py seller-collect --group budgets
+   python3 customer-pulse/pulse.py seller-plan --group mail
    ```
 
-   Run the planned WorkIQ `fetch` reads, never `do_action` or a write tool, then:
+   Run **all mail reads sequentially**, one planned WorkIQ `fetch` at a time,
+   never `do_action` or a write tool. After the last task, collect the mail group
+   and rebuild the enriched dashboard **before** the existing digest decision:
 
    ```bash
-   CP_HOME=/approved/private/pulse-home python3 customer-pulse/pulse.py seller-collect --group mail
-   CP_HOME=/approved/private/pulse-home python3 customer-pulse/pulse.py build --no-prune
+   python3 customer-pulse/pulse.py seller-collect --group mail
+   python3 customer-pulse/pulse.py build --no-prune
    ```
 
    Analytics cover all owned accounts in batches of 20. Activity refreshes ten owned
@@ -189,7 +225,7 @@ it does not feed Pulse signals, actions, digest state, or email.
    out-of-scope rows are rejected; never edit a plan to bless an earlier result.
    Source dates remain distinct from collection dates.
 
-   For unavailable or unauthorized tasks, pass
+   For reads that returned connection or authorization failures after retry, pass
    `--source-status <task-id>=not_connected` or `=not_authorized` to the relevant
    `seller-collect`. Other supported failure states are `failed`, `partial`,
    and `stale`. Report returned missing/error counts; do not hide them by
@@ -225,4 +261,7 @@ it does not feed Pulse signals, actions, digest state, or email.
    - the email subject, or that no email was needed
    - the top three to five High actions or seat changes
    - anything missing, failed, stale or suspect
+   - planned vs. attempted vs. collected counts for each seller group, skipped
+     reasons, stack coverage/deferred pages, terminal enterprise gaps by feed,
+     and whether the final enriched build succeeded; distinguish a base-only run
    - signal counts (verified High, Notify, FYI and needs verification), per-source statuses, deferred tasks and any elided evidence

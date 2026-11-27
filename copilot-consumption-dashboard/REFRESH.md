@@ -53,7 +53,16 @@ Config, data and output live in `~/CopilotConsumptionDashboard/`, outside the re
    ```bash
    python3 refresh.py slugs
    ```
-   This lists the GitHub enterprise slugs still needing data today and, for each, whether `impact`, `settings` or both are outstanding (query 13 supplies the list, so run step 3 first). For each slug call `revenue-mcp-server-get_copilot_impact` **and** `revenue-mcp-server-get_copilot_feature_settings`, both with `namespace: "enterprise"`. Parallel calls are fine; batches of roughly eight work well. Some enterprises legitimately return `noDataReason` of `feature_disabled` or `low_or_no_usage` — collect those as they are, do not retry them. Then run `python3 refresh.py collect` again to save the payloads, and `python3 refresh.py slugs` to confirm none are outstanding.
+   Query 13 supplies the owned slugs. For each **outstanding** line, call only
+   the named feeds: `impact` → `revenue-mcp-server-get_copilot_impact`,
+   `settings` → `revenue-mcp-server-get_copilot_feature_settings`, both with
+   `namespace: "enterprise"`. Parallel batches of roughly eight are fine.
+   Collect `feature_disabled` and `low_or_no_usage` as returned; they are not
+   failed calls. Run `python3 refresh.py collect` and `python3 refresh.py slugs`
+   again. A definitive **not found** is a reported terminal gap for that slug
+   and feed **today**, not a successful payload and not a request to retry.
+   Retry a transient failure once; if still outstanding, report it as missing.
+   The next daily refresh checks ownership and availability again.
 
    Feature settings are what let the dashboard tell *"CLI is switched off"* apart from *"CLI is on and nobody uses it"*, so skipping them leaves the surface gaps blank rather than wrong.
 
@@ -96,6 +105,7 @@ Config, data and output live in `~/CopilotConsumptionDashboard/`, outside the re
 7. **Report back** in a few lines:
    - the headline line printed by the builder;
    - the top 5–8 changes, prioritising `bad`/`warn`;
-   - how many enterprises returned Copilot Impact data and feature settings;
+   - Impact and feature-settings payload counts, terminal not-found gaps by
+     slug/feed, and anything still outstanding, separately;
    - the path `~/CopilotConsumptionDashboard/dashboard.html`;
    - any missing sources or warnings.

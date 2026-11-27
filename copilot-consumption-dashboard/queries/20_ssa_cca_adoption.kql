@@ -20,7 +20,7 @@ let adoption = adoptionRaw
         dup = count() by oid, otype, m = format_datetime(month_end_date, "yyyy-MM-dd")
     | order by oid asc, m asc
     | summarize s = make_list(pack_array(m, cca_prs, prs, cca_repos, repos, cca_days, days, share, pen, freq, rate, stage, dup)) by oid, otype;
-let latest = adoptionRaw
+let latestRow = adoptionRaw
     | summarize arg_max(month_end_date, sfid, cca_adoption_interpretation) by oid, otype
     | project oid, otype, sf_id = sfid, interpretation = cca_adoption_interpretation;
 let epiRaw = materialize(
@@ -46,7 +46,7 @@ let epi = epiRaw
             engineering_productivity_index_action_summary))
         by oid, otype;
 adoption
-| join kind=fullouter latest on oid, otype
+| join kind=fullouter latestRow on oid, otype
 | extend oid = coalesce(oid, oid1), otype = coalesce(otype, otype1)
 | project-away oid1, otype1
 | join kind=fullouter epi on oid, otype

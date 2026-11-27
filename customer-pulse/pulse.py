@@ -182,7 +182,8 @@ def cmd_seller(a):
             snapshot = read_json(paths.model_path())
             if not snapshot:
                 raise ValueError("Build the owned-book model before planning seller reads")
-            out = seller.plan(snapshot, cfg, _today(a), a.group, a.account)
+            out = seller.plan(snapshot, cfg, _today(a), a.group, a.account, resume=a.resume,
+                              session=queries.session_id(a.session))
         else:
             statuses = {}
             for value in a.source_status:
@@ -279,6 +280,8 @@ def main(argv=None):
     for command in ("seller-plan", "seller-collect"):
         s = sub.add_parser(command, help="read-only internal seller enrichment; requires explicit CP_HOME")
         s.add_argument("--group", choices=("analytics", "activity", "budgets", "mail"), default="analytics")
+        if command == "seller-plan":
+            s.add_argument("--resume", action="store_true", help="reprint the active plan without replacing its run ID or task arguments")
         s.add_argument("--today")
         s.add_argument("--account")
         s.add_argument("--session")

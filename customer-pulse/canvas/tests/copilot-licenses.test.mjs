@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import vm from "node:vm";
+import { chartPaths } from "../chart-paths.mjs";
 import { copilotFilterCounts, copilotLicenses, copilotRowsFor, copilotTotals, summarize } from "../model.mjs";
 import { renderDrawer, renderView } from "../views.mjs";
 import { syntheticAccount, syntheticAction, syntheticEvent, syntheticModel } from "./helpers.mjs";
@@ -239,12 +240,13 @@ test("Portfolio wrapping units cover long names, reconciliation, action-only, no
 test("all plot consumers receive container-independent line, grid and label styling", () => {
     const source = readFileSync(new URL("../copilot/app.js", import.meta.url), "utf8");
     const context = vm.createContext({
-        chartId: 0, isNumber: Number.isFinite, H: value => String(value), formatAxis: value => String(value),
+        chartId: 0, chartPaths, isNumber: Number.isFinite, H: value => String(value), formatAxis: value => String(value),
     });
     const html = vm.runInContext(source.slice(source.indexOf("function plot("), source.indexOf("function chartPanel("))
-        + '\nplot([{ name: "Synthetic trend", values: [9, 3, 7] }]);', context);
+        + '\nplot([{ name: "Synthetic trend", values: [9, null, 3, 7] }]);', context);
     assert.match(html, /^<svg class="plot"/);
-    assert.match(html, /<polyline class="line"/);
+    assert.match(html, /<path class="line"[^>]+stroke-dasharray="4 3"[^>]+d="M[^"]+L[^"]+"/);
+    assert.equal((html.match(/<circle /g) || []).length, 3);
     const css = readFileSync(new URL("../copilot/style.css", import.meta.url), "utf8");
     assert.match(css, /(?:^|\n)svg\.plot \.line \{[^}]*fill: none;/);
     assert.match(css, /(?:^|\n)svg\.plot text \{ fill: var\(--muted\);/);

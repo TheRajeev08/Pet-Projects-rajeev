@@ -6,6 +6,7 @@ import {
     copilotLicenses, copilotRowTotals, copilotRowsFor, copilotFilterCounts,
 } from "./model.mjs";
 import { renderRecommendations } from "./recommendations.mjs";
+import { chartPaths } from "./chart-paths.mjs";
 import { codeImpactPortfolioHtml, codeImpactSummaryHtml, impactApplies } from "./copilot/code-impact.mjs";
 import { createSellerViews } from "./seller-views.mjs";
 import { ACCOUNT_LABELS, bookFeedCoverage } from "./seller-data.mjs";
@@ -107,20 +108,16 @@ export function sparkline(series, { label = "Trend", width = 120, height = 32 } 
     const max = Math.max(...values);
     const first = Date.parse(`${points[0][0]}T00:00:00Z`);
     const span = Date.parse(`${points[points.length - 1][0]}T00:00:00Z`) - first || 1;
-    let path = "";
-    let drawing = false;
-    for (const [day, value] of points) {
-        if (value === null) {
-            drawing = false;
-            continue;
-        }
+    const paths = chartPaths(points.map(p => p[1]), (value, index) => {
+        const day = points[index][0];
         const x = ((Date.parse(`${day}T00:00:00Z`) - first) / span) * width;
         const y = max === min ? height / 2 : height - 3 - ((value - min) / (max - min)) * (height - 6);
-        path += `${drawing ? "L" : "M"}${x.toFixed(1)} ${y.toFixed(1)}`;
-        drawing = true;
-    }
-    const summary = `${label}: ${fmtInt(values[0])} to ${fmtInt(values[values.length - 1])} between ${fmtDay(known[0][0])} and ${fmtDay(known[known.length - 1][0])}`;
-    return `<svg class="spark" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="${esc(summary)}"><title>${esc(summary)}</title><path d="${path}"/></svg>`;
+        return `${x.toFixed(1)} ${y.toFixed(1)}`;
+    });
+    const summary = `${label}: ${fmtInt(values[0])} to ${fmtInt(values[values.length - 1])} between ${fmtDay(known[0][0])} and ${fmtDay(known[known.length - 1][0])}`
+        + (paths.gap ? ". Dashed lines span unreported periods." : "");
+    return `<svg class="spark" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="${esc(summary)}"><title>${esc(summary)}</title><path d="${paths.solid}"/>`
+        + (paths.gap ? `<path stroke-dasharray="3 2" d="${paths.gap}"/>` : "") + "</svg>";
 }
 
 function notice(tone, html, extra = "") {

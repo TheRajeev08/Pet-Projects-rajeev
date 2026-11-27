@@ -8,6 +8,7 @@ import {
     surfaceRows, totalEngagedUsers,
 } from "./impact.mjs";
 import { renderRecommendations } from "../recommendations.mjs";
+import { chartPaths } from "../chart-paths.mjs";
 import { featureUsagePanel } from "./feature-usage.mjs";
 import { codeImpactAccountHtml, codeImpactEnterpriseHtml, codeImpactPortfolioHtml, impactPayload } from "./code-impact.mjs";
 
@@ -295,17 +296,9 @@ function plot(series, kind = "number", type = "line", title = "Trend", labels = 
                     `<title>${H(item.name)}: ${formatAxis(value, kind)}, ${labels ? H(axisLabel(index)) : `${count - 1 - index} weeks ago`}</title></rect>`;
             });
         } else {
-            let current = [];
-            const segments = [];
-            points.forEach((value, index) => {
-                if (isNumber(value)) current.push([x(index), y(value)]);
-                else if (current.length) { segments.push(current); current = []; }
-            });
-            if (current.length) segments.push(current);
-            for (const segment of segments) {
-                lines += `<polyline class="line" stroke="${color}" points="${segment.map(point =>
-                    point.map(coordinate => coordinate.toFixed(1)).join(",")).join(" ")}"/>`;
-            }
+            const { solid, gap } = chartPaths(points, (value, i) => `${x(i).toFixed(1)},${y(value).toFixed(1)}`);
+            lines += `<path class="line" stroke="${color}" d="${solid}"/>`;
+            if (gap) lines += `<path class="line" stroke="${color}" stroke-dasharray="4 3" d="${gap}"><title>Unreported periods</title></path>`;
             points.forEach((value, index) => {
                 if (!isNumber(value)) return;
                 lines += `<circle cx="${x(index).toFixed(1)}" cy="${y(value).toFixed(1)}" r="2.5" fill="${color}">` +
@@ -686,14 +679,14 @@ function sparkline(values, weight = 1) {
     if (numbers.length < 2) return '<span class="quiet">&mdash;</span>';
     const max = Math.max(...numbers, 1);
     const W = 90, H2 = 20;
-    const coords = points.map((value, index) => {
+    const { solid, gap } = chartPaths(points, (value, index) => {
         const x = points.length > 1 ? index * W / (points.length - 1) : W / 2;
-        const y = H2 - 2 - (isNumber(value) ? value : 0) / max * (H2 - 4);
+        const y = H2 - 2 - value / max * (H2 - 4);
         return `${x.toFixed(1)},${y.toFixed(1)}`;
     });
     return `<svg width="${W}" height="${H2}" viewBox="0 0 ${W} ${H2}" role="img" aria-label="13-week trend">` +
-        `<polyline fill="none" stroke="var(--accent)" stroke-linecap="round" stroke-linejoin="round" ` +
-        `stroke-width="${(1 + weight).toFixed(1)}" points="${coords.join(" ")}"/></svg>`;
+        `<g fill="none" stroke="var(--accent)" stroke-linecap="round" stroke-linejoin="round" stroke-width="${(1 + weight).toFixed(1)}"><path d="${solid}"/>` +
+        (gap ? `<path d="${gap}" stroke-dasharray="3 2"><title>Unreported periods</title></path>` : "") + "</g></svg>";
 }
 
 function modelPanel(enterprise = null) {

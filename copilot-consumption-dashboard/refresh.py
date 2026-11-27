@@ -23,6 +23,8 @@ import recommendations
 QDIR = os.path.join(ROOT, "queries")
 DATA = data_dir()
 STATE = os.path.expanduser("~/.copilot/session-state")
+ENTERPRISE_TOOLS = {"get_copilot_impact": "impact", "get_copilot_feature_settings": "settings"}
+NOT_FOUND = object()
 
 
 def queries():
@@ -82,8 +84,35 @@ def iter_events(session):
                 continue
 
 
+def enterprise_feed(tool, args):
+    if args.get("namespace") == "enterprise" and isinstance(args.get("slug"), str) and args["slug"]:
+        return ENTERPRISE_TOOLS.get(tool.removeprefix("revenue-mcp-server-"))
+
+
+def enterprise_not_found(detail, slug):
+    """Recognize a resource-not-found reply, not e.g. 'tool not found' or unavailable data."""
+    if isinstance(detail, list):
+        return any(enterprise_not_found(item.get("text"), slug) for item in detail
+                   if isinstance(item, dict) and item.get("type") == "text")
+    if isinstance(detail, dict):
+        return any(enterprise_not_found(detail.get(key), slug) for key in ("error", "message", "content"))
+    if not isinstance(detail, str):
+        return False
+    # Revenue reports generic code "failure"; the message identifies the actual resource.
+    message = detail.strip().removeprefix("MCP server 'revenue-mcp-server': ")
+    return message.casefold() == f"not found: {slug} (github.com)".casefold()
+
+
+def enterprise_payload(feed, payload):
+    if not isinstance(payload, dict) or payload.get("error") or payload.get("isError"):
+        return False
+    if feed == "settings":
+        return isinstance(payload.get("settings"), list)
+    return any(key in payload for key in ("dataAvailable", "noDataReason", "impact", "cohorts"))
+
+
 def tool_results(events):
-    """Normalize successful execution pairs and post-tool hooks from one session."""
+    """Normalize successful results and definitive enterprise lookup gaps from one session."""
     starts = {}
     for e in events:
         d = e.get("data") or {}
@@ -92,17 +121,19 @@ def tool_results(events):
             continue
         if e.get("type") == "tool.execution_complete":
             s = starts.pop(d.get("toolCallId"), None)
-            if not s or not d.get("success"):
+            if not s:
                 continue
             tool = s.get("mcpToolName") or s.get("toolName", "")
             args_in = s.get("arguments") or {}
             res = d.get("result") or {}
             text = res.get("content")
+            success = d.get("success")
+            error = d.get("error") or res.get("error")
         elif e.get("type") == "hook.start" and d.get("hookType") == "postToolUse":
             inp = d.get("input") or {}
             res = inp.get("toolResult") or {}
-            if res.get("resultType") != "success":
-                continue
+            success = res.get("resultType") == "success"
+            error = res.get("error")
             tool = inp.get("toolName") or ""
             args_in = inp.get("toolArgs") or {}
             text = res.get("textResultForLlm")
@@ -120,8 +151,14 @@ def tool_results(events):
             try:
                 payload = json.loads(text)
             except (json.JSONDecodeError, TypeError):
-                continue
-        if not isinstance(payload, dict) or payload.get("isError"):
+                payload = text
+        feed = enterprise_feed(tool, args_in)
+        if feed and any(enterprise_not_found(detail, args_in["slug"]) for detail in (error, payload)):
+            yield e.get("timestamp"), tool, args_in, NOT_FOUND
+            continue
+        if not success or not isinstance(payload, dict) or payload.get("isError") or res.get("isError"):
+            continue
+        if feed and not enterprise_payload(feed, payload):
             continue
         yield e.get("timestamp"), tool, args_in, payload
 
@@ -134,17 +171,16 @@ def cmd_collect(args):
     recommendation_feed = None
     for timestamp, tool, args_in, result in tool_results(iter_events(args.session)):
         qtext = args_in.get("query", "")
+        feed = enterprise_feed(tool, args_in)
+        if feed:
+            slug = args_in["slug"]
+            bucket = settings if feed == "settings" else impact
+            bucket[slug] = {"collected_from": timestamp, "slug": slug, "namespace": "enterprise",
+                            **({"status": "not_found"} if result is NOT_FOUND else {"result": result})}
+            continue
         if recommendations.matches(tool, args_in, result, timestamp):
             recommendation_feed = {"collected_from": timestamp, "tool": tool,
                                    "arguments": args_in, "result": result}
-            continue
-        # Copilot Impact and feature settings are fetched per enterprise slug, not by query text.
-        if tool.endswith("get_copilot_impact") or tool.endswith("get_copilot_feature_settings"):
-            slug = args_in.get("slug")
-            if slug:
-                bucket = settings if tool.endswith("feature_settings") else impact
-                bucket[slug] = {"collected_from": timestamp, "slug": slug,
-                                "namespace": args_in.get("namespace"), "result": result}
             continue
         q = None
         if tool.endswith("query_kusto"):
@@ -192,15 +228,7 @@ def cmd_collect(args):
         for slug, payload in bucket.items():
             with open(os.path.join(folder, f"{slug_file(slug)}.json"), "w") as f:
                 json.dump(payload, f)
-        print(f"Collected Copilot {name} for {len(bucket)} enterprises into {folder}")
-
-    slugs = owned_slugs(day)
-    for name, bucket in (("Impact", impact), ("feature settings", settings)):
-        pending = [s for s in slugs if s not in bucket and
-                   not os.path.exists(os.path.join(out, "impact" if name == "Impact" else "settings", f"{slug_file(s)}.json"))]
-        if pending:
-            print(f"Copilot {name} still missing for {len(pending)} enterprises "
-                  f"(run `python3 refresh.py slugs` for the list).")
+    report_enterprises(owned_slugs(day), out)
 
     if missing:
         print("MISSING: " + ", ".join(missing) + " — run these queries (verbatim from `render`) and collect again.")
@@ -216,7 +244,7 @@ def owned_slugs(day=None):
     """Enterprise slugs from the most recent collected query 13."""
     base = os.path.join(DATA, "raw")
     days = sorted(d for d in os.listdir(base)) if os.path.isdir(base) else []
-    if day and day in days:
+    if day:
         days = [d for d in days if d <= day]
     for d in reversed(days):
         path = os.path.join(base, d, "13.json")
@@ -228,24 +256,37 @@ def owned_slugs(day=None):
     return []
 
 
+def report_enterprises(slugs, base, list_pending=False):
+    collected = {"impact": 0, "settings": 0}
+    pending = {}
+    for slug in slugs:
+        for feed in collected:
+            path = os.path.join(base, feed, f"{slug_file(slug)}.json")
+            if os.path.isfile(path):
+                with open(path) as f:
+                    snapshot = json.load(f)
+                if snapshot.get("slug") == slug and snapshot.get("namespace") == "enterprise":
+                    if snapshot.get("status") == "not_found":
+                        print(f"Terminal gap: {slug} ({feed} not found)")
+                        continue
+                    if enterprise_payload(feed, snapshot.get("result")):
+                        collected[feed] += 1
+                        continue
+            pending.setdefault(slug, []).append(feed)
+    print(f"{len(slugs)} owned enterprises · Impact collected {collected['impact']} · "
+          f"feature settings collected {collected['settings']} · outstanding enterprises {len(pending)}")
+    if list_pending and pending:
+        print('Call only the outstanding feeds below (namespace "enterprise"):')
+        for slug, feeds in pending.items():
+            print(f"{slug}\t{'+'.join(feeds)}")
+
+
 def cmd_slugs(args):
-    slugs = owned_slugs()
+    day = args.date or dt.date.today().isoformat()
+    slugs = owned_slugs(day)
     if not slugs:
         sys.exit("No enterprise slugs collected yet — run query 13, then `collect`.")
-    day = args.date or dt.date.today().isoformat()
-    base = os.path.join(DATA, "raw", day)
-    have = {}
-    for name in ("impact", "settings"):
-        folder = os.path.join(base, name)
-        have[name] = {os.path.splitext(f)[0] for f in os.listdir(folder)} if os.path.isdir(folder) else set()
-    pending = [s for s in slugs
-               if slug_file(s) not in have["impact"] or slug_file(s) not in have["settings"]]
-    print(f"{len(slugs)} owned enterprises · Impact collected {len(have['impact'])} · "
-          f"feature settings collected {len(have['settings'])}")
-    print("Call get_copilot_impact AND get_copilot_feature_settings (namespace \"enterprise\") for each slug below:")
-    for s in pending:
-        missing = [n for n in ("impact", "settings") if slug_file(s) not in have[n]]
-        print(f"{s}\t{'+'.join(missing)}")
+    report_enterprises(slugs, os.path.join(DATA, "raw", day), list_pending=True)
 
 
 def main():

@@ -1,5 +1,6 @@
 // Copilot code review (CCR), coding agent (CCA) and AI units by feature, shared by Pulse and the embedded
 // Copilot dashboard. Pure HTML-string rendering: every source value passes through esc(); unknown is never zero.
+import { chartPaths } from "../chart-paths.mjs";
 
 export const IMPACT_SOURCES = Object.freeze({
     "19": "Code review monthly (CCR)",
@@ -131,7 +132,7 @@ function niceMax(value) {
     return [1, 2, 2.5, 5, 10].map(step => step * mag).find(step => step >= value - 1e-12) ?? value;
 }
 
-/** Line chart. Values are chronological; null breaks the line. A hollow point and dashed segment mark month to date.
+/** Line chart. Values are chronological; dots in the stroke bridge missing periods. A hollow point and dashed segment mark month to date.
  *  Lines stretch with the card (non-scaling strokes); axis text and points are HTML so they keep their size at any width. */
 export function lineChart({ title, labels, series, format = value => fmt(value), mtd = -1 }) {
     const values = series.flatMap(s => s.values).filter(isNum);
@@ -147,21 +148,19 @@ export function lineChart({ title, labels, series, format = value => fmt(value),
     const yLabels = ticks.map(t => `<span class="ci-tick ci-tick-y" style="top:${y(t).toFixed(2)}%">${esc(format(t))}</span>`).join("");
     const xLabels = labels.map((label, i) => (n - 1 - i) % step === 0
         ? `<span class="ci-tick ci-tick-x${(n - 1 - i) / step % 2 ? " ci-alt" : ""}" style="left:${x(i).toFixed(2)}%">${esc(label)}</span>` : "").join("");
+    let hasGap = false;
     const lines = series.map(s => {
-        let solid = "", dashed = "";
-        s.values.forEach((v, i) => {
-            const prev = s.values[i - 1];
-            if (!isNum(v) || !isNum(prev)) return;
-            const seg = `M${x(i - 1).toFixed(2)},${y(prev).toFixed(2)}L${x(i).toFixed(2)},${y(v).toFixed(2)}`;
-            if (i === mtd || s.dashed) dashed += seg; else solid += seg;
-        });
+        const { solid, gap, dashed } = chartPaths(s.values, (v, i) => `${x(i).toFixed(2)},${y(v).toFixed(2)}`, i => i === mtd || s.dashed);
+        if (gap) hasGap = true;
         return `<g class="${s.cls}">${solid ? `<path d="${solid}" vector-effect="non-scaling-stroke"/>` : ""}`
+            + (gap ? `<path stroke-dasharray="1 4" d="${gap}" vector-effect="non-scaling-stroke"/>` : "")
             + `${dashed ? `<path class="ci-dash" d="${dashed}" vector-effect="non-scaling-stroke"/>` : ""}</g>`;
     }).join("");
     const dots = series.filter(s => !s.dashed).map(s => s.values.map((v, i) => isNum(v)
         ? `<span class="ci-dot ${s.cls}${i === mtd ? " ci-mtd" : ""}" style="${pos(i, v)}" title="${esc(`${s.name}, ${labels[i]}${i === mtd ? " (month to date)" : ""}: ${format(v)}`)}"></span>` : "").join("")).join("");
     const keys = series.map(s => `<span class="ci-key ${s.cls}${s.dashed ? " ci-key-dash" : ""}">${esc(s.name)}</span>`).join("")
-        + (mtd >= 0 ? '<span class="ci-key ci-key-mtd">Hollow point: month to date</span>' : "");
+        + (mtd >= 0 ? '<span class="ci-key ci-key-mtd">Hollow point: month to date</span>' : "")
+        + (hasGap ? "<span>Dotted lines span unreported periods.</span>" : "");
     return `<figure class="ci-chart"><div class="ci-plot" role="img" aria-label="${esc(title)}">`
         + `<svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" focusable="false">${grid}${lines}</svg>`
         + `${dots}${yLabels}${xLabels}</div><figcaption class="ci-legend">${keys}</figcaption></figure>`;
