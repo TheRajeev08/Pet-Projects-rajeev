@@ -657,6 +657,14 @@ h1 { letter-spacing: -.035em; font-size: 30px; }
 .workspace-metrics dd .none { font-size: 20px; }
 .workspace-columns { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 20px; align-items: start; }
 .workspace-columns > *, .attention-column { min-width: 0; }
+.product-picker { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; margin-bottom: 8px; }
+.product-picker strong { min-width: 64px; font-size: 13px; }
+.product-picker .segment-control { max-width: 100%; flex-wrap: wrap; }
+.product-billing .workspace-columns { margin-block: 20px; }
+.product-billing h3 { margin: 0 0 8px; }
+.billing-counts { display: grid; grid-template-columns: repeat(auto-fit, minmax(84px, 1fr)); gap: 12px; margin: 12px 0; }
+.billing-counts dt { color: var(--muted); font-size: 12px; }
+.billing-counts dd { margin: 0; font-size: 24px; font-weight: 650; font-variant-numeric: tabular-nums; }
 .attention-column .action-row { flex-direction: column; gap: 8px; }
 .workspace-toolbar, .account-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
 .account-toolbar { align-items: end; }

@@ -72,10 +72,60 @@ test("book comparisons use only the matched cohort, not unmatched totals", () =>
     const model = fixture();
     model.accounts[0].seller.feeds.invoices.records.push({ date: "2026-08-01", product: "actions", amount: 4 });
     model.accounts[1].seller = { feeds: { invoices: feed([{ date: "2026-09-01", product: "actions", amount: 500 }]) } };
-    const product = bookConsumption(model)[0];
+    const product = bookConsumption(model).find(p => p.product === "actions");
     assert.equal(product.latest, 516);
     assert.equal(product.mom.delta, 12);
     assert.equal(product.mom.accounts, 1);
+});
+
+test("GHAS component trends and customer modes use exact products and one closed month", () => {
+    const row = (product, amount, billing_source, date = "2026-09-01") => ({ date, product, amount, billing_source });
+    const account = (id, invoices, mrr = {}, options = {}) => syntheticAccount(id, id, { ...options,
+        seller: { feeds: { invoices: feed(invoices), mrr: feed([{ date: "2026-09-01", ...mrr }]) } } });
+    const model = { ...fixture(), accounts: [
+        account("mixed", [row("GHCS", 10, "metered"), row("GitHub Code Security", 8, "metered"), row("ghsp", 5, "volume")], { ghcs_license_mrr: 99 }),
+        account("metered", [], { ghcs_metered_mrr: 15, ghas_license_mrr: 999 }),
+        account("unclassified", [row("Code Security", 3, "reseller"), row("GitHub Code Quality", 7, "metered")]),
+        account("volume", [row("ghcs", 2, "volume"), row("Advanced Security", 4, "volume")]),
+        account("not-current", [row("ghcs", 30, "metered", "2026-10-01"), row("ghcs", 4, "volume", "2026-08-01"), row("ghsp", 0, "metered")]),
+        account("credit", [row("ghcs", -1, "volume"), row("code_quality", 0, "volume")]),
+        account("outside", [row("ghcs", 900, "volume")], {}, { in_book: false }),
+        account("stale", [row("ghcs", 700, "metered")], { ghcs_license_mrr: 500 }),
+    ] };
+    model.accounts.at(-1).seller.feeds.invoices.state = "partial";
+    model.accounts.at(-1).seller.feeds.mrr.state = "stale";
+    model.accounts[4].seller.feeds.mrr.records.push({ date: "2026-08-01", ghcs_license_mrr: 3 });
+    const results = bookConsumption(model);
+    const sku = key => results.find(p => p.product === key);
+    assert.deepEqual(["ghcs", "ghsp", "code_quality", "ghas"].map(k => sku(k).latest), [22, 5, 7, 4]);
+    assert.deepEqual(Object.fromEntries(Object.entries(sku("ghcs").modes).map(([k, rows]) => [k, rows.map(a => a.id)])),
+        { metered: ["metered"], volume: ["volume"], both: ["mixed"], unknown: ["unclassified"] });
+    assert.deepEqual(sku("code_quality").modes.metered.map(a => a.id), ["unclassified"]);
+    assert.equal(sku("ghsp").series.coverage.at(-1), 2);
+    assert.equal(sku("ghcs").series.total, 7);
+    assert.equal(sku("ghcs").series.points.at(-2)[1], 4);
+    assert.equal(sku("ghcs").series.points.at(-3)[1], null);
+    assert.equal(results.filter(p => p.name === "Code Security").length, 1);
+});
+
+test("Consumption and each product page expose scoped history and the customer billing split", () => {
+    const model = fixture();
+    for (const [view, key, title] of [["consumption", "ghsp", "Secret Protection"], ["ghas", "code_quality", "Code Quality"],
+        ["ghe", "ghec", "GHE Cloud"], ["copilot", "copilot aiu", "Copilot AI credits"], ["consumption", "actions", "Actions"]]) {
+        const html = renderView(model, { view, sellerOptions: { [`${view}Product`]: key } });
+        assert.ok(html.includes(`<h3>${title} billed trend</h3>`));
+        assert.ok(html.includes("Metered vs. volume customers"));
+        assert.ok(html.includes(`data-focus-key="billing:${key}" aria-pressed="true"`));
+        if (["ghas", "consumption"].includes(view)) {
+            for (const name of ["Secret Protection", "Code Security", "Code Quality", "GHAS (bundled)"])
+                assert.ok(html.includes(`>${name}</button>`));
+        }
+        if (key === "ghsp") {
+            assert.match(html, /No reported Billed USD in this window/);
+            assert.match(html, /No positive product billing evidence for 2026-09/);
+            assert.doesNotMatch(html, /Actions latest usage/);
+        }
+    }
 });
 
 test("successful known statuses distinguish zero open issues from missing evidence", () => {

@@ -396,7 +396,7 @@ describe("views.mjs", () => {
         assert.ok(!renderTopbar(null).includes("pill"));
         const nav = renderNav(null, { view: "ghas" });
         assert.equal(occurrences(nav, "<a "), VIEWS.length);
-        assert.ok(nav.includes('<a href="#/ghas" data-view="ghas" aria-current="page">Security</a>'));
+        assert.ok(nav.includes('<a href="#/ghas" data-view="ghas" aria-current="page">GHAS</a>'));
         assert.ok(!nav.includes('class="count'));
         assert.equal(renderNotices(null), "");
         assert.equal(renderNotices(null, { error: "Lost <link>" }), '<div class="notice error" role="alert"><p>Lost &lt;link&gt;</p></div>');
@@ -423,7 +423,7 @@ describe("views.mjs", () => {
         assert.ok(nav.includes('<a href="#/overview" data-view="overview" aria-current="page">Overview</a>'));
         assert.ok(nav.includes('data-view="ghe">GHE<span class="count high" title="3 open actions, 1 High">3</span></a>'));
         assert.ok(nav.includes('data-view="copilot">Copilot<span class="count" title="2 open actions">2</span></a>'));
-        assert.ok(nav.includes('data-view="ghas">Security<span class="count" title="1 open action">1</span></a>'));
+        assert.ok(nav.includes('data-view="ghas">GHAS<span class="count" title="1 open action">1</span></a>'));
         assert.ok(nav.includes('data-view="signals">Signals</a>'));
         const withSignals = renderNav({ ...model, signals: [{ id: "s-1" }, null, "x", { id: "s-2" }] }, { view: "overview" });
         assert.ok(withSignals.includes('data-view="signals">Signals</a>'), "unverified signals do not count toward the badge");

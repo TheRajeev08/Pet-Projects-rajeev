@@ -15,11 +15,11 @@ A daily automation refreshes the data, emails you a short digest of what is new,
 | **Overview** | Separate ARR, observed Billed LTM, usage forecast and pipeline figures; product mix, 120-day renewal radar, actions and today's changes. |
 | **Top 50** | Owned accounts ranked by ARR, observed billed LTM or renewal date; product billing/seats, closed-month consumption changes, health, SE issues, email and Gong-call recency, people/PoCs and recorded tech stack. Ties use name then ID; missing rank values go last. |
 | **Account 360** | Full-page Summary, Commercial, Products & consumption, Security, Success & support and Activity sections. Open it from Top 50 or the existing account preview. |
-| **Consumption** | Thirteen complete service months of invoiced charges, matched-account MoM/three-month comparisons, growers/decliners, separate billing units and Actions runner/job observations. |
+| **Consumption** | Thirteen closed months of billed USD per product, matched-account comparisons and changes, plus last-closed-month metered vs. volume customer counts. Code Security, Secret Protection, Code Quality and bundled GHAS have separate views even without invoice rows. |
 | **Copilot** | Embedded adoption dashboard: account plays, usage, surfaces, models, Impact, forecasts and modeled whitespace. **Seats & actions** keeps Pulse's seat table, health mix, usage funnel, actions and changes. |
 | **Impact** | The embedded dashboard's Copilot Impact view on its own tab: enterprise adoption phases, throughput, cost and ROI where the snapshot has them, and a clear empty state where it does not. |
 | **GHE** | Contracted seats, metered and billable users, adoption and explicitly observed zero-seat whitespace; missing product rows are not whitespace. |
-| **Security** | Existing GHAS/Code Quality views, Code Security and Secret Protection billing split, parent-model whitespace and account-level repository/commit protection. The `#/ghas` link remains compatible. |
+| **GHAS** | Component-specific billing trends and customer billing models, GHAS/Code Quality usage, parent-model whitespace and account-level repository/commit protection. The `#/ghas` link remains compatible. |
 | **Pipeline & renewals** | Monthly renewals, license opportunities, revenue retention, budgets and renewal risk alongside health, usage and support. |
 | **Signals** | Evidence-backed Gong, public-web and optional ZoomInfo signals, plus read-only Gainsight risks and urgent/high support escalations with coverage dates. Existing local actions remain separate. |
 | **Recommendations** | Existing live Salesforce Account Recommender evidence; exact duplicate signal evidence is collapsed without fuzzy product matching. |

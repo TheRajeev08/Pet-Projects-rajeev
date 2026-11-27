@@ -1,6 +1,6 @@
 import {
     ACCOUNT_TABS, ACCOUNT_LABELS, FEED_LABELS, activitySummary, allAccounts, billedLtm, billedSeries, bookConsumption, bookFeedCoverage, contactCount, contactDirectory, currentRows, dayOf,
-    feedOf, knownSum, labelOf, latestRows, moneyTypes, monthlyChange, observedCount, openRows, productRows,
+    feedOf, GHAS_BILLING_PRODUCTS, invoiceProduct, knownSum, labelOf, latestRows, moneyTypes, monthOffset, monthlyChange, observedCount, openRows, productRows,
     portfolioSeries, rankAccounts, renewalBuckets, renewalRisk, rowsOf, stackGroups, STACK_STATUS, usageTrend, openSeCount,
 } from "./seller-data.mjs";
 
@@ -435,18 +435,46 @@ export function createSellerViews({ esc, fmtInt, fmtMoney, fmtPct, fmtDay, spark
             + `<div class="workspace-toolbar"><a class="button" href="#/account360">View all accounts</a><a href="#/data">Coverage & freshness</a></div>`
             + disclosure("Metric definitions & source dates", '<p>ARR, invoiced billing, pipeline and usage forecasts are different measures and are never added together. LTM includes observed months, not imputed zeros.</p>' + readySources(model) + bookSources(model, ["invoices"]));
     }
+    const billingModes = [["metered", "Metered"], ["volume", "Volume"], ["both", "Both"], ["unknown", "Unclassified"]];
+    function productHistory(model, ui, products) {
+        const scope = ui.view;
+        const selection = ui.sellerOptions?.[`${scope}Product`];
+        const selected = products.find(p => p.product === selection) ?? (scope === "consumption" ? null : products[0]);
+        const buttons = (label, items) => items.length ? `<div class="product-picker"><strong>${esc(label)}</strong><div role="group" aria-label="${esc(label)}" class="segment-control">${items.map(([key, name]) =>
+            `<button type="button" data-filter="billing-product" data-value="${esc(key)}" data-focus-key="billing:${esc(key)}" aria-pressed="${key === (selected?.product ?? "all")}">${esc(name)}</button>`).join("")}</div></div>` : "";
+        const group = security => products.filter(p => GHAS_BILLING_PRODUCTS.includes(p.product) === security).map(p => [p.product, p.name]);
+        const picker = buttons("Products", [...(scope === "consumption" ? [["all", "All products"]] : []), ...group(false)]) + buttons("GHAS", group(true));
+        const month = monthOffset(model.date, -1);
+        const name = selected?.name ?? "All products";
+        const observed = p => billingModes.reduce((n, [key]) => n + p.modes[key].length, 0);
+        const detail = selected && observed(selected)
+            ? `<details><summary>View customers by billing model</summary>${simpleTable(["Billing model", "Account"], billingModes.flatMap(([key, label]) =>
+                selected.modes[key].map(a => [esc(label), accountLink(a)])))}</details>` : "";
+        const split = !selected ? simpleTable(["Product", ...billingModes.map(([, label]) => label)], products.map(p =>
+            [text(p.name), ...billingModes.map(([key]) => observed(p) ? integer(p.modes[key].length) : noData)]))
+            : observed(selected) ? `<dl class="billing-counts">${billingModes.map(([key, label]) =>
+                `<div><dt>${esc(label)}</dt><dd>${integer(selected.modes[key].length)}</dd></div>`).join("")}</dl>`
+                : `<p class="empty">No positive product billing evidence for ${esc(month)}.</p>`;
+        return { selected: selected?.product ?? null, html: `<section class="panel seller-panel product-billing"><div class="panel-head"><h2>Product consumption</h2></div>${picker}`
+            + `<div class="workspace-columns"><div><h3>${esc(name)} billed trend</h3>${lineChart(selected?.series ?? portfolioSeries(model), "13 closed months")}</div>`
+            + `<div><h3>Metered vs. volume customers</h3><p class="note">${esc(month)} · Unique owned accounts per product</p>${split}${detail}</div></div>`
+            + `<details><summary>Billing sources & counting rules</summary><p>Positive charges with an explicit billing model, or positive Code Security and Secret Protection metered or license MRR in the same month, identify the observed modes. Both counts once. A billed account without an identified mode is unclassified. Missing, zero and credit-only evidence do not establish a paying customer. One account can buy several products.</p>${bookSources(model, ["invoices", "mrr"])}</details></section>` };
+    }
+    function familyHistory(model, ui) {
+        const keys = ui.view === "ghas" ? GHAS_BILLING_PRODUCTS : ui.view === "ghe" ? ["ghec"] : ["copilot", "copilot aiu", "copilot_enterprise"];
+        return productHistory(model, ui, bookConsumption(model, keys)).html;
+    }
     function consumption(model, ui = {}) {
         const products = bookConsumption(model);
-        const selected = products.some(p => p.product === ui.sellerOptions?.consumptionProduct) ? ui.sellerOptions.consumptionProduct : null;
-        const movers = model.accounts.map(a => ({ a, delta: monthlyChange(billedSeries(a, model.date)) }))
+        const { selected, html } = productHistory(model, ui, products);
+        const book = allAccounts(model);
+        const movers = book.map(a => ({ a, delta: monthlyChange(billedSeries(a, model.date, selected)) }))
             .filter(r => r.delta).sort((a, b) => b.delta.delta - a.delta.delta);
-        const units = model.accounts.flatMap(a => currentRows(a, "invoices").map(r => ({ ...r, account: a })));
+        const units = book.flatMap(a => currentRows(a, "invoices").filter(r => !selected || invoiceProduct(r.product) === selected).map(r => ({ ...r, account: a })));
         return header("Consumption", "Closed-month invoiced USD only. Missing account-months stay unknown. MoM and 3-month changes use matched reporting accounts, not unmatched totals.")
-            + panel("Billed history", select(ui, "consumptionProduct", "Product", [["all", "All products"], ...products.map(p => [p.product, p.name])])
-                + lineChart(portfolioSeries(model, selected), "13 closed months"), bookSources(model, ["invoices"]))
-            + panel("Billed by product", simpleTable(["Product", "Last complete month", "MoM (matched)", "3-month change (matched)", "13-month trend", "Reporting accounts"],
-                products.map(p => [text(p.name), money(p.latest, "Billed"), change(p.mom), change(p.quarter),
-                    trend(p.series, `${p.name} [Billed] USD`), `${p.reporting}/${model.accounts.length}`])),
+            + html + panel("Billed by product", simpleTable(["Product", "Last complete month", "MoM (matched)", "3-month change (matched)", "13-month trend", "Reporting accounts"],
+                products.filter(p => !selected || p.product === selected).map(p => [text(p.name), money(p.latest, "Billed"), change(p.mom), change(p.quarter),
+                    trend(p.series, `${p.name} [Billed] USD`), `${p.reporting}/${book.length}`])),
             '<p class="seller-source">New internal feed · rev_source consumption invoices. No projected categories or synthetic zero rows.</p>' + bookSources(model, ["invoices"]))
             + panel("Top growers / decliners", simpleTable(["Account", "MoM billed change"], [
                 ...movers.filter(r => r.delta.delta > 0).slice(0, 5),
@@ -454,9 +482,9 @@ export function createSellerViews({ esc, fmtInt, fmtMoney, fmtPct, fmtDay, spark
             ].map(r => [accountLink(r.a), change(r.delta)])), bookSources(model, ["invoices"]))
             + disclosure("Billed quantity by unit (never combined)", simpleTable(["Account", "Month", "Product", "UOM", "Billed units", "Billed USD"], units.map(r =>
                 [accountLink(r.account), date(r.date), text(labelOf(r.product)), text(r.uom), integer(r.units), money(r.amount, "Billed")])) + bookSources(model, ["invoices"]))
-            + disclosure("Actions latest usage", simpleTable(["Account", "Date", "Hosted minutes / 28d", "Self-hosted minutes / 28d", "Jobs / 28d", "Active days / 28d"],
-                model.accounts.flatMap(a => latestRows(a, "actions").map(r => [accountLink(a), date(r.date), integer(r.hosted_minutes),
-                    integer(r.self_hosted_minutes), integer(r.jobs), integer(r.active_days)]))), '<p class="seller-source">New internal feed · c360.fact_actions_metrics (experimental). Each account links to runner/job history.</p>');
+            + (!selected || selected === "actions" ? disclosure("Actions latest usage", simpleTable(["Account", "Date", "Hosted minutes / 28d", "Self-hosted minutes / 28d", "Jobs / 28d", "Active days / 28d"],
+                book.flatMap(a => latestRows(a, "actions").map(r => [accountLink(a), date(r.date), integer(r.hosted_minutes),
+                    integer(r.self_hosted_minutes), integer(r.jobs), integer(r.active_days)]))), '<p class="seller-source">New internal feed · c360.fact_actions_metrics (experimental). Each account links to runner/job history.</p>') : "");
     }
     function pipeline(model, ui = {}) {
         const months = new Map();
@@ -523,5 +551,5 @@ export function createSellerViews({ esc, fmtInt, fmtMoney, fmtPct, fmtDay, spark
                     money(r.amount, "Usage est."), integer(r.actors)]))),
             '<p class="seller-source">New internal feed · enterprise_account_monthly_ubb_model_cost_fact. Usage-side net is not final invoice billing. Distinct actors are never added across model, integration or enterprise slices.</p>');
     }
-    return { account360, top50, overview, consumption, pipeline, coverage, productExtras, copilotExtras };
+    return { account360, top50, overview, consumption, familyHistory, pipeline, coverage, productExtras, copilotExtras };
 }

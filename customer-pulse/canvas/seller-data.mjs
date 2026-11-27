@@ -50,20 +50,29 @@ export function latestRows(account, key, dimensions = []) {
 
 export const PRODUCTS = [
     ["ghec", "GHE Cloud", "ghe", "GitHub Enterprise Cloud"], ["ghcs", "Code Security", "ghas", "GHCS"],
-    ["ghsp", "Secret Protection", "ghas", "GHSP"], ["ghas", "Advanced Security (bundled)", "ghas", "Advanced Security"],
+    ["ghsp", "Secret Protection", "ghas", "GHSP"], ["ghas", "GHAS (bundled)", "ghas", "Advanced Security"],
     ["copilot", "Copilot", "ghcp"], ["copilot aiu", "Copilot AI credits"], ["actions", "Actions"], ["codespaces", "Codespaces"],
     ["code_quality", "Code Quality"], ["copilot_enterprise", "Copilot Enterprise"], ["GitHub Models", "Models inference"],
     ["git_lfs", "Git LFS"], ["packages", "Packages"], ["shared_storage", "Shared storage"], ["spark", "Spark"], ["sandboxes", "Sandboxes"],
 ];
 const productLabel = new Map(PRODUCTS.map(([key, label]) => [key, label]));
-export const labelOf = key => productLabel.get(key) || key || "Unmapped invoice product";
+export const GHAS_BILLING_PRODUCTS = ["ghcs", "ghsp", "code_quality", "ghas"];
+const normalizeName = name => name.trim().toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ");
+const invoiceNames = new Map(PRODUCTS.flatMap(([key, name, , type]) =>
+    [key, name, type, `GitHub ${name}`].filter(Boolean).map(alias => [normalizeName(alias), key])));
+export const invoiceProduct = name => typeof name === "string" ? invoiceNames.get(normalizeName(name)) ?? name : name;
+export const labelOf = key => productLabel.get(invoiceProduct(key)) || key || "Unmapped invoice product";
 
 export function billedSeries(account, today, product = null) {
-    const rows = currentRows(account, "invoices");
+    const totals = new Map();
+    for (const row of currentRows(account, "invoices")) {
+        if (!isNumber(row.amount) || (product !== null && invoiceProduct(row.product) !== product)) continue;
+        const month = monthOf(row.date);
+        totals.set(month, (totals.get(month) ?? 0) + row.amount);
+    }
     return { points: Array.from({ length: 13 }, (_, i) => {
         const month = monthOffset(today, i - 13);
-        const values = rows.filter(r => monthOf(r.date) === month && (product === null || r.product === product)).map(r => r.amount);
-        return [`${month}-01`, knownSum(values)];
+        return [`${month}-01`, totals.get(month) ?? null];
     }) };
 }
 export function billedLtm(account, today, product = null) {
@@ -83,7 +92,7 @@ export function monthlyChange(series, months = 1) {
 }
 export function productRows(account, today) {
     const invoices = currentRows(account, "invoices");
-    const extra = [...new Set(invoices.map(r => r.product).filter(Boolean))].filter(p => !productLabel.has(p)).map(p => [p, p]);
+    const extra = [...new Set(invoices.map(r => invoiceProduct(r.product)).filter(Boolean))].filter(p => !productLabel.has(p)).map(p => [p, p]);
     return [...PRODUCTS, ...extra].map(([key, name, family, type]) => {
         const p = account.products?.[family] || {};
         const contract = type ? p.by_type?.[type] : null;
@@ -97,7 +106,7 @@ export function productRows(account, today) {
         // GHE usage is account-wide, not safely attributable to the Cloud-only SKU.
         const billing = billedLtm(account, today, key);
         const owned = (seats ?? 0) > 0;
-        const metered = invoices.some(r => r.product === key && isNumber(r.amount));
+        const metered = invoices.some(r => invoiceProduct(r.product) === key && isNumber(r.amount));
         const explicitAbsent = isNumber(seats) && seats === 0;
         return { key, name, seats, used, utilization: seats > 0 && isNumber(used) ? used / seats : null,
             arr: key === "copilot" ? account.seller?.ready?.copilot_arr ?? null : contract?.arr ?? null,
@@ -217,12 +226,34 @@ export function usageTrend(account) {
     const s = account.products?.ghcp?.series?.assigned || account.products?.ghe?.series?.metered;
     return seriesChange(s, 30);
 }
-export function bookConsumption(model) {
-    const products = [...new Set(model.accounts.flatMap(a => currentRows(a, "invoices").map(r => r.product)))];
+// Split MRR exists at this exact SKU grain. Family-level GHAS/GHE MRR and
+// Copilot plan tiers cannot establish the billing model of a component.
+function customerBillingMode(account, product, month) {
+    const invoices = currentRows(account, "invoices").filter(row => monthOf(row.date) === month
+        && invoiceProduct(row.product) === product && isNumber(row.amount) && row.amount > 0);
+    const sources = new Set(invoices.map(r => String(r.billing_source || "").trim().toLowerCase()));
+    const mrr = ["ghcs", "ghsp"].includes(product)
+        ? currentRows(account, "mrr").filter(r => monthOf(r.date) === month) : [];
+    const positive = key => mrr.some(row => isNumber(row[key]) && row[key] > 0);
+    const metered = sources.has("metered") || positive(`${product}_metered_mrr`);
+    const volume = sources.has("volume") || positive(`${product}_license_mrr`);
+    return metered && volume ? "both" : metered ? "metered" : volume ? "volume" : invoices.length ? "unknown" : null;
+}
+export function bookConsumption(model, only = null) {
+    const book = allAccounts(model);
+    const products = only ?? [...new Set(["ghec", "copilot", ...GHAS_BILLING_PRODUCTS,
+        ...book.flatMap(a => currentRows(a, "invoices").map(r => invoiceProduct(r.product)).filter(Boolean))])];
+    const month = monthOffset(model.date, -1);
     return products.map(product => {
-        const accounts = model.accounts.map(a => ({ account: a, series: billedSeries(a, model.date, product) }));
+        const modes = { metered: [], volume: [], both: [], unknown: [] };
+        const accounts = book.map(a => {
+            const mode = customerBillingMode(a, product, month);
+            if (mode) modes[mode].push(a);
+            return { series: billedSeries(a, model.date, product) };
+        });
         const point = index => knownSum(accounts.map(a => a.series.points[index][1]));
-        const series = { points: Array.from({ length: 13 }, (_, i) => [`${monthOffset(model.date, i - 13)}-01`, point(i)]) };
+        const series = { points: Array.from({ length: 13 }, (_, i) => [`${monthOffset(model.date, i - 13)}-01`, point(i)]),
+            coverage: Array.from({ length: 13 }, (_, i) => accounts.filter(a => isNumber(a.series.points[i][1])).length), total: accounts.length };
         const comparable = months => {
             const pairs = accounts.filter(a => isNumber(a.series.points[12][1]) && isNumber(a.series.points[12 - months][1]));
             if (!pairs.length) return null;
@@ -230,8 +261,8 @@ export function bookConsumption(model) {
             const prior = knownSum(pairs.map(a => a.series.points[12 - months][1]));
             return { delta: current - prior, fraction: prior === 0 ? null : (current - prior) / Math.abs(prior), accounts: pairs.length };
         };
-        return { product, name: labelOf(product), series, latest: point(12), mom: comparable(1), quarter: comparable(3),
-            reporting: accounts.filter(a => isNumber(a.series.points[12][1])).length };
+        return { product, name: labelOf(product), series, modes, latest: point(12), mom: comparable(1), quarter: comparable(3),
+            reporting: series.coverage[12] };
     });
 }
 

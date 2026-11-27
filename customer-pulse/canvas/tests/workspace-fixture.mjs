@@ -18,8 +18,15 @@ export function workspaceModel() {
             const d = new Date("2025-10-01T00:00:00Z"); d.setUTCMonth(d.getUTCMonth() + j);
             return d.toISOString().slice(0, 10);
         });
-        const invoices = months.flatMap((date, j) => (i % 7 === 0 && j === 8) ? [] : ["ghec", "copilot", "actions", "ghcs"].map((product, p) =>
-            ({ date, product, amount: 6000 - i * 40 + j * 110 + p * 60, units: 100 + j, uom: p === 2 ? "minute" : "seat" })));
+        const invoices = months.flatMap((date, j) => (i % 7 === 0 && j === 8) ? [] :
+            ["ghec", "copilot", "actions", "ghcs", "ghsp", "code_quality", "ghas", "copilot aiu", "copilot_enterprise"].flatMap((product, p) => {
+                if ((product === "code_quality" && j < 4) || (product === "ghas" && i % 4 !== 0)) return [];
+                const amount = Math.round((6000 - i * 40) * (1 + .04 * j + .16 * Math.sin(j / 2 + p)) / (p + 1));
+                const mode = (i + p) % 7;
+                const sources = mode === 0 ? ["metered", "volume"] : [mode === 6 ? null : mode < 5 ? "metered" : "volume"];
+                return sources.map(billing_source => ({ date, product, amount: amount / sources.length, billing_source,
+                    units: (100 + j) / sources.length, uom: product === "actions" ? "minute" : product === "copilot aiu" ? "AI unit" : "seat" }));
+            }));
         const people = [
             { id: `person-${i}-1`, name: "Synthetic Alex", role: "Engineering director", email: `alex${i}@example.invalid`, last_activity: "2026-11-20" },
             { id: `person-${i}-2`, name: "Synthetic Morgan", role: "Platform lead", email: null },

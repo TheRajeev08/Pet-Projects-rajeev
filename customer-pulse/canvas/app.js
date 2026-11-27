@@ -733,6 +733,9 @@ document.addEventListener("click", event => {
             state.sellerRank = value;
             delete state.sort.top50;
             render();
+        } else if (filter === "billing-product" && ["consumption", "ghas", "ghe", "copilot"].includes(state.view)) {
+            state.sellerOptions[`${state.view}Product`] = value;
+            render();
         } else if (filter === "copilot" && ["all", "attention", "unassigned", "engaged_lt_50", "renewing_90"].includes(value)) {
             state.copilotFilter = value;
             render();
