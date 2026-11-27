@@ -78,34 +78,92 @@ test("book comparisons use only the matched cohort, not unmatched totals", () =>
     assert.equal(product.mom.accounts, 1);
 });
 
-test("GHAS component trends and customer modes use exact products and one closed month", () => {
+// Live vocabulary: invoice billing_source is a channel, MRR is current-month only, and models come from contract attributes.
+function liveBillingModel() {
     const row = (product, amount, billing_source, date = "2026-09-01") => ({ date, product, amount, billing_source });
-    const account = (id, invoices, mrr = {}, options = {}) => syntheticAccount(id, id, { ...options,
-        seller: { feeds: { invoices: feed(invoices), mrr: feed([{ date: "2026-09-01", ...mrr }]) } } });
+    const account = (id, invoices, mrr = null, options = {}) => syntheticAccount(id, id, { ...options,
+        seller: { feeds: { invoices: feed(invoices), mrr: feed(mrr ? [{ date: "2026-10-01", ...mrr }] : []) } } });
     const model = { ...fixture(), accounts: [
-        account("mixed", [row("GHCS", 10, "metered"), row("GitHub Code Security", 8, "metered"), row("ghsp", 5, "volume")], { ghcs_license_mrr: 99 }),
-        account("metered", [], { ghcs_metered_mrr: 15, ghas_license_mrr: 999 }),
-        account("unclassified", [row("Code Security", 3, "reseller"), row("GitHub Code Quality", 7, "metered")]),
-        account("volume", [row("ghcs", 2, "volume"), row("Advanced Security", 4, "volume")]),
-        account("not-current", [row("ghcs", 30, "metered", "2026-10-01"), row("ghcs", 4, "volume", "2026-08-01"), row("ghsp", 0, "metered")]),
-        account("credit", [row("ghcs", -1, "volume"), row("code_quality", 0, "volume")]),
-        account("outside", [row("ghcs", 900, "volume")], {}, { in_book: false }),
-        account("stale", [row("ghcs", 700, "metered")], { ghcs_license_mrr: 500 }),
+        account("ghe-volume-mrr", [], { ghe_license_mrr: 500 }),
+        account("ghe-volume-contract", [], null, { ghe: { contracted: 50, billing: "volume", as_of: "2026-10-25" } }),
+        account("ghe-mixed", [row("GitHub Enterprise Cloud", 100, "Zuora")], { ghe_license_mrr: 200 }),
+        account("ghe-metered-users", [], null, { ghe: { contracted: 0, billing: "metered", metered: 12, metered_as_of: "2026-10-26" } }),
+        account("ghe-volume-zero-seats", [], null, { ghe: { contracted: 0, billing: "volume", as_of: "2026-10-25" } }),
+        account("metered-channels", [row("GitHub Enterprise Cloud", 40, "azure"), row("ghcs", 10, "azure"), row("GitHub Code Security", 8, "Zuora"),
+            row("ghsp", 5, "Zuora"), row("Copilot", 30, "azure")]),
+        account("ghas-volume", [], null, { as_of: "2026-10-25", ghas: { contracted: 20, licensing_model: "Volume", plan: "Volume - Bundled" } }),
+        account("ghas-unbundled", [], { ghcs_metered_mrr: 15, ghas_license_mrr: 0 },
+            { as_of: "2026-10-25", ghas: { contracted: 30, licensing_model: "Metered", plan: "Metered - Unbundled" } }),
+        account("ghas-volume-no-seats", [], null, { as_of: "2026-10-25", ghas: { licensing_model: "Volume" } }),
+        account("copilot-mrr-only", [], { copilot_business_mrr: 400 }),
+        account("copilot-invoiced-earlier", [row("Copilot", 20, "Zuora", "2026-03-01")], { copilot_enterprise_mrr: 100 }),
+        account("credit", [row("ghcs", -1, "azure"), row("code_quality", 0, "Zuora")], { ghcs_license_mrr: 0, ghe_license_mrr: -5 }),
+        account("not-current", [row("ghcs", 30, "Zuora", "2026-10-01"), row("ghcs", 4, "Zuora", "2026-08-01")]),
+        account("code-quality", [row("GitHub Code Quality", 7, "Zuora")]),
+        account("outside", [row("ghcs", 900, "azure")], { ghe_license_mrr: 900, copilot_business_mrr: 900 }, { in_book: false }),
+        account("stale", [row("ghcs", 700, "Zuora")], { ghcs_license_mrr: 500, copilot_business_mrr: 9 }),
     ] };
     model.accounts.at(-1).seller.feeds.invoices.state = "partial";
     model.accounts.at(-1).seller.feeds.mrr.state = "stale";
-    model.accounts[4].seller.feeds.mrr.records.push({ date: "2026-08-01", ghcs_license_mrr: 3 });
-    const results = bookConsumption(model);
+    return model;
+}
+
+test("billing channels count as metered and volume comes only from license MRR or licensing models", () => {
+    const results = bookConsumption(liveBillingModel());
     const sku = key => results.find(p => p.product === key);
-    assert.deepEqual(["ghcs", "ghsp", "code_quality", "ghas"].map(k => sku(k).latest), [22, 5, 7, 4]);
-    assert.deepEqual(Object.fromEntries(Object.entries(sku("ghcs").modes).map(([k, rows]) => [k, rows.map(a => a.id)])),
-        { metered: ["metered"], volume: ["volume"], both: ["mixed"], unknown: ["unclassified"] });
-    assert.deepEqual(sku("code_quality").modes.metered.map(a => a.id), ["unclassified"]);
-    assert.equal(sku("ghsp").series.coverage.at(-1), 2);
-    assert.equal(sku("ghcs").series.total, 7);
+    const ids = key => Object.fromEntries(Object.entries(sku(key).modes).map(([k, rows]) => [k, rows && rows.map(a => a.id)]));
+    assert.deepEqual(ids("ghec"), { metered: ["ghe-metered-users", "metered-channels"], volume: ["ghe-volume-mrr", "ghe-volume-contract"], both: ["ghe-mixed"] });
+    assert.ok(sku("ghec").modes.volume.length > 0);
+    assert.deepEqual(ids("ghcs"), { metered: ["metered-channels", "ghas-unbundled"], volume: [], both: [] });
+    assert.deepEqual(ids("ghsp"), { metered: ["metered-channels"], volume: [], both: [] });
+    assert.deepEqual(ids("ghas"), { metered: [], volume: ["ghas-volume"], both: [] });
+    assert.deepEqual(ids("code_quality"), { metered: ["code-quality"], volume: null, both: null });
+    assert.deepEqual(ids("copilot"), { metered: ["metered-channels"], volume: null, both: null });
+    assert.equal(sku("copilot").volumeAvailable, false);
+    assert.deepEqual(sku("copilot").mrrOnly.map(a => a.id), ["copilot-mrr-only"]);
+    assert.equal(sku("ghec").mrrOnly, null);
+    assert.deepEqual(sku("ghec").details.find(d => d.account.id === "ghe-mixed").evidence.map(e => [e.label, e.date]),
+        [["Consumption invoice", "2026-09"], ["License MRR", "2026-10"]]);
+    assert.deepEqual(sku("ghec").basis.map(b => [b.source, b.date, b.note]), [["invoices", "2026-09", "last closed month"],
+        ["mrr", "2026-10", "current month"], ["ghe_contract", "2026-10-25", "contract snapshot"]]);
+    assert.deepEqual(sku("ghas").basis.at(-1), { source: "ghas_licensing", label: "GHAS licensing model", date: "2026-10-25", note: "account attributes" });
+    assert.equal(sku("ghcs").latest, 17);
     assert.equal(sku("ghcs").series.points.at(-2)[1], 4);
     assert.equal(sku("ghcs").series.points.at(-3)[1], null);
     assert.equal(results.filter(p => p.name === "Code Security").length, 1);
+});
+
+test("preview fixture uses live billing vocabulary and still reports GHE volume", () => {
+    const model = workspaceModel();
+    const channels = new Set(model.accounts.flatMap(a => a.seller.feeds.invoices.records.map(r => r.billing_source)));
+    assert.deepEqual([...channels].sort(), ["Zuora", "azure"]);
+    assert.ok(model.accounts.every(a => a.seller.feeds.mrr.records.every(r => r.date === "2026-11-01")));
+    const byProduct = Object.fromEntries(bookConsumption(model).map(p => [p.product, p]));
+    assert.ok(byProduct.ghec.modes.volume.length > 0);
+    assert.ok(byProduct.ghec.modes.volume.some(a => !a.seller.feeds.invoices.records.some(r => r.product === "ghec")));
+    assert.ok(byProduct.ghec.modes.both.some(a => a.id === "synthetic-2"));
+    assert.ok(byProduct.ghas.modes.volume.length > 0);
+    assert.equal(byProduct.copilot.modes.volume, null);
+    assert.ok(byProduct.copilot.mrrOnly.length > 0);
+    assert.deepEqual(byProduct.ghcs.modes.volume, []);
+});
+
+test("product pages render evidence dates, Not available volume and the Copilot MRR-only count", () => {
+    const model = liveBillingModel();
+    const page = (view, key) => renderView(model, { view, sellerOptions: { [`${view}Product`]: key } });
+    const ghe = page("ghe", "ghec");
+    assert.match(ghe, /<dt>Volume<\/dt><dd>2<\/dd>/);
+    assert.match(ghe, /<dt>Both<\/dt><dd>1<\/dd>/);
+    assert.match(ghe, /Recurring revenue <strong>2026-10<\/strong> <span class="sub">current month<\/span>/);
+    assert.match(ghe, /Consumption invoices <strong>2026-09<\/strong> <span class="sub">last closed month<\/span>/);
+    assert.doesNotMatch(ghe, /Recurring revenue <strong>[^<]*<\/strong> <span class="sub">last closed month/);
+    const copilot = page("copilot", "copilot");
+    assert.match(copilot, /<dt>Volume<\/dt><dd><span class="none"[^>]*>Not available<\/span><\/dd>/);
+    assert.match(copilot, /<dt>Copilot MRR, no Copilot invoice in 13 months<\/dt><dd>1<\/dd>/);
+    assert.match(copilot, /<h3>Copilot metered consumption billed<\/h3>/);
+    const all = renderView(model, { view: "consumption" });
+    assert.match(all, /Copilot: 1 accounts have Copilot MRR but no Copilot invoice in 13 months. Not counted as volume./);
+    assert.doesNotMatch(all, /Unclassified/);
 });
 
 test("Consumption and each product page expose scoped history and the customer billing split", () => {
@@ -113,7 +171,8 @@ test("Consumption and each product page expose scoped history and the customer b
     for (const [view, key, title] of [["consumption", "ghsp", "Secret Protection"], ["ghas", "code_quality", "Code Quality"],
         ["ghe", "ghec", "GHE Cloud"], ["copilot", "copilot aiu", "Copilot AI credits"], ["consumption", "actions", "Actions"]]) {
         const html = renderView(model, { view, sellerOptions: { [`${view}Product`]: key } });
-        assert.ok(html.includes(`<h3>${title} billed trend</h3>`));
+        assert.ok(html.includes(`<h3>${title} metered consumption billed</h3>`));
+        assert.ok(html.includes("Volume license billing is not in this feed"));
         assert.ok(html.includes("Metered vs. volume customers"));
         assert.ok(html.includes(`data-focus-key="billing:${key}" aria-pressed="true"`));
         if (["ghas", "consumption"].includes(view)) {
@@ -122,7 +181,7 @@ test("Consumption and each product page expose scoped history and the customer b
         }
         if (key === "ghsp") {
             assert.match(html, /No reported Billed USD in this window/);
-            assert.match(html, /No positive product billing evidence for 2026-09/);
+            assert.match(html, /No positive billing-model evidence for Secret Protection\./);
             assert.doesNotMatch(html, /Actions latest usage/);
         }
     }

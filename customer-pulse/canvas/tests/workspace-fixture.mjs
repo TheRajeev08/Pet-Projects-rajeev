@@ -18,15 +18,26 @@ export function workspaceModel() {
             const d = new Date("2025-10-01T00:00:00Z"); d.setUTCMonth(d.getUTCMonth() + j);
             return d.toISOString().slice(0, 10);
         });
+        // Live vocabulary: billing_source is the channel (Zuora/azure), never the billing model. Volume-only GHE,
+        // volume GHAS and Copilot MRR-only accounts have no matching consumption invoices at all.
+        const volumeGhe = i % 5 === 1, mixedGhe = i === 2, ghasVolume = i % 4 === 2, copilotMrrOnly = i % 9 === 4;
         const invoices = months.flatMap((date, j) => (i % 7 === 0 && j === 8) ? [] :
             ["ghec", "copilot", "actions", "ghcs", "ghsp", "code_quality", "ghas", "copilot aiu", "copilot_enterprise"].flatMap((product, p) => {
-                if ((product === "code_quality" && j < 4) || (product === "ghas" && i % 4 !== 0)) return [];
+                if ((product === "code_quality" && j < 4) || (product === "ghas" && i % 4 !== 0)
+                    || (product === "ghec" && volumeGhe) || (["ghcs", "ghsp"].includes(product) && ghasVolume)
+                    || (["copilot", "copilot_enterprise"].includes(product) && copilotMrrOnly)) return [];
                 const amount = Math.round((6000 - i * 40) * (1 + .04 * j + .16 * Math.sin(j / 2 + p)) / (p + 1));
-                const mode = (i + p) % 7;
-                const sources = mode === 0 ? ["metered", "volume"] : [mode === 6 ? null : mode < 5 ? "metered" : "volume"];
-                return sources.map(billing_source => ({ date, product, amount: amount / sources.length, billing_source,
-                    units: (100 + j) / sources.length, uom: product === "actions" ? "minute" : product === "copilot aiu" ? "AI unit" : "seat" }));
+                const channels = (i + p) % 11 === 0 ? ["Zuora", "azure"] : [(i + p) % 3 === 0 ? "azure" : "Zuora"];
+                return channels.map(billing_source => ({ date, product, amount: amount / channels.length, billing_source,
+                    units: (100 + j) / channels.length, uom: product === "actions" ? "minute" : product === "copilot aiu" ? "AI unit" : "seat" }));
             }));
+        // MRR is the current month only (2026-11), as in the live mrr feed. Component license MRR is reported as zero.
+        const mrr = i % 8 === 7 ? [] : [{ date: "2026-11-01", source_date: "2026-11-26",
+            ghe_license_mrr: volumeGhe && i % 10 === 6 || mixedGhe ? 9000 - i * 50 : 0, ghe_metered_mrr: volumeGhe ? 0 : 4200 - i * 30,
+            ghas_license_mrr: ghasVolume ? 3600 : 0, ghas_metered_mrr: 0, ghcs_license_mrr: 0, ghcs_metered_mrr: ghasVolume ? 0 : 1100,
+            ghsp_license_mrr: 0, ghsp_metered_mrr: ghasVolume ? 0 : 700, copilot_business_mrr: 3800 - i * 20,
+            copilot_enterprise_mrr: i % 6 === 0 ? 1500 : 0, copilot_standalone_mrr: 0 }];
+        const gheModel = mixedGhe ? "mixed" : volumeGhe ? (i % 10 === 1 ? "volume" : undefined) : "metered";
         const people = [
             { id: `person-${i}-1`, name: "Synthetic Alex", role: "Engineering director", email: `alex${i}@example.invalid`, last_activity: "2026-11-20" },
             { id: `person-${i}-2`, name: "Synthetic Morgan", role: "Platform lead", email: null },
@@ -44,16 +55,19 @@ export function workspaceModel() {
         const a = syntheticAccount(`synthetic-${i}`, `Synthetic ${names[i % names.length]}${i >= 10 ? ` ${i + 1}` : ""}`,
             { arr: i === 63 ? null : 420000 - i * 5000, renewing_in_days: i === 62 ? null : i * 5 - 5,
                 renewal: i === 62 ? null : new Date(Date.parse(model.date) + (i * 5 - 5) * 86400000).toISOString().slice(0, 10),
-                as_of: model.date, open_pipeline_net_arr: i % 3 ? 35000 : null, open_renewal_arr: 80000,
-                ghe: { contracted: 240, metered: 220, series: { metered: series }, by_type: { "GitHub Enterprise Cloud": { seats: 240, arr: 110000 } } },
+                as_of: "2026-11-25", open_pipeline_net_arr: i % 3 ? 35000 : null, open_renewal_arr: 80000,
+                ghe: { contracted: gheModel === "metered" ? 0 : 240, metered: volumeGhe ? 0 : 220, billing: gheModel, as_of: "2026-11-25",
+                    metered_as_of: "2026-11-26", series: { metered: series }, by_type: { "GitHub Enterprise Cloud": { seats: 240, arr: 110000 } } },
                 ghcp: { contracted: 200, assigned: 182, health: { category: ["Green", "Yellow", "Red"][i % 3] }, series: { assigned: series }, funnel: { assigned: 182, active_1d28: 160, engaged_1d28: 132 } },
-                ghas: { contracted: 130, committers: 98, series: { committers: series }, by_type: { GHCS: { seats: 130, arr: 46000 } } },
+                ghas: { contracted: 130, committers: 98, series: { committers: series }, by_type: { GHCS: { seats: 130, arr: 46000 } },
+                    ...(ghasVolume ? { licensing_model: "Volume", plan: "Volume - Bundled" }
+                        : i % 4 === 0 ? { licensing_model: "Metered", plan: "Metered - Unbundled" } : {}) },
                 seller: { ready: { copilot_arr: 84000 }, feeds: {
                     contacts: feed(people, i === 7 ? "stale" : "ok"),
                     emails: feed([{ id: `email-${i}`, date: "2026-11-24", title: "Synthetic enablement follow-up",
                         people: [{ email: people[0].email }], thread: `thread-${i}` }]),
                     gong: feed([call]),
-                    issues: feed([issue]), invoices: feed(invoices), tech_stack: feed([claim, { ...claim, technology: "CircleCI",
+                    issues: feed([issue]), invoices: feed(invoices), mrr: feed(mrr, mrr.length ? "ok" : "no_rows"), tech_stack: feed([claim, { ...claim, technology: "CircleCI",
                         usage_status: "evaluating", source_type: "gong", source_id: call.id, source_url: call.url,
                         observed_at: call.date, evidence_quote: call.description }], "partial"),
                     support: feed([], "no_rows"), risks: feed([], "no_rows"),

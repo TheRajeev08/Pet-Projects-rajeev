@@ -226,18 +226,75 @@ export function usageTrend(account) {
     const s = account.products?.ghcp?.series?.assigned || account.products?.ghe?.series?.metered;
     return seriesChange(s, 30);
 }
-// Split MRR exists at this exact SKU grain. Family-level GHAS/GHE MRR and
-// Copilot plan tiers cannot establish the billing model of a component.
-function customerBillingMode(account, product, month) {
-    const invoices = currentRows(account, "invoices").filter(row => monthOf(row.date) === month
-        && invoiceProduct(row.product) === product && isNumber(row.amount) && row.amount > 0);
-    const sources = new Set(invoices.map(r => String(r.billing_source || "").trim().toLowerCase()));
-    const mrr = ["ghcs", "ghsp"].includes(product)
-        ? currentRows(account, "mrr").filter(r => monthOf(r.date) === month) : [];
-    const positive = key => mrr.some(row => isNumber(row[key]) && row[key] > 0);
-    const metered = sources.has("metered") || positive(`${product}_metered_mrr`);
-    const volume = sources.has("volume") || positive(`${product}_license_mrr`);
-    return metered && volume ? "both" : metered ? "metered" : volume ? "volume" : invoices.length ? "unknown" : null;
+// The invoice feed carries billing channels (for example Zuora or azure), not billing models, and only
+// consumption charges reach it, so any positive invoice is metered evidence. Volume evidence exists only
+// at these grains: split license MRR, the GHE contract model and the GHAS licensing model. Family-level
+// evidence is never allocated to a component, and Copilot has no license/metered split in any source.
+export const VOLUME_EVIDENCE = { ghec: "ghe", ghas: "ghas", ghcs: "ghcs", ghsp: "ghsp" };
+const COPILOT_SEAT_PRODUCTS = ["copilot", "copilot_enterprise"];
+const COPILOT_MRR = ["copilot_business_mrr", "copilot_enterprise_mrr", "copilot_standalone_mrr"];
+const positive = value => isNumber(value) && value > 0;
+function latestMrr(account) {
+    const rows = currentRows(account, "mrr").filter(row => monthOf(row.date));
+    const month = rows.map(row => monthOf(row.date)).sort().at(-1);
+    if (!month) return null;
+    const current = rows.filter(row => monthOf(row.date) === month);
+    return { month, value: key => knownSum(current.map(row => row[key])) };
+}
+function customerBillingEvidence(account, product, month) {
+    const metered = [], volume = [];
+    if (currentRows(account, "invoices").some(row => monthOf(row.date) === month
+        && invoiceProduct(row.product) === product && positive(row.amount)))
+        metered.push({ source: "invoices", label: "Consumption invoice", date: month });
+    const sku = VOLUME_EVIDENCE[product];
+    if (sku) {
+        const mrr = latestMrr(account);
+        if (mrr && positive(mrr.value(`${sku}_metered_mrr`))) metered.push({ source: "mrr", label: "Metered MRR", date: mrr.month });
+        if (mrr && positive(mrr.value(`${sku}_license_mrr`))) volume.push({ source: "mrr", label: "License MRR", date: mrr.month });
+    }
+    const ghe = account.products?.ghe || {};
+    if (product === "ghec") {
+        if (["volume", "mixed"].includes(ghe.billing) && !(isNumber(ghe.contracted) && ghe.contracted <= 0))
+            volume.push({ source: "ghe_contract", label: "GHE contract model", date: dayOf(ghe.as_of) });
+        if (["metered", "mixed"].includes(ghe.billing) && positive(ghe.metered))
+            metered.push({ source: "ghe_contract", label: "GHE metered users", date: dayOf(ghe.metered_as_of ?? ghe.as_of) });
+    }
+    const ghas = account.products?.ghas || {};
+    if (product === "ghas" && /^volume\b/i.test(String(ghas.licensing_model || ghas.plan || "").trim())
+        && (positive(ghas.contracted) || positive(ghas.arr)))
+        volume.push({ source: "ghas_licensing", label: "GHAS licensing model", date: dayOf(account.as_of) });
+    const mode = metered.length && volume.length ? "both" : metered.length ? "metered" : volume.length ? "volume" : null;
+    return mode && { mode, evidence: [...metered, ...volume] };
+}
+// Recurring Copilot revenue without a Copilot seat invoice in the 13-month window. This is not a volume proxy.
+function copilotMrrWithoutInvoice(account, today) {
+    if (feedOf(account, "invoices").state !== "ok") return null;
+    const mrr = latestMrr(account);
+    if (!mrr || !COPILOT_MRR.some(key => positive(mrr.value(key)))) return null;
+    const window = new Set(Array.from({ length: 13 }, (_, i) => monthOffset(today, i - 13)));
+    const invoiced = currentRows(account, "invoices").some(row => window.has(monthOf(row.date))
+        && COPILOT_SEAT_PRODUCTS.includes(invoiceProduct(row.product)) && positive(row.amount));
+    return invoiced ? null : { source: "mrr", label: "Copilot MRR, no Copilot invoice in 13 months", date: mrr.month };
+}
+const span = values => {
+    const sorted = [...new Set(values.filter(Boolean))].sort();
+    return !sorted.length ? null : sorted.length === 1 ? sorted[0] : `${sorted[0]} – ${sorted.at(-1)}`;
+};
+function evidenceBasis(model, book, product, month) {
+    const current = monthOf(model.date);
+    const mrrMonths = book.map(a => latestMrr(a)?.month);
+    const basis = [{ source: "invoices", label: "Consumption invoices", date: month, note: "last closed month" }];
+    if (VOLUME_EVIDENCE[product] || product === "copilot") {
+        const date = span(mrrMonths);
+        basis.push({ source: "mrr", label: "Recurring revenue", date,
+            note: date === current ? "current month" : date ? "MRR month" : "not reported" });
+    }
+    if (product === "ghec") basis.push({ source: "ghe_contract", label: "GHE contract model",
+        date: span(book.filter(a => a.products?.ghe?.billing).map(a => dayOf(a.products.ghe.as_of))), note: "contract snapshot" });
+    if (product === "ghas") basis.push({ source: "ghas_licensing", label: "GHAS licensing model",
+        date: span(book.filter(a => a.products?.ghas?.licensing_model || a.products?.ghas?.plan).map(a => dayOf(a.as_of))),
+        note: "account attributes" });
+    return basis;
 }
 export function bookConsumption(model, only = null) {
     const book = allAccounts(model);
@@ -245,10 +302,15 @@ export function bookConsumption(model, only = null) {
         ...book.flatMap(a => currentRows(a, "invoices").map(r => invoiceProduct(r.product)).filter(Boolean))])];
     const month = monthOffset(model.date, -1);
     return products.map(product => {
-        const modes = { metered: [], volume: [], both: [], unknown: [] };
+        const hasVolume = Boolean(VOLUME_EVIDENCE[product]);
+        const modes = { metered: [], volume: hasVolume ? [] : null, both: hasVolume ? [] : null };
+        const details = [];
+        const mrrOnly = product === "copilot" ? [] : null;
         const accounts = book.map(a => {
-            const mode = customerBillingMode(a, product, month);
-            if (mode) modes[mode].push(a);
+            const result = customerBillingEvidence(a, product, month);
+            if (result) { modes[result.mode].push(a); details.push({ account: a, ...result }); }
+            const other = mrrOnly && copilotMrrWithoutInvoice(a, model.date);
+            if (other) { mrrOnly.push(a); details.push({ account: a, mode: "mrr_only", evidence: [other] }); }
             return { series: billedSeries(a, model.date, product) };
         });
         const point = index => knownSum(accounts.map(a => a.series.points[index][1]));
@@ -261,8 +323,9 @@ export function bookConsumption(model, only = null) {
             const prior = knownSum(pairs.map(a => a.series.points[12 - months][1]));
             return { delta: current - prior, fraction: prior === 0 ? null : (current - prior) / Math.abs(prior), accounts: pairs.length };
         };
-        return { product, name: labelOf(product), series, modes, latest: point(12), mom: comparable(1), quarter: comparable(3),
-            reporting: series.coverage[12] };
+        return { product, name: labelOf(product), series, modes, volumeAvailable: hasVolume, mrrOnly, details,
+            basis: evidenceBasis(model, book, product, month), month,
+            latest: point(12), mom: comparable(1), quarter: comparable(3), reporting: series.coverage[12] };
     });
 }
 

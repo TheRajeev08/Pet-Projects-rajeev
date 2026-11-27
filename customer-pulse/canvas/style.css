@@ -665,6 +665,18 @@ h1 { letter-spacing: -.035em; font-size: 30px; }
 .billing-counts { display: grid; grid-template-columns: repeat(auto-fit, minmax(84px, 1fr)); gap: 12px; margin: 12px 0; }
 .billing-counts dt { color: var(--muted); font-size: 12px; }
 .billing-counts dd { margin: 0; font-size: 24px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.billing-counts dd .none { font-size: 14px; font-weight: 500; }
+.billing-counts .billing-other { grid-column: 1 / -1; }
+.billing-basis { display: grid; gap: 2px; margin: 0 0 8px; padding: 0; list-style: none; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.billing-basis strong { color: var(--ink); font-variant-numeric: tabular-nums; }
+.billing-basis .sub, .billing-evidence .sub { display: inline; margin-left: 4px; }
+.billing-evidence th, .billing-evidence td { overflow-wrap: normal; }
+.billing-evidence .evidence-item { display: block; }
+.billing-evidence .sub { white-space: nowrap; }
+.billing-evidence td[data-label="Evidence"] { min-width: 22ch; }
+.billing-evidence .evidence-item + .evidence-item { margin-top: 4px; }
+.billing-rules { margin-top: 12px; }
+.billing-rules p { max-width: 70ch; }
 .attention-column .action-row { flex-direction: column; gap: 8px; }
 .workspace-toolbar, .account-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
 .account-toolbar { align-items: end; }

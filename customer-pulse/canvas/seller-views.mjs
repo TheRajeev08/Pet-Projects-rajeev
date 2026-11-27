@@ -1,6 +1,6 @@
 import {
     ACCOUNT_TABS, ACCOUNT_LABELS, FEED_LABELS, activitySummary, allAccounts, billedLtm, billedSeries, bookConsumption, bookFeedCoverage, contactCount, contactDirectory, currentRows, dayOf,
-    feedOf, GHAS_BILLING_PRODUCTS, invoiceProduct, knownSum, labelOf, latestRows, moneyTypes, monthOffset, monthlyChange, observedCount, openRows, productRows,
+    feedOf, GHAS_BILLING_PRODUCTS, invoiceProduct, knownSum, labelOf, latestRows, moneyTypes, monthlyChange, observedCount, openRows, productRows,
     portfolioSeries, rankAccounts, renewalBuckets, renewalRisk, rowsOf, stackGroups, STACK_STATUS, usageTrend, openSeCount,
 } from "./seller-data.mjs";
 
@@ -181,7 +181,7 @@ export function createSellerViews({ esc, fmtInt, fmtMoney, fmtPct, fmtDay, spark
             `<details><summary>${esc(p.name)} ${trend(p.trend, `${p.name} [Billed] USD`)}</summary>${seriesTable(p.trend)}</details>`).join("") : '<p class="empty">No data</p>',
         source(a, "invoices"));
         const units = recordPanel(a, "invoices", [["Month", "date", date], ["Product", "product", v => text(labelOf(v))],
-            ["Billing source", "billing_source"], ["Amount USD", "amount", v => money(v, "Billed")],
+            ["Billing channel", "billing_source"], ["Amount USD", "amount", v => money(v, "Billed")],
             ["Units", "units", integer], ["Unit of measure", "uom"]]);
         const actions = rowsOf(a, "actions");
         const actionSeries = key => ({ points: actions.map(r => [dayOf(r.date), r[key] ?? null]).filter(p => p[0]) });
@@ -435,7 +435,17 @@ export function createSellerViews({ esc, fmtInt, fmtMoney, fmtPct, fmtDay, spark
             + `<div class="workspace-toolbar"><a class="button" href="#/account360">View all accounts</a><a href="#/data">Coverage & freshness</a></div>`
             + disclosure("Metric definitions & source dates", '<p>ARR, invoiced billing, pipeline and usage forecasts are different measures and are never added together. LTM includes observed months, not imputed zeros.</p>' + readySources(model) + bookSources(model, ["invoices"]));
     }
-    const billingModes = [["metered", "Metered"], ["volume", "Volume"], ["both", "Both"], ["unknown", "Unclassified"]];
+    const billingModes = [["metered", "Metered"], ["volume", "Volume"], ["both", "Both"]];
+    const notAvailable = '<span class="none" title="No volume billing source exists for this product">Not available</span>';
+    const modeCount = (p, key) => p.modes[key] === null ? notAvailable : integer(p.modes[key].length);
+    const billingRules = "<p><strong>Metered:</strong> a positive consumption invoice for the product in the last closed month on any billing channel (for example Zuora or Azure), positive metered MRR at the exact SKU grain, or positive GHE metered users under a metered or mixed GHE contract model.</p>"
+        + "<p><strong>Volume:</strong> positive license MRR at the exact SKU grain (GHE, the GHAS bundle, Code Security, Secret Protection), a volume or mixed GHE contract model, or a Volume GHAS licensing model with positive GHAS seats or ARR. GHE evidence is family-level GHE licensing. GHAS bundle evidence is never allocated to Code Security or Secret Protection.</p>"
+        + "<p>Copilot, Copilot AI credits, Code Quality, Actions, storage, Packages, Git LFS, Codespaces and other consumption products have no volume source, so Volume and Both show Not available rather than 0. Accounts with Copilot MRR but no Copilot invoice in 13 months are listed separately and are not counted as volume.</p>"
+        + "<p>Each source keeps its own date. Recurring revenue is the latest MRR month and licensing models are account snapshots; neither is a closed-month figure. Both counts once. Missing, zero, negative and credit-only evidence never establish a paying customer, and stale or partial feeds are excluded. One account can buy several products.</p>";
+    function evidenceCaption(basis) {
+        const unique = [...new Map(basis.map(b => [b.source, b])).values()];
+        return `<ul class="billing-basis" aria-label="Evidence dates">${unique.map(b => `<li>${esc(b.label)} <strong>${esc(b.date ?? "not reported")}</strong>${b.date ? ` <span class="sub">${esc(b.note)}</span>` : ""}</li>`).join("")}</ul>`;
+    }
     function productHistory(model, ui, products) {
         const scope = ui.view;
         const selection = ui.sellerOptions?.[`${scope}Product`];
@@ -444,21 +454,28 @@ export function createSellerViews({ esc, fmtInt, fmtMoney, fmtPct, fmtDay, spark
             `<button type="button" data-filter="billing-product" data-value="${esc(key)}" data-focus-key="billing:${esc(key)}" aria-pressed="${key === (selected?.product ?? "all")}">${esc(name)}</button>`).join("")}</div></div>` : "";
         const group = security => products.filter(p => GHAS_BILLING_PRODUCTS.includes(p.product) === security).map(p => [p.product, p.name]);
         const picker = buttons("Products", [...(scope === "consumption" ? [["all", "All products"]] : []), ...group(false)]) + buttons("GHAS", group(true));
-        const month = monthOffset(model.date, -1);
         const name = selected?.name ?? "All products";
-        const observed = p => billingModes.reduce((n, [key]) => n + p.modes[key].length, 0);
+        const observed = p => billingModes.reduce((n, [key]) => n + (p.modes[key]?.length ?? 0), 0) + (p.mrrOnly?.length ?? 0);
+        const modeLabel = Object.fromEntries([...billingModes, ["mrr_only", "Copilot MRR, no invoice in 13 months"]]);
+        const evidence = row => row.evidence.map(e => `<span class="evidence-item">${esc(e.label)} <span class="sub">${esc(e.date ?? "undated")}</span></span>`).join("");
         const detail = selected && observed(selected)
-            ? `<details><summary>View customers by billing model</summary>${simpleTable(["Billing model", "Account"], billingModes.flatMap(([key, label]) =>
-                selected.modes[key].map(a => [esc(label), accountLink(a)])))}</details>` : "";
+            ? `<details class="billing-evidence"><summary>View customers and evidence</summary>${simpleTable(["Billing model", "Account", "Evidence"], selected.details.map(row =>
+                [esc(modeLabel[row.mode]), accountLink(row.account), evidence(row)]))}</details>` : "";
+        const copilot = products.find(p => p.mrrOnly);
+        const mrrOnlyNote = !selected && copilot?.mrrOnly.length
+            ? `<p class="note">Copilot: ${integer(copilot.mrrOnly.length)} accounts have Copilot MRR but no Copilot invoice in 13 months. Not counted as volume.</p>` : "";
         const split = !selected ? simpleTable(["Product", ...billingModes.map(([, label]) => label)], products.map(p =>
-            [text(p.name), ...billingModes.map(([key]) => observed(p) ? integer(p.modes[key].length) : noData)]))
+            [text(p.name), ...billingModes.map(([key]) => observed(p) || p.modes[key] === null ? modeCount(p, key) : noData)])) + mrrOnlyNote
             : observed(selected) ? `<dl class="billing-counts">${billingModes.map(([key, label]) =>
-                `<div><dt>${esc(label)}</dt><dd>${integer(selected.modes[key].length)}</dd></div>`).join("")}</dl>`
-                : `<p class="empty">No positive product billing evidence for ${esc(month)}.</p>`;
+                `<div><dt>${esc(label)}</dt><dd>${modeCount(selected, key)}</dd></div>`).join("")}${selected.mrrOnly
+                ? `<div class="billing-other"><dt>Copilot MRR, no Copilot invoice in 13 months</dt><dd>${integer(selected.mrrOnly.length)}</dd></div>` : ""}</dl>`
+                : `<p class="empty">No positive billing-model evidence for ${esc(name)}.</p>`;
+        const basis = selected ? selected.basis : products.flatMap(p => p.basis);
         return { selected: selected?.product ?? null, html: `<section class="panel seller-panel product-billing"><div class="panel-head"><h2>Product consumption</h2></div>${picker}`
-            + `<div class="workspace-columns"><div><h3>${esc(name)} billed trend</h3>${lineChart(selected?.series ?? portfolioSeries(model), "13 closed months")}</div>`
-            + `<div><h3>Metered vs. volume customers</h3><p class="note">${esc(month)} · Unique owned accounts per product</p>${split}${detail}</div></div>`
-            + `<details><summary>Billing sources & counting rules</summary><p>Positive charges with an explicit billing model, or positive Code Security and Secret Protection metered or license MRR in the same month, identify the observed modes. Both counts once. A billed account without an identified mode is unclassified. Missing, zero and credit-only evidence do not establish a paying customer. One account can buy several products.</p>${bookSources(model, ["invoices", "mrr"])}</details></section>` };
+            + `<div class="workspace-columns"><div><h3>${esc(name)} metered consumption billed</h3>${lineChart(selected?.series ?? portfolioSeries(model), "13 closed months")}`
+            + '<p class="note">Consumption invoices only. Volume license billing is not in this feed, so this is not total product billing.</p></div>'
+            + `<div><h3>Metered vs. volume customers</h3>${evidenceCaption(basis)}<p class="note">Unique owned accounts per product</p>${split}${detail}`
+            + `<details class="billing-rules"><summary>Billing sources & counting rules</summary>${billingRules}${bookSources(model, ["invoices", "mrr"])}</details></div></div></section>` };
     }
     function familyHistory(model, ui) {
         const keys = ui.view === "ghas" ? GHAS_BILLING_PRODUCTS : ui.view === "ghe" ? ["ghec"] : ["copilot", "copilot aiu", "copilot_enterprise"];
