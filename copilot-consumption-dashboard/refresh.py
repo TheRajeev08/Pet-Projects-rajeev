@@ -95,20 +95,12 @@ def enterprise_not_found(detail, slug):
         return any(enterprise_not_found(item.get("text"), slug) for item in detail
                    if isinstance(item, dict) and item.get("type") == "text")
     if isinstance(detail, dict):
-        for key in ("error", "message", "content"):
-            if enterprise_not_found(detail.get(key), slug):
-                return True
-        return (detail.get("code") in ("ENTERPRISE_NOT_FOUND", "ACCOUNT_NOT_FOUND")
-                or (not detail.get("message") and not detail.get("error")
-                    and any(str(detail.get(key)) in ("404", "NOT_FOUND", "not_found")
-                            for key in ("status", "statusCode", "code"))))
+        return any(enterprise_not_found(detail.get(key), slug) for key in ("error", "message", "content"))
     if not isinstance(detail, str):
         return False
-    name = rf"['\"`]?{re.escape(slug)}['\"`]?"
-    resource = r"(?:github\s+)?(?:enterprise(?:\s+account)?|account)"
-    message = rf"(?:not found|{resource}(?:\s+(?:with\s+slug\s+)?{name})?\s+(?:was\s+)?not found(?:\s*:\s*{name})?|no {resource} found for slug\s+{name})"
-    return bool(re.fullmatch(rf"(?:error:\s*)?(?:(?:http\s+)?404[\s:-]*)?{message}[.!]?",
-                             detail.strip(), re.I))
+    # Revenue reports generic code "failure"; the message identifies the actual resource.
+    message = detail.strip().removeprefix("MCP server 'revenue-mcp-server': ")
+    return message.casefold() == f"not found: {slug} (github.com)".casefold()
 
 
 def enterprise_payload(feed, payload):
@@ -136,7 +128,7 @@ def tool_results(events):
             res = d.get("result") or {}
             text = res.get("content")
             success = d.get("success")
-            error = d.get("error")
+            error = d.get("error") or res.get("error")
         elif e.get("type") == "hook.start" and d.get("hookType") == "postToolUse":
             inp = d.get("input") or {}
             res = inp.get("toolResult") or {}

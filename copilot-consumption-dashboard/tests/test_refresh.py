@@ -101,8 +101,9 @@ class RefreshTests(unittest.TestCase):
         request = {"namespace": "enterprise", "slug": slug}
         start = {"type": "tool.execution_start", "data": {"toolCallId": "s", "arguments": request,
                  "mcpToolName": "get_copilot_feature_settings"}}
+        miss = {"code": "failure", "message": f"MCP server 'revenue-mcp-server': not found: {slug} (github.com)"}
         end = {"type": "tool.execution_complete", "timestamp": STAMP, "data": {
-            "toolCallId": "s", "success": False, "error": {"message": f"Enterprise '{slug}' not found"}}}
+            "toolCallId": "s", "success": False, "error": miss}}
         impact = hook()["data"]["input"]
         impact.update(toolName="revenue-mcp-server-get_copilot_impact", toolArgs=request)
         event = {"type": "hook.start", "timestamp": STAMP, "data": {"hookType": "postToolUse", "input": impact}}
@@ -115,12 +116,12 @@ class RefreshTests(unittest.TestCase):
                     fn(arg)
                 return buf.getvalue()
 
-            for error in ["Tool not found", "Account lookup timed out", "Unauthorized", "Enterprise 'other' not found"]:
+            for error in ["Tool not found", "Account lookup timed out", "Unauthorized", "404 Not Found",
+                          miss["message"].replace(slug, "other"), miss["message"].replace("github.com", "other.invalid")]:
                 impact["toolResult"] = {"resultType": "failure", "textResultForLlm": error}
                 output(refresh.cmd_collect)
                 self.assertIn(f"{slug}\timpact\n", output(refresh.cmd_slugs))
-            impact["toolResult"] = {"resultType": "success", "structuredContent": {"isError": True,
-                                    "error": {"statusCode": 404, "message": "Not Found"}}}
+            impact["toolResult"] = {"resultType": "failure", "textResultForLlm": miss["message"]}
             self.assertIn(f"Terminal gap: {slug} (impact not found)", output(refresh.cmd_collect))
             self.assertIn("Impact collected 0 · feature settings collected 0 · outstanding enterprises 0", output(refresh.cmd_slugs))
             doc = builder.build_enterprises([{"slug": slug}], [], [], builder.load_enterprise_payloads(args.date), [])[0]
