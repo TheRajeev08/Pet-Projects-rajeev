@@ -107,12 +107,13 @@ def account_actions(acc, events, th, today):
         out.append(_action("ghas_overage", "opportunity", "High", acct, "ghas", "GHAS committers above seats",
                            f"{_fmt(committers)} active committers vs {_fmt(ghas_seats)} GHAS seats (+{_fmt(committers - ghas_seats)}).",
                            {"committers": committers, "contracted": ghas_seats}))
-    if ghe_seats >= th["whitespace_min_seats"] and not ghas_seats and not committers:
+    if ghe_seats >= th["whitespace_min_seats"] and ghas.get("contracted") == 0 and committers == 0:
         out.append(_action("ghas_whitespace", "opportunity", "Medium", acct, "ghas", "GHAS whitespace",
                            f"{_fmt(ghe_seats)} GHE seats and no GHAS. Lead with Secret Protection and Code Security.",
                            {"ghe_seats": ghe_seats}))
     cp_seats = max(ghcp.get("contracted") or 0, assigned or 0)
-    if ghe_seats >= th["copilot_penetration_min_ghe"] and cp_seats < th["copilot_penetration_low"] * ghe_seats:
+    if (ghcp.get("contracted") is not None and assigned is not None
+            and ghe_seats >= th["copilot_penetration_min_ghe"] and cp_seats < th["copilot_penetration_low"] * ghe_seats):
         if cp_seats:
             why = f"Copilot covers {_fmt(cp_seats)} of {_fmt(ghe_seats)} GHE seats ({_pct(cp_seats / ghe_seats)})."
         else:

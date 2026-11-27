@@ -6,6 +6,7 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ACTION_STATES, copilotLicenses, isObject, validateModel, withActionStates } from "./model.mjs";
 import { validateModel as validateCopilotModel } from "./copilot/insights.mjs";
+import { dedupeSignals } from "./seller-data.mjs";
 
 const assets = dirname(fileURLToPath(import.meta.url));
 const STATIC = {
@@ -13,6 +14,8 @@ const STATIC = {
     "/model.mjs": "text/javascript; charset=utf-8",
     "/views.mjs": "text/javascript; charset=utf-8",
     "/recommendations.mjs": "text/javascript; charset=utf-8",
+    "/seller-data.mjs": "text/javascript; charset=utf-8",
+    "/seller-views.mjs": "text/javascript; charset=utf-8",
     "/style.css": "text/css; charset=utf-8",
     "/copilot/app.js": "text/javascript; charset=utf-8",
     "/copilot/insights.mjs": "text/javascript; charset=utf-8",
@@ -168,9 +171,11 @@ async function writeJsonAtomic(path, payload) {
 
 async function applyActionState(paths, id, state, now) {
     const { model } = await readModel(paths.model);
-    if (![...model.actions, ...(model.signals || [])].some(action => action?.id === id)) {
+    const action = [...model.actions, ...(model.signals || [])].find(action => action?.id === id);
+    if (!action) {
         throw new CanvasRequestError("action_unknown", 404, "That action or signal is not in the current snapshot. Reload and try again.");
     }
+    if (action.read_only) throw new CanvasRequestError("action_read_only", 403, "Internal source signals are read-only.");
     let doc;
     try {
         doc = await readOptionalJson(paths.actioned);
@@ -393,7 +398,8 @@ export async function startCanvasServer({ paths = pulsePaths(), refresh, port = 
                 }
                 refresh.observe(result.revision);
                 json(res, 200, {
-                    model: { ...withActionStates(result.model, items), recommendations },
+                    model: { ...withActionStates(result.model, items), recommendations,
+                        signals: dedupeSignals(withActionStates(result.model, items).signals || [], recommendations) },
                     revision: `${result.revision}|${actionedRev}|${statusRev}`,
                     build,
                     refresh: refresh.status(),

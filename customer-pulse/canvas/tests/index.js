@@ -6,3 +6,4 @@ import "./copilot-licenses.test.mjs";
 import "./signals.test.mjs";
 import "./seat-wording.test.mjs";
 import "./recommendations.test.mjs";
+import "./seller.test.mjs";

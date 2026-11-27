@@ -31,7 +31,7 @@ test("exact integrations, policy states, and non-additive user signals remain di
     assert.match(html, /Enabled with an observed zero 28d UBB signal/);
     assert.doesNotMatch(html, /Peak daily user signal 28d/);
     assert.match(html, /Outcome metrics are not available/);
-    assert.match(html, /Week 1: \$4\.00 \(2 observed\)/);
+    assert.match(html, /Week 1: \$4\.00 \[Usage est\.\] \(2 observed\)/);
 });
 
 test("enterprise and account user signals describe their distinct source semantics", () => {

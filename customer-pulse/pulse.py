@@ -9,7 +9,7 @@ import traceback
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from pulse import collect, digest, model, paths, privacy, queries, signals  # noqa: E402
+from pulse import collect, digest, model, paths, privacy, queries, seller, signals  # noqa: E402
 from pulse.util import LockBusy, RunLock, atomic_write_json, read_json  # noqa: E402
 
 
@@ -173,6 +173,28 @@ def cmd_signals_ingest(a):
     print(json.dumps(out, indent=2))
 
 
+def cmd_seller(a):
+    if not os.environ.get("CP_HOME"):
+        raise ValueError("Set CP_HOME explicitly for seller collection (use a private home during development)")
+    cfg = paths.load_config()
+    with RunLock(paths.lock_path()):
+        if a.cmd == "seller-plan":
+            snapshot = read_json(paths.model_path())
+            if not snapshot:
+                raise ValueError("Build the owned-book model before planning seller reads")
+            out = seller.plan(snapshot, cfg, _today(a), a.group, a.account)
+        else:
+            statuses = {}
+            for value in a.source_status:
+                key, sep, state = value.partition("=")
+                if not sep:
+                    raise ValueError("source-status must be task-id=state")
+                statuses[key] = state
+            out = seller.collect_plan(cfg, a.group, queries.session_id(a.session), statuses, use_sf=not a.no_sf)
+    print(json.dumps(out, indent=2))
+    return 2 if out.get("missing") else 0
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="pulse.py", description=__doc__)
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -235,6 +257,16 @@ def main(argv=None):
     s.add_argument("--all", action="store_true", help="scan every tracked and untracked file instead of the staged diff")
     s.add_argument("paths", nargs="*")
     s.set_defaults(fn=cmd_privacy_scan)
+
+    for command in ("seller-plan", "seller-collect"):
+        s = sub.add_parser(command, help="read-only internal seller enrichment; requires explicit CP_HOME")
+        s.add_argument("--group", choices=("analytics", "activity", "budgets", "mail"), default="analytics")
+        s.add_argument("--today")
+        s.add_argument("--account")
+        s.add_argument("--session")
+        s.add_argument("--no-sf", action="store_true")
+        s.add_argument("--source-status", action="append", default=[])
+        s.set_defaults(fn=cmd_seller)
 
     a = p.parse_args(argv)
     try:

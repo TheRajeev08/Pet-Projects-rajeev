@@ -13,7 +13,7 @@ import {
 import { NO_PYTHON, buildPulseHome, removeDir, syntheticAccount, syntheticAction, syntheticEvent, syntheticModel, tempDir } from "./helpers.mjs";
 
 const NOW = new Date(2026, 9, 27, 12);
-const DASH = "\u2013";
+const DASH = "No data";
 const ids = list => list.map(item => item.id);
 const captures = (html, pattern) => [...html.matchAll(pattern)].map(match => match[1]);
 const rowIds = html => captures(html, /<th scope="row"><button type="button" class="link account-link" data-account="([^"]+)"/g);
@@ -273,11 +273,17 @@ describe("model.mjs", () => {
 
     test("whitespace lists in-book accounts that could adopt a product, largest first", () => {
         const model = syntheticModel();
+        assert.deepEqual(ids(whitespace(model, "ghe")), []);
+        assert.deepEqual(ids(whitespace(model, "ghas")), []);
+        assert.deepEqual(ids(whitespace(model, "ghcp")), []);
+        model.accounts[2].products.ghe.contracted = 0;
+        model.accounts[1].products.ghas.contracted = 0;
+        model.accounts[1].products.ghcp.contracted = 0;
         assert.deepEqual(ids(whitespace(model, "ghe")), ["t-3"]);
         assert.deepEqual(ids(whitespace(model, "ghas")), ["t-2"]);
         assert.deepEqual(ids(whitespace(model, "ghcp")), ["t-2"]);
-        model.accounts.push(syntheticAccount("t-4", "Delta Co", { arr: 900, in_book: false }), syntheticAccount("t-5", "Epsilon Co", { arr: 150 }),
-            syntheticAccount("t-6", "Aardvark Co", { arr: 100 }));
+        model.accounts.push(syntheticAccount("t-4", "Delta Co", { arr: 900, in_book: false, ghe: { contracted: 0 } }), syntheticAccount("t-5", "Epsilon Co", { arr: 150, ghe: { contracted: 0 } }),
+            syntheticAccount("t-6", "Aardvark Co", { arr: 100, ghe: { contracted: 0 } }));
         assert.deepEqual(ids(whitespace(model, "ghe")), ["t-5", "t-6", "t-3"]);
     });
 
@@ -352,7 +358,7 @@ describe("views.mjs", () => {
         assert.equal(esc(0), "0");
     });
 
-    test("formatters render missing values as a dash", () => {
+    test("formatters render missing values as No data", () => {
         for (const value of [null, undefined, NaN, Infinity, "12"]) assert.equal(fmtInt(value), DASH);
         assert.equal(fmtInt(1234.6), "1,235");
         assert.deepEqual([0, 999, 1500, 2000, 222500, 1.25e6, -2500, 2e9].map(fmtMoney), ["$0", "$999", "$1.5k", "$2k", "$223k", "$1.3M", "\u2212$2.5k", "$2B"]);
@@ -389,7 +395,7 @@ describe("views.mjs", () => {
         assert.ok(!renderTopbar(null).includes("pill"));
         const nav = renderNav(null, { view: "ghas" });
         assert.equal(occurrences(nav, "<a "), VIEWS.length);
-        assert.ok(nav.includes('<a href="#/ghas" data-view="ghas" aria-current="page">GHAS</a>'));
+        assert.ok(nav.includes('<a href="#/ghas" data-view="ghas" aria-current="page">Security</a>'));
         assert.ok(!nav.includes('class="count'));
         assert.equal(renderNotices(null), "");
         assert.equal(renderNotices(null, { error: "Lost <link>" }), '<div class="notice error" role="alert"><p>Lost &lt;link&gt;</p></div>');
@@ -416,7 +422,7 @@ describe("views.mjs", () => {
         assert.ok(nav.includes('<a href="#/overview" data-view="overview" aria-current="page">Overview</a>'));
         assert.ok(nav.includes('data-view="ghe">GHE<span class="count high" title="3 open actions, 1 High">3</span></a>'));
         assert.ok(nav.includes('data-view="copilot">Copilot<span class="count" title="2 open actions">2</span></a>'));
-        assert.ok(nav.includes('data-view="ghas">GHAS<span class="count" title="1 open action">1</span></a>'));
+        assert.ok(nav.includes('data-view="ghas">Security<span class="count" title="1 open action">1</span></a>'));
         assert.ok(nav.includes('data-view="signals">Signals</a>'));
         const withSignals = renderNav({ ...model, signals: [{ id: "s-1" }, null, "x", { id: "s-2" }] }, { view: "overview" });
         assert.ok(withSignals.includes('data-view="signals">Signals</a>'), "unverified signals do not count toward the badge");
@@ -464,7 +470,7 @@ describe("views.mjs", () => {
         assert.ok(closed.includes('<span class="state">Done Oct 26</span><button type="button" class="button tiny subtle" data-action="reopen" data-id="a-3" data-focus-key="reopen:a-3">Reopen</button>'));
         assert.ok(closed.includes('data-toggle="closed" data-focus-key="closed:overview" checked>'));
         assert.deepEqual(actionIds(section(renderView(model, { view: "ghe", now: NOW }), "h-actions-ghe")), ["a-2", "a-5", "a-1"]);
-        assert.ok(section(renderView(model, { view: "ghas", now: NOW, kind: { ghas: "opportunity" } }), "h-actions-ghas").includes('<p class="empty">No open opportunities for GHAS.</p>'));
+        assert.ok(section(renderView(model, { view: "ghas", now: NOW, kind: { ghas: "opportunity" } }), "h-actions-ghas").includes('<p class="empty">No open opportunities for Security.</p>'));
     });
 
     test("long lists stop at their limits and expand with Show all", () => {

@@ -623,3 +623,16 @@ tbody tr:hover > * { background: var(--hover-row); }
 .recommendations, .recommendation-list li { overflow-wrap: anywhere; }
 .recommendation-list { padding-left: 1.5rem; }
 .recommendation-list li { margin: 1rem 0; }
+.seller-panel { padding: 16px; margin-bottom: 20px; }
+.seller-source { color: var(--muted); font-size: 12px; line-height: 1.6; margin: 8px 0 16px; }
+.seller-ranks { display: flex; flex-wrap: wrap; gap: 8px; }
+.seller-ranks .selected { background: var(--wash); border-color: var(--accent); color: var(--accent); }
+.seller-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 16px; }
+.seller-metrics dt { font-size: 12px; }
+.seller-metrics dd { margin: 8px 0; font-size: 22px; font-weight: 600; }
+.seller-panel .table-wrap { max-height: 600px; overflow: auto; }
+.seller-panel th { white-space: normal; min-width: 100px; }
+.seller-panel details { margin: 12px 0; }
+.seller-panel summary { cursor: pointer; display: flex; align-items: center; gap: 24px; }
+.seller-panel small { white-space: nowrap; }
+.seller-panel a.link { display: inline-block; }

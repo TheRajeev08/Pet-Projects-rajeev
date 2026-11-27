@@ -26,7 +26,7 @@ const cases = [
     ["metered", { measure: "metered", to: 11, delta: 1 }, "GHE metered users increased by 1 user (from 10 to 11)"],
     ["billable", { measure: "ubu" }, "GHE billable users increased by 2 users (from 10 to 12)"],
     ["committer", { family: "ghas", measure: "committers", to: 9, delta: -1, kind: "dropped" },
-        "GHAS active committers decreased by 1 committer (from 10 to 9)"],
+        "Security active committers decreased by 1 committer (from 10 to 9)"],
     ["product type", { family: "ghas", product_type: "GHSP" },
         "Secret Protection seats under contract increased by 2 seats (from 10 to 12)"],
     ["large numbers", { from: 1000, to: 2000, delta: 1000 },
@@ -98,7 +98,7 @@ test("all native surfaces and summary replace stale snapshot wording without cha
             const summary = summarize(model);
             assert.deepEqual(summary.recent_changes, [{
                 date: change.date, priority: change.priority, account: change.account_name,
-                product: { ghe: "GHE", ghas: "GHAS", ghcp: "Copilot" }[family], change: expected, new: false,
+                product: { ghe: "GHE", ghas: "Security", ghcp: "Copilot" }[family], change: expected, new: false,
             }]);
             const legacy = summarize({ ...model, events: [{ ...change, kind: "unknown" }] });
             assert.deepEqual({ ...summary, recent_changes: [] }, { ...legacy, recent_changes: [] });
