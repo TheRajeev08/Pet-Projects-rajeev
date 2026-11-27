@@ -1,6 +1,7 @@
 """Synthetic internal-feed contracts; never reads the published seller homes."""
 import copy
 import datetime as dt
+import json
 import os
 import unittest
 
@@ -23,17 +24,58 @@ def entry(rows, state="ok"):
 
 
 class SellerTests(fx.HomeCase):
-    def test_plans_bound_owned_scope_and_rotate_fifty_without_writes(self):
-        model = {"accounts": [{"id": f"001{i:012d}AAA", "name": f"Synthetic {i:02}", "arr": i} for i in range(60)]}
-        sets = []
-        for i in range(5):
+    def _simulate_rotation(self, model, days, reshuffle=None):
+        seen, daily = {}, []
+        for i in range(days):
             day = (dt.date.fromisoformat(TODAY) + dt.timedelta(days=i)).isoformat()
+            if reshuffle:
+                reshuffle(model, i)
             plan = seller.plan(model, {}, day, "activity")
+            daily.append(plan)
+            for group in ("budgets", "mail"):
+                self.assertEqual(seller.plan(model, {}, day, group)["accounts"], plan["accounts"])
+            doc = seller.load()
+            for aid in plan["accounts"]:
+                seen.setdefault(aid, i)
+                doc["accounts"].setdefault(aid, {})["contacts"] = {"state": "failed", "attempted_at": day + "T00:00:00Z"}
+            atomic_write_json(seller.store_path(), doc)
+        return seen, daily
+
+    def test_activity_rotation_prioritises_top_fifty_without_starving_the_book(self):
+        # Ties at the rank-50 boundary and missing ARR exercise the deterministic ordering.
+        arr = [None if i % 7 == 0 else (100 - i // 3) for i in range(64)]
+        model = {"accounts": [{"id": f"001{i:012d}AAA", "name": "Synthetic", "arr": v} for i, v in enumerate(arr)]}
+        ranked = sorted(model["accounts"], key=lambda a: (a["arr"] is None, -(a["arr"] or 0), a["name"], a["id"]))
+        top = {a["id"] for a in ranked[:50]}
+        seen, daily = self._simulate_rotation(model, 7)
+        for plan in daily:
             self.assertEqual(len(plan["accounts"]), 10)
+            self.assertEqual(sum(a not in top for a in plan["accounts"]), 2)
             self.assertTrue(all(t["tool"] in {*seller.TOOLS.values(), "query_salesforce"} for t in plan["tasks"]))
-            sets.extend(plan["accounts"])
-        self.assertEqual(len(set(sets)), 50)
-        self.assertNotIn(model["accounts"][0]["id"], sets)
+        self.assertEqual(daily[0]["rotation"]["top_cycle_days"], 7)
+        self.assertEqual(daily[0]["rotation"]["other_cycle_days"], 7)
+        self.assertEqual(daily[0]["rotation"]["never_attempted"], 64)
+        self.assertTrue(top <= set(seen))
+        self.assertEqual(len(seen), 64)
+        # Missing-ARR accounts ranked beyond fifty are still reached.
+        self.assertTrue(any(a["arr"] is None and a["id"] not in top and a["id"] in seen for a in model["accounts"]))
+
+    def test_rotation_survives_rank_churn_and_budgets_need_todays_activity(self):
+        model = {"accounts": [{"id": f"001{i:012d}AAA", "name": f"Synthetic {i:02}", "arr": i} for i in range(80)]}
+        with self.assertRaisesRegex(ValueError, "activity"):
+            seller.plan(model, {}, TODAY, "budgets")
+        churn = lambda m, i: [a.update(arr=(int(a["id"][3:15]) * (i + 3)) % 97) for a in m["accounts"]]
+        seen, _ = self._simulate_rotation(model, 15, churn)
+        self.assertEqual(len(seen), 80)
+
+    def test_small_books_use_every_daily_slot(self):
+        model = {"accounts": [{"id": f"001{i:012d}AAA", "name": "Synthetic", "arr": i} for i in range(12)]}
+        plan = seller.plan(model, {}, TODAY, "activity")
+        self.assertEqual(len(plan["accounts"]), 10)
+        self.assertEqual(plan["rotation"]["other_slots"], 0)
+
+    def test_plans_bound_owned_scope_without_writes(self):
+        model = {"accounts": [{"id": f"001{i:012d}AAA", "name": f"Synthetic {i:02}", "arr": i} for i in range(60)]}
         with self.assertRaisesRegex(ValueError, "outside"):
             seller.plan(model, {}, TODAY, account_id="001XXXXXXXXXXXXZZZ")
         analytic = seller.plan(model, {}, TODAY)
@@ -98,9 +140,12 @@ class SellerTests(fx.HomeCase):
                     "from": {"emailAddress": {"address": "person@example.invalid"}}},
                    {"id": "other", "from": {"emailAddress": {"address": "unrelated@example.invalid"}}}]
         payload = {"results": [{"statusCode": 200, "data": {"value": records}}]}
+        records[0]["toRecipients"] = [{"emailAddress": {"address": "Bystander@example.invalid", "name": "Not a contact"}}]
+        records[0]["ccRecipients"] = [{"emailAddress": {"address": "PERSON@example.invalid", "name": "Synthetic"}}]
         rows = seller.decode(planned, payload)[A]["rows"]
         self.assertEqual(len(rows), 1)
         self.assertNotIn("body", rows[0])
+        self.assertEqual(rows[0]["people"], [{"email": "person@example.invalid", "name": "Synthetic"}])
         payload["results"][0]["data"]["@odata.nextLink"] = "https://graph.microsoft.com/v1.0/me/messages?skip=100"
         with self.assertRaisesRegex(ValueError, "incomplete"):
             seller.decode(planned, payload)
@@ -111,6 +156,23 @@ class SellerTests(fx.HomeCase):
         plan = seller.plan({"accounts": [{"id": A, "arr": None}]}, {}, TODAY, "mail", A)
         self.assertEqual(plan["tasks"], [])
         self.assertIn("collect contacts first", plan["skipped"][0]["reason"])
+
+    def test_mail_uses_only_current_contacts_and_never_reads_calendar(self):
+        model = {"accounts": [{"id": A, "arr": None}]}
+        contact = [{"id": "c", "email": "Person@example.invalid"}]
+        for state, collected in (("failed", TODAY), ("ok", "2026-01-01")):
+            stored = {**entry(contact, state), "collected_at": collected + "T00:00:00Z", "as_of": None}
+            atomic_write_json(seller.store_path(), {"schema": 1, "accounts": {A: {"contacts": stored}}})
+            self.assertEqual(seller.plan(model, {}, TODAY, "mail", A)["tasks"], [])
+        stored = {**entry(contact), "as_of": None}
+        atomic_write_json(seller.store_path(), {"schema": 1, "accounts": {A: {"contacts": stored, "meetings": entry([{"id": "m"}])}}})
+        tasks = seller.plan(model, {}, TODAY, "mail", A)["tasks"]
+        self.assertEqual([t["feed"] for t in tasks], ["emails"])
+        self.assertEqual(tasks[0]["contact_emails"], ["person@example.invalid"])
+        self.assertNotIn("calendar", json.dumps(tasks).lower())
+        account = {"id": A}
+        seller.enrich([account], {}, TODAY, dashboard={}, store=seller.load())
+        self.assertNotIn("meetings", account["seller"]["feeds"])
 
     def test_verified_enterprise_mapping_and_budget_contract(self):
         model = {"accounts": [{"id": A, "arr": None}]}

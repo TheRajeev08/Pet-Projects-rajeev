@@ -8,7 +8,7 @@ export const FEED_LABELS = {
     services: "Services bookings", retention: "Revenue retention", risks: "Gainsight risks", sentiment: "Gainsight sentiment",
     success: "Success plans", timeline: "Gainsight timeline", contacts: "Salesforce contacts", issues: "SE linked issues",
     pocs: "Proofs of concept", gong: "Gong calls", notes: "Account notes", partners: "Partners", hierarchy: "Child accounts",
-    github_accounts: "Enterprise mapping", budgets: "Enterprise budgets", emails: "Outlook email metadata", meetings: "Outlook meetings", tech_stack: "Tech stack",
+    github_accounts: "Enterprise mapping", budgets: "Enterprise budgets", emails: "Outlook email metadata", tech_stack: "Tech stack",
 };
 export const moneyTypes = ["ARR", "Billed", "Usage est.", "Model est.", "MRR", "Booked", "Budget", "Services est."];
 export const knownSum = values => {
@@ -124,10 +124,10 @@ export function observedCount(account, key, rows = currentRows(account, key)) {
     return all.length && (rows.length || all.every(r => r.status)) ? rows.length : null;
 }
 export function activitySummary(account) {
-    const emails = currentRows(account, "emails"), meetings = currentRows(account, "meetings");
+    const emails = currentRows(account, "emails");
     const calls = currentRows(account, "gong");
     const people = new Map();
-    for (const [kind, rows] of [["emails", emails], ["meetings", meetings], ["gong", calls]]) {
+    for (const [kind, rows] of [["emails", emails], ["gong", calls]]) {
         for (const r of rows) for (const p of r.people || r.participants || []) {
             if (!p.email || p.affiliation === "internal") continue;
             const key = p.email.toLowerCase();
@@ -143,7 +143,7 @@ export function activitySummary(account) {
         ...p, name: contacts.get(email).name || p.name, role: contacts.get(email).role, sources: [...p.sources],
     }));
     const recency = rows => rows.map(r => dayOf(r.date)).filter(Boolean).sort().at(-1) || null;
-    return { emails, meetings, spoken, lastEmail: recency(emails), lastMeeting: recency([...meetings, ...calls]),
+    return { emails, spoken, lastEmail: recency(emails), lastMeeting: recency(calls),
         threads: emails.length ? new Set(emails.map(r => r.thread).filter(Boolean)).size || null : null };
 }
 export function renewalRisk(account) {

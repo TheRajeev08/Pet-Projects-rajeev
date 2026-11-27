@@ -201,7 +201,7 @@ export function createSellerViews({ esc, fmtInt, fmtMoney, fmtPct, fmtDay, spark
         const emailTrend = months.map(month => [text(month), integer(emails.length ? emails.filter(r => String(r.date || "").startsWith(month)).length : null)]);
         return panel("Email recency & volume", `<p>Last email: ${date(summary.lastEmail)} · Observed threads: ${integer(summary.threads)}</p>`
             + simpleTable(["Month", "Observed messages"], emailTrend), source(a, "emails"))
-            + panel("Email threads & correspondents", simpleTable(["Thread", "Messages", "Latest", "Correspondents"], [...threads.values()].map(t =>
+            + panel("Email threads & correspondents", simpleTable(["Thread", "Messages", "Latest", "Matched Salesforce contacts"], [...threads.values()].map(t =>
                 [link(t.url, t.title), integer(t.count), date(t.dates.sort().at(-1)), text([...t.people].join(", "))])), source(a, "emails"))
             + panel("People we have spoken to (points of contact)", simpleTable(["Contact", "Role", "Email", "Evidence sources", "Last contact"],
                 summary.spoken.map(p => [text(p.name), text(p.role), text(p.email), text(p.sources.join(", ")), date(p.last)])),
@@ -212,8 +212,6 @@ export function createSellerViews({ esc, fmtInt, fmtMoney, fmtPct, fmtDay, spark
             + recordPanel(a, "issues", recordColumns)
             + recordPanel(a, "pocs", [["Proof of concept", "title", (v, r) => link(r.url, v)], ["End date", "date", date],
                 ["Status", "status"], ["Details", "description"]])
-            + recordPanel(a, "meetings", [["Meeting", "title", (v, r) => link(r.url, v)], ["Date", "date", date],
-                ["Attendees", "people", v => text((v || []).map(p => p.email || p.name).filter(Boolean).join(", "))]])
             + recordPanel(a, "gong", [["Call", "title", (v, r) => link(r.url, v)], ["Date", "date", date],
                 ["Participants", "participants", v => text((v || []).map(p => p.name || p.email).filter(Boolean).join(", "))]])
             + recordPanel(a, "timeline", [["Activity", "title"], ["Date", "date", date], ["Type", "type"], ["Attendees (source text)", "attendees"],
@@ -251,7 +249,7 @@ export function createSellerViews({ esc, fmtInt, fmtMoney, fmtPct, fmtDay, spark
             { key: "renewal", label: "Renewal", numeric: true, value: a => a.renewing_in_days, cell: a => `${date(a.renewal)}<span class="sub">${integer(a.renewing_in_days)} days</span>` },
             { key: "health", label: "Copilot health", value: a => a.products?.ghcp?.health?.category, cell: a => text(a.products?.ghcp?.health?.category) },
             { key: "issues", label: "Open SE issues", numeric: true, value: a => observedCount(a, "issues", openRows(a, "issues")), cell: a => integer(observedCount(a, "issues", openRows(a, "issues"))) },
-            { key: "email", label: "Last email / meeting", value: a => activitySummary(a).lastEmail, cell: a => `${date(activitySummary(a).lastEmail)}<span class="sub">${date(activitySummary(a).lastMeeting)}</span>` },
+            { key: "email", label: "Last email / Gong call", value: a => activitySummary(a).lastEmail, cell: a => `${date(activitySummary(a).lastEmail)}<span class="sub">${date(activitySummary(a).lastMeeting)}</span>` },
             { key: "pocs", label: "People / proofs of concept", value: a => observedCount(a, "pocs"), cell: a =>
                 `${integer(activitySummary(a).spoken.length || null)} people / ${integer(observedCount(a, "pocs"))} PoCs` },
             { key: "stack", label: "Tech stack", value: a => currentRows(a, "tech_stack").map(r => r.value).join(", "), cell: a =>

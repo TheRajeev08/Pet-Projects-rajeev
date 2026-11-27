@@ -13,7 +13,7 @@ A daily automation refreshes the data, emails you a short digest of what is new,
 | Tab | Shows |
 | --- | --- |
 | **Overview** | Separate ARR, observed Billed LTM, usage forecast and pipeline figures; product mix, 120-day renewal radar, actions and today's changes. |
-| **Top 50** | Owned accounts ranked by ARR, observed billed LTM or renewal date; product billing/seats, closed-month consumption changes, health, SE issues, email/meeting recency, people/PoCs and recorded tech stack. Ties use name then ID; missing rank values go last. |
+| **Top 50** | Owned accounts ranked by ARR, observed billed LTM or renewal date; product billing/seats, closed-month consumption changes, health, SE issues, email and Gong-call recency, people/PoCs and recorded tech stack. Ties use name then ID; missing rank values go last. |
 | **Account 360** | Full-page Summary, Commercial, Products & consumption, Security, Success & support and Activity sections. Open it from Top 50 or the existing account preview. |
 | **Consumption** | Thirteen complete service months of invoiced charges, matched-account MoM/three-month comparisons, growers/decliners, separate billing units and Actions runner/job observations. |
 | **Copilot** | Embedded adoption dashboard: account plays, usage, surfaces, models, Impact, forecasts and modeled whitespace. **Seats & actions** keeps Pulse's seat table, health mix, usage funnel, actions and changes. |
@@ -47,7 +47,7 @@ the optional collection stage in [REFRESH.md](REFRESH.md) is approved.
 | C360 (experimental) | Actions rolling runner/job observations, repository/commit protection and revenue retention (not MAU retention). |
 | Gainsight | Latest-per-entity risk CTAs, success-plan objectives/goals and timeline; dated sentiment. Sparse account matches can reflect parent/sibling CO attribution. |
 | Revenue Salesforce tools / Contact SOQL | Linked SE issue metadata, PoCs, Gong participants, notes, partners and child accounts. Current issue status is not a historical status-transition log. |
-| WorkIQ Outlook | Read-only email headers/threads/correspondents and meeting metadata, matched to known Contact emails over 180 days. No bodies, drafts or sends. Capped/paginated results are rejected, not reported as complete. |
+| WorkIQ Outlook | Read-only email headers/threads over 180 days, searched per current (fresh, successfully collected) Salesforce Contact email. Only those verified contacts are stored as correspondents; other recipients are discarded. No bodies, drafts or sends. Capped/paginated results are rejected, not reported as complete. Outlook calendar is not read: the connector cannot scope calendar reads to attendees at source, so meetings come only from account-scoped Gong calls. Meetings without Gong recording are therefore not shown. |
 | Enterprise budgets | Activity collects explicit enterprise/proxima namespace and slug via `get_salesforce_account`; the subsequent budgets group uses those mappings. Missing scope, omitted results or unrecognized responses are No data, not a guessed lookup. Per-user budgets are excluded. The API supplies no currency, so raw decimal amounts are labeled with unknown currency rather than inferred USD. |
 | Tech stack | Only recorded **existing** language/CI/security-tool fields in internal PoCs. Tools merely evaluated or discussed are excluded. PoC end dates are not current detection dates. ZoomInfo is not connected. |
 

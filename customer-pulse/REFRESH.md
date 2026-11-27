@@ -120,9 +120,17 @@ it does not feed Pulse signals, actions, digest state, or email.
    CP_HOME=/approved/private/pulse-home python3 customer-pulse/pulse.py build --no-prune
    ```
 
-   Analytics cover all owned accounts in batches of 20. Activity/budgets/mail rotate ten
-   of the ARR-ranked top fifty each day (five daily cohorts). `--account <owned
-   Salesforce ID>` targets one account, including one outside the top fifty.
+   Analytics cover all owned accounts in batches of 20. Activity refreshes ten owned
+   accounts a day, least-recently attempted first: eight slots for the ARR-ranked top
+   fifty (ties by name then ID; missing ARR ranks last) and two for the rest of the book
+   (ordered by Salesforce ID, so ARR changes cannot starve them). With stable
+   membership, the first pass covers the top fifty within 7 days and the remaining N
+   accounts within ceil(N/2) days; the plan's `rotation` block reports both cycles and
+   how many accounts were never attempted. If the book has 50 or fewer accounts, all
+   ten slots go to it. Budgets and mail reuse the same day's activity cohort, so plan
+   activity first. Each account/source shows its own collection date in Account 360 and
+   on the Data tab; older evidence turns Stale rather than looking current. `--account <owned
+   Salesforce ID>` targets one account explicitly.
    Use the same current session for planning, executing and collecting. Plans
    expire after 24 hours. Query edits, response caps, unrecognized shapes and
    out-of-scope rows are rejected; never edit a plan to bless an earlier result.
@@ -136,6 +144,8 @@ it does not feed Pulse signals, actions, digest state, or email.
    from current totals. Page/row caps require a narrower approved collection
    scope, not an assertion of full coverage. No known contact emails means no
    Outlook search; the planner never substitutes a broad company-name search.
+   Mail uses only contacts from a fresh successful Contact read. Outlook calendar
+   is not read; meeting recency comes from account-scoped Gong calls.
 
    Keep source results private. Report only generic readiness/counts when handing
    off code changes. These steps do not authorize a live extension reload,

@@ -89,8 +89,47 @@ def _task(feed, account_ids, tool, args):
     return {"id": key, "feed": feed, "account_ids": account_ids, "tool": tool, "args": args}
 
 
+DAILY_ACCOUNTS, TOP_TIER, TAIL_SLOTS = 10, 50, 2
+ACTIVITY_FEEDS = (*TOOLS, "contacts")
+
+
+def _last_activity(doc, aid):
+    feeds = doc["accounts"].get(aid, {})
+    stamps = [str(feeds.get(f, {}).get(k) or "") for f in ACTIVITY_FEEDS for k in ("collected_at", "attempted_at")]
+    return max(stamps)
+
+
+def _rotate(ranked, doc):
+    """Least-recently attempted first within each tier, so no owned account starves.
+
+    Ranked order (ARR desc, missing ARR last, then name and ID) defines the top tier and breaks
+    freshness ties there; the tail breaks ties by Salesforce ID so ARR changes cannot reorder it.
+    """
+    top, tail = ranked[:TOP_TIER], sorted(ranked[TOP_TIER:], key=lambda a: a["id"])
+    tail_slots = min(TAIL_SLOTS, len(tail))
+    top_slots = min(DAILY_ACCOUNTS - tail_slots, len(top))
+    tail_slots = min(len(tail), DAILY_ACCOUNTS - top_slots)
+    stale = lambda tier, n: sorted(tier, key=lambda a: _last_activity(doc, a["id"]))[:n]
+    picked = {a["id"] for a in stale(top, top_slots) + stale(tail, tail_slots)}
+    cycle = lambda n, k: -(-n // k) if k else None
+    return [a for a in ranked if a["id"] in picked], {
+        "top_accounts": len(top), "top_slots": top_slots, "top_cycle_days": cycle(len(top), top_slots),
+        "other_accounts": len(tail), "other_slots": tail_slots, "other_cycle_days": cycle(len(tail), tail_slots),
+        "never_attempted": sum(1 for a in ranked if not _last_activity(doc, a["id"]))}
+
+
+def _activity_cohort(ranked, today):
+    planned = read_json(plan_path("activity")) or {}
+    if planned.get("group") != "activity" or planned.get("date") != today or planned.get("rotation") is None:
+        raise ValueError("Plan today's activity group first; budgets and mail reuse its account cohort")
+    ids = set(planned.get("accounts") or [])
+    return [a for a in ranked if a["id"] in ids]
+
+
 def plan(model, cfg, today, group="analytics", account_id=None):
-    """Analytics cover the book; activity rotates ten of the ARR-ranked top fifty each day."""
+    """Analytics cover the book. Activity refreshes ten owned accounts a day: least-recently
+    attempted first, eight slots for the ARR-ranked top fifty and two for the rest of the book.
+    Budgets and mail reuse the same day's activity cohort."""
     from .queries import SFDC_ID
 
     dt.date.fromisoformat(today)
@@ -104,11 +143,12 @@ def plan(model, cfg, today, group="analytics", account_id=None):
         accounts = [a for a in accounts if a["id"] == account_id]
         if not accounts:
             raise ValueError("Requested account is outside the owned book")
-    elif group != "analytics":
-        cohort = accounts[:50]
-        offset = (dt.date.fromisoformat(today).toordinal() % 5) * 10
-        accounts = cohort[offset:offset + 10]
     doc = load()
+    rotation = None
+    if not account_id and group == "activity":
+        accounts, rotation = _rotate(accounts, doc)
+    elif not account_id and group != "analytics":
+        accounts = _activity_cohort(accounts, today)
     nonce = secrets.token_hex(8)
     tasks, skipped = [], []
     ids = [a["id"] for a in accounts]
@@ -139,11 +179,13 @@ def plan(model, cfg, today, group="analytics", account_id=None):
             skipped.append({"feed": "budgets", "account_id": aid, "reason": "No unambiguous enterprise mapping; budget scope is unknown."})
     for a in accounts if group == "mail" else []:
         aid = a["id"]
-        contacts = doc["accounts"].get(aid, {}).get("contacts", {}).get("rows") or []
+        saved = doc["accounts"].get(aid, {}).get("contacts") or {}
+        # Only the latest successful, fresh Salesforce contact read counts as verified.
+        contacts = (saved.get("rows") or []) if coverage("contacts", saved, today)["state"] == "ok" else []
         addresses = sorted({r["email"].lower() for r in contacts if isinstance(r.get("email"), str) and EMAIL.fullmatch(r["email"])})
         # Never broaden to a company-name or whole-mailbox search when contacts are missing.
         if not addresses:
-            skipped.append({"feed": "emails", "account_id": aid, "reason": "No verified contact email addresses; collect contacts first."})
+            skipped.append({"feed": "emails", "account_id": aid, "reason": "No current verified contact email addresses; collect contacts first."})
             continue
         for address in addresses:
             since = (dt.date.fromisoformat(today) - dt.timedelta(days=180)).isoformat()
@@ -152,14 +194,10 @@ def plan(model, cfg, today, group="analytics", account_id=None):
             task = _task("emails", [aid], "fetch", {"entityUrls": [url]})
             task["contact_emails"] = [address]
             tasks.append(task)
-        since = (dt.date.fromisoformat(today) - dt.timedelta(days=180)).isoformat()
-        end = (dt.date.fromisoformat(today) + dt.timedelta(days=1)).isoformat()
-        url = f"/me/calendarView?startDateTime={since}T00:00:00Z&endDateTime={end}T00:00:00Z&$select=id,subject,start,attendees,organizer,webLink,isCancelled&$top=100"
-        task = _task("meetings", [aid], "fetch", {"entityUrls": [url]})
-        task["contact_emails"] = addresses
-        tasks.append(task)
+        # Outlook calendar reads cannot be scoped to attendees at source, so meetings come only
+        # from account-scoped Gong calls collected in the activity group.
     result = {"schema": 1, "group": group, "date": today, "started_at": iso_now(), "run_id": nonce,
-              "accounts": ids, "tasks": tasks, "skipped": skipped,
+              "accounts": ids, "tasks": tasks, "skipped": skipped, "rotation": rotation,
               "note": "Read-only. Prefer Salesforce CLI for contacts. Run exact arguments, then seller-collect. No email bodies. No customer-admin reports."}
     atomic_write_json(plan_path(group), result, indent=2)
     return result
@@ -286,28 +324,26 @@ def decode(task, result):
             if record.get("namespace") in ("enterprise", "proxima"):
                 rows.append({"id": f"{record['namespace']}:{record['slug']}", "slug": record["slug"], "namespace": record["namespace"]})
         return {aid: {"rows": rows, "as_of": None}}
-    if feed in ("emails", "meetings"):
+    if feed == "emails":
         records = _graph(result)
+        verified = {e.lower() for e in task["contact_emails"]}
         rows = []
         for r in records:
             if not isinstance(r, dict) or not r.get("id"):
                 raise ValueError("WorkIQ record lacks a stable ID")
-            if feed == "emails":
-                addresses = [r.get("from", {})] + (r.get("toRecipients") or []) + (r.get("ccRecipients") or [])
-                date = sources.iso(r.get("receivedDateTime") or r.get("sentDateTime"))
-                thread = r.get("conversationId")
-            else:
-                if r.get("isCancelled"):
-                    continue
-                addresses = (r.get("attendees") or []) + [r.get("organizer", {})]
-                date = sources.iso((r.get("start") or {}).get("dateTime"))
-                thread = None
-            people = [{"email": p.get("emailAddress", {}).get("address"), "name": p.get("emailAddress", {}).get("name")}
-                      for p in addresses if isinstance(p, dict)]
-            if not set(task["contact_emails"]).intersection(str(p["email"] or "").lower() for p in people):
+            addresses = [r.get("from", {})] + (r.get("toRecipients") or []) + (r.get("ccRecipients") or [])
+            people = {}
+            for p in addresses:
+                address = (p.get("emailAddress") or {}) if isinstance(p, dict) else {}
+                email = str(address.get("address") or "").lower()
+                # Keep only verified customer contacts; other recipients are never stored.
+                if email in verified:
+                    person = people.setdefault(email, {"email": email, "name": None})
+                    person["name"] = person["name"] or address.get("name")
+            if not people:
                 continue
-            rows.append({"id": r["id"], "title": r.get("subject"), "date": date, "thread": thread,
-                         "url": r.get("webLink"), "people": people})
+            rows.append({"id": r["id"], "title": r.get("subject"), "date": sources.iso(r.get("receivedDateTime") or r.get("sentDateTime")),
+                         "thread": r.get("conversationId"), "url": r.get("webLink"), "people": list(people.values())})
         return {aid: {"rows": rows, "as_of": None}}
     if feed == "contacts":
         err = collect.validate_result({"tool": "query_salesforce"}, result)

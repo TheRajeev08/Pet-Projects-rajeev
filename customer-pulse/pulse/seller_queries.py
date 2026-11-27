@@ -95,7 +95,7 @@ LABELS = {
     "timeline": "Gainsight timeline", "contacts": "Salesforce contacts", "issues": "SE linked issues",
     "pocs": "Proofs of concept", "gong": "Gong calls", "notes": "Account notes", "partners": "Partners",
     "hierarchy": "Child accounts", "github_accounts": "Enterprise mapping", "budgets": "Enterprise budgets", "emails": "Outlook email metadata",
-    "meetings": "Outlook meetings", "tech_stack": "Tech stack",
+    "tech_stack": "Tech stack",
 }
 
 
